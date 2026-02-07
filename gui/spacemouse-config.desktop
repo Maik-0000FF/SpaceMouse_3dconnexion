@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=SpaceMouse Config
+Comment=Configure 3Dconnexion SpaceMouse profiles
+Exec=python3 %h/.local/bin/spacemouse-config.py
+Type=Application
+Icon=input-mouse
+Categories=Settings;HardwareSettings;
+X-KDE-autostart-phase=2

@@ -1,0 +1,22 @@
+# udev rules for 3Dconnexion SpaceMouse devices
+# Provides non-root access for spacenavd and direct HID access
+
+# 3Dconnexion (modern devices, Vendor 0x256F)
+SUBSYSTEM=="usb", ATTR{idVendor}=="256f", MODE="0666", GROUP="input", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="256f", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="input", ATTRS{idVendor}=="256f", MODE="0666", GROUP="input", TAG+="uaccess"
+
+# Logitech-branded 3Dconnexion devices (SpaceNavigator, SpacePilot Pro, etc.)
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c603", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c605", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c606", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c621", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c623", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c625", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c626", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c627", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c628", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c629", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c62b", MODE="0666", GROUP="input", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c626", MODE="0666", GROUP="input", TAG+="uaccess"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c626", MODE="0666", GROUP="input", TAG+="uaccess"

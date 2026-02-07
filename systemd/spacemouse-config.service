@@ -1,0 +1,14 @@
+[Unit]
+Description=SpaceMouse Configuration GUI (System Tray)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=python3 %h/.local/bin/spacemouse-config.py
+Restart=on-failure
+RestartSec=5
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+
+[Install]
+WantedBy=graphical-session.target

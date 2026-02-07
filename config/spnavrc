@@ -1,0 +1,38 @@
+# spnavrc - spacenavd configuration
+# Optimized for 3Dconnexion SpaceNavigator / SpaceMouse Compact
+
+# Global sensitivity (default: 1.0, range: 0.1 - 10.0)
+sensitivity = 0.7
+
+# Per-axis sensitivity (translation)
+sensitivity-translation-x = 1.0
+sensitivity-translation-y = 1.0
+sensitivity-translation-z = 1.0
+
+# Per-axis sensitivity (rotation)
+sensitivity-rotation-x = 1.0
+sensitivity-rotation-y = 1.0
+sensitivity-rotation-z = 1.0
+
+# Dead zone (0-100, percentage of axis range)
+dead-zone = 10
+
+# Axis inversion (0=normal, 1=inverted)
+invert-rot-x = 0
+invert-rot-y = 0
+invert-rot-z = 0
+invert-trans-x = 0
+invert-trans-y = 0
+invert-trans-z = 0
+
+# Swap Y/Z axes (0=no, 1=yes)
+swap-yz = 0
+
+# LED control (0=off, 1=on, 2=auto)
+led = 2
+
+# Exclusive device grab (prevents double-input from kernel HID)
+grab = 1
+
+# Repeat interval in ms (0=disabled)
+repeat-interval = 0
