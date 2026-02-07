@@ -1,0 +1,110 @@
+# -*- coding: utf-8 -*-
+#
+# FreeCAD SpaceMouse Setup Macro
+# Configures FreeCAD for direct viewport manipulation with SpaceMouse
+# (orbit, pan, zoom like Blender instead of cube-only navigation)
+#
+# Installation:
+#   Copy to ~/.local/share/FreeCAD/Macro/
+#   Run from FreeCAD: Macro -> Macros -> freecad-spacemouse-setup
+#
+# Or run directly in FreeCAD's Python console:
+#   exec(open("/path/to/freecad-spacemouse-setup.FCMacro").read())
+#
+
+import FreeCAD
+from PySide2 import QtWidgets
+
+changes = []
+
+def set_param(grp, name, value, param_type="bool"):
+    """Set a FreeCAD parameter and track changes."""
+    if param_type == "bool":
+        old = grp.GetBool(name, not value)
+        grp.SetBool(name, value)
+        if old != value:
+            changes.append(f"  {name}: {old} -> {value}")
+    elif param_type == "int":
+        old = grp.GetInt(name, -9999)
+        grp.SetInt(name, value)
+        if old != value:
+            changes.append(f"  {name}: {old} -> {value}")
+    elif param_type == "string":
+        old = grp.GetString(name, "")
+        grp.SetString(name, value)
+        if old != value:
+            changes.append(f"  {name}: {old} -> {value}")
+
+# ── View Preferences ──────────────────────────────────────────────
+
+view = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+
+# Enable legacy SpaceMouse support (required for spacenavd on Linux)
+set_param(view, "LegacySpaceMouseDevices", True)
+
+# Blender navigation style for consistent feel
+set_param(view, "NavigationStyle", "Gui::BlenderNavigationStyle", "string")
+
+# Trackball orbit — free 6DOF rotation
+set_param(view, "OrbitStyle", 1, "int")
+
+# Rotation around object center
+set_param(view, "RotationMode", 2, "int")
+
+# ── Spaceball Motion Settings ─────────────────────────────────────
+
+motion = FreeCAD.ParamGet("User parameter:BaseApp/Spaceball/Motion")
+
+# Allow all axes simultaneously (no dominant mode)
+set_param(motion, "Dominant", False)
+
+# Flip Y/Z for intuitive zoom (push/pull = zoom, not up/down)
+set_param(motion, "FlipYZ", True)
+
+# Enable all translation axes (pan + zoom)
+set_param(motion, "Translations", True)
+set_param(motion, "PanLREnable", True)
+set_param(motion, "PanUDEnable", True)
+set_param(motion, "ZoomEnable", True)
+
+# Enable all rotation axes (orbit)
+set_param(motion, "Rotations", True)
+set_param(motion, "TiltEnable", True)
+set_param(motion, "RollEnable", True)
+set_param(motion, "SpinEnable", True)
+
+# Neutral sensitivities (adjust to taste later)
+set_param(motion, "GlobalSensitivity", 0, "int")
+set_param(motion, "PanLRSensitivity", 0, "int")
+set_param(motion, "PanUDSensitivity", 0, "int")
+set_param(motion, "ZoomSensitivity", 0, "int")
+set_param(motion, "TiltSensitivity", 0, "int")
+set_param(motion, "RollSensitivity", 0, "int")
+set_param(motion, "SpinSensitivity", 0, "int")
+
+# Identity axis mapping
+set_param(motion, "Remapping", 12345, "int")
+
+# No axis reversals
+set_param(motion, "PanLRReverse", False)
+set_param(motion, "PanUDReverse", False)
+set_param(motion, "ZoomReverse", False)
+set_param(motion, "TiltReverse", False)
+set_param(motion, "RollReverse", False)
+set_param(motion, "SpinReverse", False)
+
+# ── Report ────────────────────────────────────────────────────────
+
+if changes:
+    summary = "SpaceMouse configuration applied!\n\nChanges:\n" + "\n".join(changes)
+    summary += "\n\nRestart FreeCAD for LegacySpaceMouse to take effect."
+else:
+    summary = "SpaceMouse configuration already up to date. No changes needed."
+
+FreeCAD.Console.PrintMessage(summary + "\n")
+
+QtWidgets.QMessageBox.information(
+    None,
+    "SpaceMouse Setup",
+    summary
+)
