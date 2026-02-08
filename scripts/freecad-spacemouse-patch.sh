@@ -200,6 +200,8 @@ set_bool(motion, "TiltEnable", True)
 set_bool(motion, "RollEnable", True)
 set_bool(motion, "SpinEnable", True)
 
+# GlobalSensitivity = 0 (default). The SpaceNavFix addon overrides
+# this at runtime to -40 for controlled sensitivity.
 set_int(motion, "GlobalSensitivity", 0)
 set_int(motion, "PanLRSensitivity", 0)
 set_int(motion, "PanUDSensitivity", 0)
@@ -217,6 +219,13 @@ set_bool(motion, "TiltReverse", False)
 set_bool(motion, "RollReverse", False)
 set_bool(motion, "SpinReverse", False)
 
+# ── Spaceball buttons: Root/BaseApp/Spaceball/Buttons ──
+buttons = ensure_group(spaceball, "Buttons")
+
+print("\n[Spaceball Buttons]")
+set_text(buttons, "0", "Std_ViewFitAll")
+set_text(buttons, "1", "Std_ViewHome")
+
 tree.write(user_cfg, xml_declaration=True, encoding="utf-8")
 print("\n[Done] Configuration patched successfully.")
 PYTHON_PATCH
@@ -230,6 +239,10 @@ echo "    - Navigation style: Blender + Trackball orbit"
 echo "    - Rotation mode: Object center"
 echo "    - FlipYZ enabled (intuitive zoom direction)"
 echo "    - All 6DOF axes enabled (pan, zoom, tilt, roll, spin)"
+echo "    - Button 0: Fit All, Button 1: Home View"
+echo ""
+echo -e "  ${BOLD}Next step — install the SpaceNavFix addon:${NC}"
+echo "    cp -r freecad-addon/SpaceNavFix ~/.local/share/FreeCAD/Mod/"
 echo ""
 echo -e "  ${YELLOW}FreeCAD must be restarted for changes to take effect.${NC}"
 echo ""

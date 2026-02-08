@@ -1,27 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-FreeCAD SpaceMouse Navigation Addon
-Replaces FreeCAD's basic legacy spacemouse handling with smooth
-viewport navigation on Linux, using the same rotation logic as
-FreeCAD's mouse navigation (reorientCamera).
-
-Rotation pivot = camera focal point (same as mouse middle-button drag).
-
-Prerequisites:
-  - FreeCAD's native SpaceMouse DISABLED (LegacySpaceMouseDevices = 0)
-  - spacenavd running, libspnav.so installed
-
-Usage:
+FreeCAD SpaceMouse Navigation Fix for Linux
+============================================
+Standalone version — run in FreeCAD Python console:
   exec(open("/path/to/freecad_spacenav.py").read())
   spacenav_stop()   # to disable
+
+For auto-loading, install the SpaceNavFix addon instead:
+  cp -r freecad-addon/SpaceNavFix ~/.local/share/FreeCAD/Mod/
+
+Fixes:
+1. ROTATION CENTER: Adjusts camera focalDistance so rotation pivot =
+   bounding box center of visible objects (like NavLib on Win/Mac).
+2. SENSITIVITY: Reduces GlobalSensitivity at runtime.
+3. BUTTONS: SoEventCallback fallback for spaceball button handling.
+
+Prerequisites:
+  - LegacySpaceMouseDevices = 1 in user.cfg
+  - spacenavd running
+  - A document with a 3D view open
 """
 
-import ctypes
-
+from pivy import coin
 import FreeCAD
 import FreeCADGui
 
-from pivy import coin
 try:
     from PySide6.QtCore import QTimer
 except ImportError:
@@ -29,324 +32,263 @@ except ImportError:
 
 # ── Configuration ─────────────────────────────────────────────────
 
-SMOOTHING = 0.35          # 0=instant, 1=frozen
-DEAD_ZONE = 12            # Ignore axis values below this
-TRANS_SENSITIVITY = 0.00004
-ROT_SENSITIVITY = 0.0004
-ZOOM_SENSITIVITY = 0.0004
-VELOCITY_EXPONENT = 1.5   # >1 = precise at low speed
-FLIP_YZ = True            # Push/pull = zoom
-POLL_INTERVAL_MS = 16     # ~60fps
+SENSITIVITY = -40
+PIVOT_UPDATE_MS = 50
 
-# ── libspnav ctypes ──────────────────────────────────────────────
-
-class _SpnavMotion(ctypes.Structure):
-    _fields_ = [
-        ("type", ctypes.c_int),
-        ("x", ctypes.c_int), ("y", ctypes.c_int), ("z", ctypes.c_int),
-        ("rx", ctypes.c_int), ("ry", ctypes.c_int), ("rz", ctypes.c_int),
-        ("period", ctypes.c_uint),
-        ("data", ctypes.c_void_p),
-    ]
-
-class _SpnavButton(ctypes.Structure):
-    _fields_ = [
-        ("type", ctypes.c_int),
-        ("press", ctypes.c_int),
-        ("bnum", ctypes.c_int),
-    ]
-
-class _SpnavEvent(ctypes.Union):
-    _fields_ = [
-        ("type", ctypes.c_int),
-        ("motion", _SpnavMotion),
-        ("button", _SpnavButton),
-    ]
+BUTTON_DEFAULTS = {
+    0: "Std_ViewFitAll",
+    1: "Std_ViewHome",
+}
 
 # ── State ────────────────────────────────────────────────────────
 
-_smooth = [0.0] * 6
 _timer = None
-_lib = None
+_active = False
+_prev_sensitivity = None
+_button_cb_node = None
+_button_map = {}
 
-# ── Helpers ──────────────────────────────────────────────────────
+# ── Core: Dynamic Pivot Point ────────────────────────────────────
 
-def _deadzone(value, dz):
-    if abs(value) < dz:
-        return 0.0
-    sign = 1.0 if value > 0 else -1.0
-    return sign * (abs(value) - dz)
-
-def _vcurve(value, exp):
-    sign = 1.0 if value >= 0 else -1.0
-    return sign * (abs(value) ** exp)
-
-def _get_camera():
+def _update_pivot():
     try:
-        return FreeCADGui.ActiveDocument.ActiveView.getCameraNode()
+        view = FreeCADGui.ActiveDocument.ActiveView
+        cam = view.getCameraNode()
+        sg = view.getSceneGraph()
+    except Exception:
+        return
+
+    center = _get_selection_center()
+    if center is None:
+        center = _get_scene_center(sg)
+    if center is None:
+        return
+
+    cam_pos = cam.position.getValue()
+    orient = cam.orientation.getValue()
+    direction = coin.SbVec3f()
+    orient.multVec(coin.SbVec3f(0, 0, -1), direction)
+
+    dx = center[0] - cam_pos[0]
+    dy = center[1] - cam_pos[1]
+    dz = center[2] - cam_pos[2]
+
+    focal_dist = (dx * direction[0] +
+                  dy * direction[1] +
+                  dz * direction[2])
+
+    if focal_dist > 0.001:
+        cam.focalDistance.setValue(focal_dist)
+
+
+def _get_selection_center():
+    sel = FreeCADGui.Selection.getSelection()
+    if not sel:
+        return None
+
+    xmin = ymin = zmin = float('inf')
+    xmax = ymax = zmax = float('-inf')
+    found = False
+
+    for obj in sel:
+        try:
+            if hasattr(obj, 'Shape') and not obj.Shape.isNull():
+                bb = obj.Shape.BoundBox
+            elif hasattr(obj, 'Mesh') and obj.Mesh.CountPoints > 0:
+                bb = obj.Mesh.BoundBox
+            else:
+                continue
+
+            if bb.XLength <= 0 and bb.YLength <= 0 and bb.ZLength <= 0:
+                continue
+
+            xmin = min(xmin, bb.XMin)
+            ymin = min(ymin, bb.YMin)
+            zmin = min(zmin, bb.ZMin)
+            xmax = max(xmax, bb.XMax)
+            ymax = max(ymax, bb.YMax)
+            zmax = max(zmax, bb.ZMax)
+            found = True
+        except Exception:
+            continue
+
+    if not found:
+        return None
+
+    return coin.SbVec3f(
+        (xmin + xmax) / 2.0,
+        (ymin + ymax) / 2.0,
+        (zmin + zmax) / 2.0
+    )
+
+
+def _get_scene_center(sg):
+    try:
+        action = coin.SoGetBoundingBoxAction(
+            coin.SbViewportRegion(1, 1)
+        )
+        action.apply(sg)
+        bbox = action.getBoundingBox()
+        if bbox.isEmpty():
+            return None
+        return bbox.getCenter()
     except Exception:
         return None
 
-# ── reorientCamera — exact copy of FreeCAD's C++ logic ──────────
-
-def _reorient_camera(cam, rot):
-    """Rotate camera while keeping focal point fixed.
-    This is FreeCAD's NavigationStyle::reorientCamera() in Python."""
-
-    # Find global coordinates of focal point
-    direction = coin.SbVec3f()
-    cam.orientation.getValue().multVec(coin.SbVec3f(0, 0, -1), direction)
-
-    focal_dist = cam.focalDistance.getValue()
-    cam_pos = cam.position.getValue()
-
-    focal_point = coin.SbVec3f(
-        cam_pos[0] + focal_dist * direction[0],
-        cam_pos[1] + focal_dist * direction[1],
-        cam_pos[2] + focal_dist * direction[2]
-    )
-
-    # Set new orientation by accumulating the rotation
-    new_orient = rot * cam.orientation.getValue()
-    cam.orientation.setValue(new_orient)
-
-    # Reposition camera so we're still pointing at the same focal point
-    new_direction = coin.SbVec3f()
-    cam.orientation.getValue().multVec(coin.SbVec3f(0, 0, -1), new_direction)
-
-    cam.position.setValue(coin.SbVec3f(
-        focal_point[0] - focal_dist * new_direction[0],
-        focal_point[1] - focal_dist * new_direction[1],
-        focal_point[2] - focal_dist * new_direction[2]
-    ))
-
-# ── panCamera — matches FreeCAD's camera-plane panning ───────────
-
-def _pan_camera(cam, dx, dy):
-    """Pan camera in its local XY plane, scaled by focal distance."""
-    focal_dist = cam.focalDistance.getValue()
-    scale = focal_dist * TRANS_SENSITIVITY
-
-    orient = cam.orientation.getValue()
-
-    # Camera right (local X) and up (local Y) vectors
-    right = coin.SbVec3f()
-    orient.multVec(coin.SbVec3f(1, 0, 0), right)
-    up = coin.SbVec3f()
-    orient.multVec(coin.SbVec3f(0, 1, 0), up)
-
-    move_x = dx * scale
-    move_y = dy * scale
-
-    pos = cam.position.getValue()
-    cam.position.setValue(coin.SbVec3f(
-        pos[0] + right[0] * move_x + up[0] * move_y,
-        pos[1] + right[1] * move_x + up[1] * move_y,
-        pos[2] + right[2] * move_x + up[2] * move_y
-    ))
-
-# ── zoomCamera — move along view direction ───────────────────────
-
-def _zoom_camera(cam, amount):
-    """Zoom by moving camera along its view direction."""
-    focal_dist = cam.focalDistance.getValue()
-
-    if cam.getTypeId() == coin.SoOrthographicCamera.getClassTypeId():
-        cam.height = cam.height.getValue() * (1.0 - amount * ZOOM_SENSITIVITY)
-    else:
-        orient = cam.orientation.getValue()
-        view_dir = coin.SbVec3f()
-        orient.multVec(coin.SbVec3f(0, 0, -1), view_dir)
-
-        move = amount * focal_dist * ZOOM_SENSITIVITY
-        pos = cam.position.getValue()
-        cam.position.setValue(coin.SbVec3f(
-            pos[0] + view_dir[0] * move,
-            pos[1] + view_dir[1] * move,
-            pos[2] + view_dir[2] * move
-        ))
-        # Keep focal distance in sync (rotation center follows zoom)
-        cam.focalDistance.setValue(max(0.01, focal_dist - move))
-
-# ── Core: Apply SpaceMouse Input ─────────────────────────────────
-
-def _apply_navigation(axes):
-    global _smooth
-
-    cam = _get_camera()
-    if cam is None:
-        return
-
-    tx, ty, tz, rx, ry, rz = axes
-
-    # Flip Y/Z (push/pull = zoom instead of up/down)
-    if FLIP_YZ:
-        ty, tz = tz, -ty
-        ry, rz = rz, -ry
-
-    # Dead zone
-    vals = [_deadzone(v, DEAD_ZONE) for v in [tx, ty, tz, rx, ry, rz]]
-
-    # Exponential smoothing (low-pass filter)
-    alpha = 1.0 - SMOOTHING
-    for i in range(6):
-        _smooth[i] = alpha * vals[i] + SMOOTHING * _smooth[i]
-
-    tx, ty, tz, rx, ry, rz = _smooth
-
-    # Skip if near zero
-    if all(abs(v) < 0.5 for v in _smooth):
-        return
-
-    # Velocity curve
-    tx = _vcurve(tx, VELOCITY_EXPONENT)
-    ty = _vcurve(ty, VELOCITY_EXPONENT)
-    tz = _vcurve(tz, VELOCITY_EXPONENT)
-    rx = _vcurve(rx, VELOCITY_EXPONENT)
-    ry = _vcurve(ry, VELOCITY_EXPONENT)
-    rz = _vcurve(rz, VELOCITY_EXPONENT)
-
-    # ── Rotation ──
-    # Build incremental rotation from SpaceMouse axes, then call
-    # reorientCamera() — exactly like FreeCAD's mouse navigation.
-    #
-    # Pitch = around camera local X (tilt forward/back)
-    # Yaw   = around world Y (turn left/right, keeps horizon)
-    # Roll  = around camera local Z
-
-    if abs(rx) > 0.5 or abs(ry) > 0.5 or abs(rz) > 0.5:
-        # Build the combined rotation
-        pitch = coin.SbRotation(coin.SbVec3f(1, 0, 0), -rx * ROT_SENSITIVITY)
-        roll = coin.SbRotation(coin.SbVec3f(0, 0, 1), rz * ROT_SENSITIVITY)
-
-        # Yaw in world space (pre-multiply), pitch+roll in camera space (post-multiply)
-        # This is equivalent to: rot = yaw_world * pitch_local * roll_local
-        # But reorientCamera applies as: rot * cam->orientation
-        # So we need: rot = inverse(cam_orient) * yaw * cam_orient * pitch * roll
-        cam_orient = cam.orientation.getValue()
-
-        # World-space yaw rotation
-        yaw_world = coin.SbRotation(coin.SbVec3f(0, 1, 0), ry * ROT_SENSITIVITY)
-
-        # Convert world yaw to camera-local space
-        cam_orient_inv = cam_orient.inverse()
-        yaw_local = cam_orient_inv * yaw_world * cam_orient
-
-        # Combined local rotation
-        combined = yaw_local * pitch * roll
-
-        # reorientCamera expects: new_orient = rot * old_orient
-        _reorient_camera(cam, combined)
-
-    # ── Pan ──
-    if abs(tx) > 0.5 or abs(ty) > 0.5:
-        _pan_camera(cam, tx, -ty)
-
-    # ── Zoom ──
-    if abs(tz) > 0.5:
-        _zoom_camera(cam, tz)
 
 # ── Button Handling ──────────────────────────────────────────────
 
-def _handle_button(bnum, pressed):
-    if not pressed:
+def _load_button_map():
+    global _button_map
+    _button_map = dict(BUTTON_DEFAULTS)
+    try:
+        grp = FreeCAD.ParamGet(
+            "User parameter:BaseApp/Preferences/Spaceball/Buttons"
+        )
+        for i in range(16):
+            cmd = grp.GetString(str(i), "")
+            if cmd:
+                _button_map[i] = cmd
+    except Exception:
+        pass
+
+
+def _handle_spaceball_button(userdata, event_cb):
+    event = event_cb.getEvent()
+    if not event.isOfType(coin.SoSpaceballButtonEvent.getClassTypeId()):
+        return
+    if event.getState() != coin.SoButtonEvent.DOWN:
+        return
+
+    button = event.getButton()
+    btn_enum_to_num = {
+        coin.SoSpaceballButtonEvent.BUTTON1: 0,
+        coin.SoSpaceballButtonEvent.BUTTON2: 1,
+    }
+    for attr in dir(coin.SoSpaceballButtonEvent):
+        if attr.startswith('BUTTON') and attr[6:].isdigit():
+            num = int(attr[6:]) - 1
+            btn_enum_to_num[getattr(coin.SoSpaceballButtonEvent, attr)] = num
+
+    bnum = btn_enum_to_num.get(button)
+    if bnum is None:
+        return
+
+    cmd = _button_map.get(bnum)
+    if cmd:
+        FreeCAD.Console.PrintLog(f"SpaceNavFix: Button {bnum} -> {cmd}\n")
+        try:
+            FreeCADGui.runCommand(cmd)
+        except Exception as e:
+            FreeCAD.Console.PrintWarning(
+                f"SpaceNavFix: Command '{cmd}' failed: {e}\n"
+            )
+        event_cb.setHandled()
+
+
+def _install_button_handler():
+    global _button_cb_node
+    try:
+        view = FreeCADGui.ActiveDocument.ActiveView
+        sg = view.getSceneGraph()
+    except Exception:
+        return False
+
+    if not hasattr(coin, 'SoSpaceballButtonEvent'):
+        FreeCAD.Console.PrintWarning(
+            "SpaceNavFix: SoSpaceballButtonEvent not in pivy.\n"
+        )
+        return False
+
+    _load_button_map()
+    _button_cb_node = coin.SoEventCallback()
+    _button_cb_node.addEventCallback(
+        coin.SoSpaceballButtonEvent.getClassTypeId(),
+        _handle_spaceball_button
+    )
+    sg.insertChild(_button_cb_node, 0)
+    return True
+
+
+def _remove_button_handler():
+    global _button_cb_node
+    if _button_cb_node is None:
         return
     try:
-        if bnum == 0:
-            FreeCADGui.runCommand("Std_ViewFitAll")
-        elif bnum == 1:
-            FreeCADGui.runCommand("Std_ViewHome")
-    except Exception as e:
-        FreeCAD.Console.PrintWarning(f"SpaceNav: button error: {e}\n")
+        view = FreeCADGui.ActiveDocument.ActiveView
+        sg = view.getSceneGraph()
+        idx = sg.findChild(_button_cb_node)
+        if idx >= 0:
+            sg.removeChild(idx)
+    except Exception:
+        pass
+    _button_cb_node = None
 
-# ── Event Polling ────────────────────────────────────────────────
-
-def _poll_events():
-    if _lib is None:
-        return
-
-    ev = _SpnavEvent()
-    latest_axes = None
-
-    while True:
-        ret = _lib.spnav_poll_event(ctypes.byref(ev))
-        if ret == 0:
-            break
-        if ev.type == 1:  # SPNAV_EVENT_MOTION
-            latest_axes = [
-                ev.motion.x, ev.motion.y, ev.motion.z,
-                ev.motion.rx, ev.motion.ry, ev.motion.rz
-            ]
-        elif ev.type == 2:  # SPNAV_EVENT_BUTTON
-            _handle_button(ev.button.bnum, bool(ev.button.press))
-
-    if latest_axes is not None:
-        _apply_navigation(latest_axes)
-    else:
-        # Decay towards zero (smooth deceleration when input stops)
-        global _smooth
-        decay = SMOOTHING * 0.8
-        changed = False
-        for i in range(6):
-            if abs(_smooth[i]) > 0.5:
-                _smooth[i] *= decay
-                changed = True
-            else:
-                _smooth[i] = 0.0
-        if changed:
-            _apply_navigation([0] * 6)
 
 # ── Start / Stop ─────────────────────────────────────────────────
 
 def spacenav_start():
-    global _lib, _timer, _smooth
+    global _timer, _active, _prev_sensitivity
 
-    if _timer is not None:
-        FreeCAD.Console.PrintMessage("SpaceNav: Already running.\n")
+    if _active:
+        FreeCAD.Console.PrintMessage("SpaceNav Fix: Already running.\n")
         return
 
-    for libname in ["libspnav.so", "libspnav.so.0"]:
-        try:
-            _lib = ctypes.CDLL(libname)
-            break
-        except OSError:
-            continue
-    else:
-        FreeCAD.Console.PrintError("SpaceNav: libspnav.so not found!\n")
-        return
-
-    if _lib.spnav_open() == -1:
+    try:
+        FreeCADGui.ActiveDocument.ActiveView.getCameraNode()
+    except Exception:
         FreeCAD.Console.PrintError(
-            "SpaceNav: Cannot connect to spacenavd.\n"
+            "SpaceNav: No active 3D view. Open a document first.\n"
         )
-        _lib = None
         return
 
-    _smooth = [0.0] * 6
+    grp = FreeCAD.ParamGet(
+        "User parameter:BaseApp/Preferences/Spaceball/Motion"
+    )
+    _prev_sensitivity = grp.GetInt("GlobalSensitivity", 0)
+    grp.SetInt("GlobalSensitivity", SENSITIVITY)
 
     _timer = QTimer()
-    _timer.timeout.connect(_poll_events)
-    _timer.start(POLL_INTERVAL_MS)
+    _timer.timeout.connect(_update_pivot)
+    _timer.start(PIVOT_UPDATE_MS)
+    _update_pivot()
+    _active = True
+
+    btn_ok = _install_button_handler()
+    btn_status = "Coin3D callback" if btn_ok else "native only"
 
     FreeCAD.Console.PrintMessage(
-        "SpaceNav: Started. Using reorientCamera() rotation logic.\n"
-        "SpaceNav: Rotation pivot = camera focal point (same as mouse).\n"
-        "SpaceNav: Run spacenav_stop() to disable.\n"
+        f"SpaceNav Fix: Active\n"
+        f"  Rotation pivot = scene/selection center\n"
+        f"  Sensitivity: {_prev_sensitivity} -> {SENSITIVITY}\n"
+        f"  Buttons: {btn_status}\n"
+        f"  spacenav_stop() to disable\n"
     )
 
-def spacenav_stop():
-    global _lib, _timer
 
-    if _timer is not None:
+def spacenav_stop():
+    global _timer, _active, _prev_sensitivity
+
+    if not _active:
+        FreeCAD.Console.PrintMessage("SpaceNav: Not running.\n")
+        return
+
+    if _timer:
         _timer.stop()
         _timer = None
 
-    if _lib is not None:
-        _lib.spnav_close()
-        _lib = None
+    _remove_button_handler()
 
-    FreeCAD.Console.PrintMessage("SpaceNav: Stopped.\n")
+    if _prev_sensitivity is not None:
+        grp = FreeCAD.ParamGet(
+            "User parameter:BaseApp/Preferences/Spaceball/Motion"
+        )
+        grp.SetInt("GlobalSensitivity", _prev_sensitivity)
 
-# ── Auto-start ───────────────────────────────────────────────────
+    _active = False
+    FreeCAD.Console.PrintMessage("SpaceNav Fix: Stopped.\n")
+
+
+# ── Auto-start (standalone mode) ─────────────────────────────────
 
 spacenav_start()
