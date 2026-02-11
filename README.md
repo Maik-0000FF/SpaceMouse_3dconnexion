@@ -56,54 +56,48 @@ To configure Blender's SpaceMouse settings from the unified GUI:
 
 > **Tip:** If pitch/tilt doesn't work in Blender, make sure **Lock Horizon** is OFF in the Blender page (Blender enables it by default, which blocks the pitch axis).
 
-## FreeCAD SpaceMouse Fix
+## FreeCAD
 
-FreeCAD on Linux has a long-standing bug that makes SpaceMouse navigation extremely jerky and unusable. This repo includes a patch that fixes it.
+FreeCAD on Linux has a bug that makes SpaceMouse navigation jerky and unusable. The normal FreeCAD from `pacman` does **not** work with the SpaceMouse — you need to build a patched version. This sounds complicated, but it's just 3 commands.
 
-### Step 1: Configure FreeCAD
+You don't need to install FreeCAD from `pacman` first — the build command below downloads, patches, and installs everything in one step. It builds **FreeCAD 1.0.2** (the version is set in the build config).
 
-First, start FreeCAD at least once (so it creates its config files), then configure it using **one** of these methods:
+Follow these steps **in order**:
 
-**Option A — GUI (recommended):** Open **SpaceMouse Control** (tray icon) → **FreeCAD** page. Adjust sensitivity, axes, navigation style, then click **Apply**. Close FreeCAD first — it overwrites its config on exit.
+### 1. Build and install the patched FreeCAD
 
-**Option B — Script:** Run the config script for a one-time setup with sensible defaults:
-
-```bash
-./scripts/freecad-spacemouse-patch.sh
-```
-
-Both methods configure FreeCAD to work properly with the SpaceMouse on Linux (enables the correct device mode, sets navigation style, enables all axes).
-
-### Step 2: Build patched FreeCAD
-
-This builds a patched version of FreeCAD as a proper Arch Linux package:
+From the repo directory, run:
 
 ```bash
 cd freecad-pacman-build
 makepkg -sfi
 ```
 
-What the flags mean:
-- `-s` = automatically install build dependencies
-- `-f` = overwrite any previous build
-- `-i` = install the package when done
+This downloads the FreeCAD source code, applies the SpaceMouse fix, compiles it, and installs it as a normal Arch package. The build takes **15–45 minutes** depending on your CPU. You'll be asked for your password once at the end.
 
-**This takes 15–45 minutes** depending on your CPU. You'll see lots of compiler output — that's normal. When it finishes, FreeCAD is patched and installed.
+> After a system update (`pacman -Syu`), FreeCAD gets replaced with the broken stock version. Just run `cd freecad-pacman-build && makepkg -sfi` again to fix it.
 
-### Step 3: Adjust sensitivity (optional)
+### 2. Start FreeCAD once, then close it
 
-If the SpaceMouse feels too fast or slow in FreeCAD, open **SpaceMouse Control** → **FreeCAD** page and move the **Global Sensitivity** slider (-50 = very slow, +50 = very fast, -15 is a good default).
+Open FreeCAD from your app menu (or type `freecad` in a terminal). This creates the config files that the next step needs. Close FreeCAD again.
 
-Alternatively, use FreeCAD's Python console (**View > Panels > Python console**):
+### 3. Configure the SpaceMouse
 
-```python
-p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Spaceball/Motion")
-p.SetInt("GlobalSensitivity", -15)
+```bash
+./scripts/freecad-spacemouse-patch.sh
 ```
 
-The Python console method takes effect immediately without restarting FreeCAD.
+This tells FreeCAD how to use the SpaceMouse: enables the correct device mode, sets the navigation style to Blender-style (orbit, pan, zoom), enables all 6 axes, and assigns the two buttons (Fit All + Home View).
 
-> For technical details about what the patch changes and alternative build methods (source build, manual patching), see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
+> **Important:** Always close FreeCAD before running this command. FreeCAD overwrites its own config file when you close it — if it's still open, your changes will be lost.
+
+### 4. Open FreeCAD — done
+
+Start FreeCAD. The SpaceMouse should now work smoothly: tilt to orbit, push/pull to pan, twist to zoom.
+
+If it feels too fast or too slow, open **SpaceMouse Control** (tray icon) → **FreeCAD** page and adjust the **Global Sensitivity** slider. Click **Apply** (with FreeCAD closed).
+
+> For technical details about what the patch fixes and alternative build methods (source build, manual patching for non-Arch distros), see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
 
 ## Uninstall
 
@@ -127,11 +121,15 @@ If spacenavd isn't running, start it:
 sudo systemctl enable --now spacenavd
 ```
 
-### FreeCAD still jerky after patching
+### FreeCAD SpaceMouse is jerky/stuttering
 
-- Make sure you ran `./scripts/freecad-spacemouse-patch.sh` **before** launching FreeCAD
-- Rebuild if a system update replaced FreeCAD: `cd freecad-pacman-build && makepkg -sfi`
-- Check that you're running the patched version: `which freecad` should show `/usr/bin/freecad`
+This means you're running an **unpatched** FreeCAD. The standard Arch package has a bug that causes 500 redraws/sec — no amount of config changes will fix it. You must build the patched version:
+
+```bash
+cd freecad-pacman-build && makepkg -sfi
+```
+
+If it was working before but broke after a system update, rebuild with the same command — `pacman -Syu` replaces the patched FreeCAD with the stock version.
 
 ### Tray icon not showing
 
