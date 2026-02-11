@@ -62,7 +62,16 @@ To configure Blender's SpaceMouse settings from the unified GUI:
 
 FreeCAD on Linux has a bug that makes SpaceMouse navigation jerky and unusable. The normal FreeCAD from `pacman` does **not** work with the SpaceMouse — you need to build a patched version. This sounds complicated, but it's just 3 commands.
 
-You don't need to install FreeCAD from `pacman` first — the build command below downloads, patches, and installs everything in one step. It builds **FreeCAD 1.0.2** (the version is set in the build config).
+You don't need to install FreeCAD from `pacman` first — the build command below downloads, patches, and installs everything in one step.
+
+**Choose your version** by editing `freecad-pacman-build/PKGBUILD` — change the `_build_version` variable at the top:
+
+| Setting | Version | Description |
+|---------|---------|-------------|
+| `_build_version="stable"` | 1.0.2 | Latest stable release (default) |
+| `_build_version="rc"` | 1.1rc2 | Release candidate (newer features, may have bugs) |
+
+The SpaceMouse patch works on both versions.
 
 Follow these steps **in order**:
 

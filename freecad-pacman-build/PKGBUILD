@@ -15,10 +15,31 @@
 # Contributor: Martin Rodriguez Reboredo
 # Contributor: Jamin Collins
 
+# ┌─────────────────────────────────────────────────────────┐
+# │  VERSION SELECTION                                      │
+# │                                                         │
+# │  Change this to build the FreeCAD version you want:     │
+# │                                                         │
+# │    "stable"  → 1.0.2  (latest stable release)          │
+# │    "rc"      → 1.1rc2 (release candidate, newer)       │
+# │                                                         │
+# │  Both versions get the SpaceMouse patch applied.        │
+# └─────────────────────────────────────────────────────────┘
+_build_version="stable"
+
+# Version mapping — update these when new versions are released
+_ver_stable="1.0.2"
+_ver_rc="1.1rc2"
+
+if [[ "$_build_version" == "rc" ]]; then
+  pkgver="$_ver_rc"
+else
+  pkgver="$_ver_stable"
+fi
+
 pkgname=freecad
-pkgver=1.0.2
 pkgrel=8
-pkgdesc='Feature based parametric 3D CAD modeler'
+pkgdesc='Feature based parametric 3D CAD modeler (with SpaceMouse patch)'
 arch=(x86_64)
 url='https://www.freecad.org'
 license=(LGPL-2.0-only)
@@ -94,10 +115,16 @@ prepare() {
   # Reset any previously applied patches so prepare() is idempotent
   git checkout -- . 2>/dev/null || true
   git submodule update --init --recursive
-  patch -p1 -i ../fix-opencascade-7.9.patch
-  git cherry-pick -n 60aa5ff3730d77037ffad0c77ba96b99ef0c7df3 # Fix crashes on Wayland
-  git cherry-pick -n 8547e798fb3b0f51953b18a2cb98f60aec0a7e33 # Fix build with Eigen 5
-  patch -p1 -i ../boost-1.89.patch
+
+  # Version-specific patches (only needed for 1.0.x)
+  if [[ "$pkgver" == 1.0* ]]; then
+    patch -p1 -i ../fix-opencascade-7.9.patch
+    git cherry-pick -n 60aa5ff3730d77037ffad0c77ba96b99ef0c7df3 # Fix crashes on Wayland
+    git cherry-pick -n 8547e798fb3b0f51953b18a2cb98f60aec0a7e33 # Fix build with Eigen 5
+    patch -p1 -i ../boost-1.89.patch
+  fi
+
+  # SpaceMouse smooth navigation patch (works on all versions)
   python3 ../apply-spacemouse-fix.py .
 }
 
