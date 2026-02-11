@@ -1,169 +1,89 @@
-# SpaceMouse 3Dconnexion — Linux Driver & Desktop Integration
+# SpaceMouse Linux Driver
 
-Open-source driver stack and desktop integration for 3Dconnexion SpaceMouse devices on Linux.
+Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
+Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it works natively inside Blender and FreeCAD for 3D navigation.
 
-Provides a high-performance C daemon for translating 6DOF input into desktop actions (scroll, zoom, virtual desktop switching), per-application profile support with automatic window detection, and a PySide6 configuration GUI with system tray integration.
+## What You Need
 
-## Features
-
-- **Per-application profiles** with automatic window detection via KWin D-Bus
-- **System tray GUI** (PySide6/Qt6) for visual profile configuration
-- **High-performance C daemon** using direct uinput for sub-millisecond scroll/zoom latency
-- **6-axis mapping**: configurable action per axis (scroll, zoom, desktop switch)
-- **Button mapping**: KDE Overview, Show Desktop, or disabled per profile
-- **Nonlinear response curve** with configurable exponent and deadzone
-- **Native 3D app support**: Blender and FreeCAD profiles automatically disable the daemon to avoid input conflicts
-- **UNIX command socket** for scripting and IPC
-- **Backward-compatible config**: supports both legacy flat format and new multi-profile JSON
-- **Presets included**: Default, Blender, FreeCAD, Browser, File Manager
-
-## Supported Devices
-
-| Device | Vendor:Product | Status |
-|--------|---------------|--------|
-| SpaceNavigator | 046d:c626 | Tested |
-| SpaceMouse Compact | 256f:c635 | Supported |
-| SpaceMouse Wireless | 256f:c62e/c62f | Supported |
-| SpaceMouse Pro (Wireless) | 256f:c631/c632 | Supported |
-| SpaceMouse Enterprise | 256f:c633 | Supported |
-| SpaceExplorer | 046d:c627 | Supported |
-| SpacePilot Pro | 046d:c625 | Supported |
-
-All devices supported by spacenavd should work.
-
-## Architecture
-
-```
-SpaceMouse (USB HID)
-        |
-  Linux Kernel HID
-        |
-  spacenavd (reads device, provides UNIX socket API)
-        |
-  libspnav socket
-        |
-   +----+----+-------------------+
-   |         |                   |
-Blender   FreeCAD     spacemouse-desktop daemon
-(native)  (native)         |
-                      +----+----+
-                      |         |
-                   uinput    D-Bus/KWin
-                (scroll/zoom) (desktop switch)
-                      |
-               spacemouse-config GUI
-              (PySide6 system tray)
-```
-
-## Requirements
-
-- Arch Linux (or Arch-based)
-- spacenavd (AUR)
-- libspnav
-- json-c
-- dbus
-- PySide6 (for GUI)
+- **Arch Linux** (or Arch-based like EndeavourOS, Manjaro)
+- **3Dconnexion SpaceMouse** connected via USB
+- **yay** or **paru** (AUR helper) — if you don't have one, [install yay](https://github.com/Jguer/yay#installation)
 
 ## Installation
 
 ```bash
 git clone https://github.com/Maik-0000FF/SpaceMouse_3dconnexion.git
 cd SpaceMouse_3dconnexion
-chmod +x install.sh
 ./install.sh
 ```
 
-The installer handles everything: package installation (via yay/paru), udev rules, spacenavd setup, compilation, systemd services, and GUI deployment.
+The installer takes care of everything: installing packages, setting up permissions, compiling the driver, and starting the background services. You'll be asked for your password when it needs administrator access.
 
-## Usage
+After installation, **plug in your SpaceMouse** (or unplug and replug it) and it's ready to use.
 
-### Quick Start
+## How It Works
 
-After installation, the SpaceMouse works immediately:
+Once installed, the SpaceMouse works on your desktop like this:
 
-- **Desktop**: tilt to scroll, lift/push for zoom, twist to switch workspaces
-- **Blender/FreeCAD**: native 3D navigation (daemon auto-disables)
-- **Tray icon**: click to open settings, right-click for quick profile switching
+- **Tilt left/right** → horizontal scroll
+- **Tilt forward/back** → vertical scroll
+- **Push down / pull up** → zoom (Ctrl+scroll)
+- **Twist left/right** → switch virtual desktops
+- **Left button** → KDE Overview
+- **Right button** → Show Desktop
 
-### Diagnostic Tool
+A **system tray icon** appears in your taskbar. Click it to open the settings GUI, where you can adjust sensitivity, axis behavior, and per-application profiles.
 
-```bash
-spacemouse-test --check   # Run all system checks
-spacemouse-test --live    # Real-time axis and button monitor
-spacemouse-test --led     # LED toggle test
-```
+The driver **automatically detects** when you switch to Blender or FreeCAD and gets out of the way so the native 3D navigation takes over.
 
-### Command Socket
+## Blender
 
-The daemon exposes a UNIX socket for scripting:
+Blender works out of the box — no extra setup needed. When you switch to Blender, the driver disables itself and Blender's built-in SpaceMouse support handles all 3D navigation directly.
 
-```bash
-# Query status
-echo "STATUS" | socat - UNIX:/run/user/$(id -u)/spacemouse-cmd.sock
+> **Tip:** If pitch/tilt doesn't work in Blender, go to **Edit > Preferences > Navigation** and disable **Lock Camera to Horizon** (Blender enables it by default, which blocks the pitch axis).
 
-# Switch profile
-echo "PROFILE blender" | socat - UNIX:/run/user/$(id -u)/spacemouse-cmd.sock
+## FreeCAD SpaceMouse Fix
 
-# Reload config
-echo "RELOAD" | socat - UNIX:/run/user/$(id -u)/spacemouse-cmd.sock
-```
+FreeCAD on Linux has a long-standing bug that makes SpaceMouse navigation extremely jerky and unusable. This repo includes a patch that fixes it.
 
-### Profile Configuration
+### Step 1: Configure FreeCAD
 
-Edit `~/.config/spacemouse/config.json` or use the GUI.
-
-Available axis actions: `none`, `scroll_h`, `scroll_v`, `zoom`, `desktop_switch`
-Available button actions: `none`, `overview`, `show_desktop`
-
-Each profile supports:
-- `match_wm_class`: window class names for automatic switching
-- `deadzone`: input threshold (0-100)
-- `scroll_speed`, `scroll_exponent`, `zoom_speed`: response tuning
-- `desktop_switch_threshold`, `desktop_switch_cooldown_ms`: workspace switch tuning
-- `axis_mapping`: per-axis action assignment
-- `button_mapping`: per-button action assignment
-- `invert_scroll_x`, `invert_scroll_y`: axis inversion
-
-### Why Blender/FreeCAD Presets Use "none"
-
-Blender and FreeCAD link against libspnav and read SpaceMouse input directly from spacenavd for native 3D viewport navigation (orbit, pan, zoom). The desktop daemon receives the same events in parallel. If the daemon were to also emit scroll or zoom actions, it would cause double-input conflicts.
-
-The correct preset for 3D applications sets all axes and buttons to `none`, which makes the daemon completely transparent while the 3D app handles all 6DOF input natively.
-
-### Integrating with Custom Applications
-
-```c
-#include <spnav.h>
-
-int main(void) {
-    spnav_event ev;
-    spnav_open();
-    spnav_client_name("my_app");
-    while (spnav_wait_event(&ev)) {
-        if (ev.type == SPNAV_EVENT_MOTION)
-            printf("T(%d %d %d) R(%d %d %d)\n",
-                ev.motion.x, ev.motion.y, ev.motion.z,
-                ev.motion.rx, ev.motion.ry, ev.motion.rz);
-    }
-    spnav_close();
-}
-// Compile: gcc -o myapp myapp.c -lspnav
-```
-
-See `src/spnav_example.c` for a complete example.
-
-## Services
+First, start FreeCAD at least once (so it creates its config files), then run:
 
 ```bash
-# Driver daemon (system-level)
-sudo systemctl status spacenavd
-
-# Desktop navigation daemon (user-level)
-systemctl --user status spacemouse-desktop
-
-# GUI tray application (user-level)
-systemctl --user status spacemouse-config
+./scripts/freecad-spacemouse-patch.sh
 ```
+
+This configures FreeCAD to work properly with the SpaceMouse on Linux (enables the correct device mode, sets navigation style, enables all axes).
+
+### Step 2: Build patched FreeCAD
+
+This builds a patched version of FreeCAD as a proper Arch Linux package:
+
+```bash
+cd freecad-pacman-build
+makepkg -sfi
+```
+
+What the flags mean:
+- `-s` = automatically install build dependencies
+- `-f` = overwrite any previous build
+- `-i` = install the package when done
+
+**This takes 15–45 minutes** depending on your CPU. You'll see lots of compiler output — that's normal. When it finishes, FreeCAD is patched and installed.
+
+### Step 3: Adjust sensitivity (optional)
+
+If the SpaceMouse feels too fast or slow in FreeCAD, open FreeCAD's Python console (**View > Panels > Python console**) and run:
+
+```python
+p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Spaceball/Motion")
+p.SetInt("GlobalSensitivity", -15)
+```
+
+Lower values = slower (try -30 for slow, 0 for fast). The change takes effect immediately.
+
+> For technical details about what the patch changes and alternative build methods (source build, manual patching), see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
 
 ## Uninstall
 
@@ -171,65 +91,93 @@ systemctl --user status spacemouse-config
 ./uninstall.sh
 ```
 
-## FreeCAD SpaceMouse Fix
+This stops the services, removes the binaries, and cleans up configuration files.
 
-FreeCAD on Linux has notoriously jerky, unusable SpaceMouse navigation. This repo includes a patch that fixes the root cause. See **[docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md)** for the full guide.
+## Troubleshooting
 
-**Quick start** (Arch Linux):
+### SpaceMouse not detected
+
+1. Check that the device is plugged in: `lsusb | grep -i 3dconnexion`
+2. Check that the system daemon is running: `systemctl status spacenavd`
+3. Run the built-in diagnostic: `spacemouse-test --check`
+
+If spacenavd isn't running, start it:
 
 ```bash
-# 1. Configure FreeCAD user.cfg for SpaceMouse
-./scripts/freecad-spacemouse-patch.sh
-
-# 2. Build and install patched FreeCAD as Arch package
-cd freecad-pacman-build
-makepkg -sfi
+sudo systemctl enable --now spacenavd
 ```
 
-The patch is minimal (+13 lines, 2 files) and fixes a performance bug in FreeCAD's event pipeline that has existed since 2018.
+### FreeCAD still jerky after patching
 
-## Project Structure
+- Make sure you ran `./scripts/freecad-spacemouse-patch.sh` **before** launching FreeCAD
+- Rebuild if a system update replaced FreeCAD: `cd freecad-pacman-build && makepkg -sfi`
+- Check that you're running the patched version: `which freecad` should show `/usr/bin/freecad`
 
+### Tray icon not showing
+
+The tray icon runs as a user service. Check its status:
+
+```bash
+systemctl --user status spacemouse-config
 ```
-SpaceMouse_3dconnexion/
-├── src/
-│   ├── spacemouse-desktop.c       C daemon (profiles, uinput, D-Bus, cmd socket)
-│   ├── spacemouse-test.c          Diagnostic tool
-│   ├── spnav_example.c            libspnav client example
-│   └── Makefile
-├── gui/
-│   ├── spacemouse-config.py       PySide6 GUI (tray, profiles, window detection)
-│   └── spacemouse-config.desktop
-├── config/
-│   ├── 99-spacemouse.rules        udev rules
-│   ├── spnavrc                    spacenavd configuration
-│   └── spacemouse-desktop.conf    Default profile presets
-├── systemd/
-│   ├── spacemouse-desktop.service
-│   └── spacemouse-config.service
-├── scripts/
-│   ├── freecad-spacemouse-patch.sh       FreeCAD user.cfg configurator
-│   └── freecad-spacemouse-setup.FCMacro  FreeCAD macro for SpaceMouse setup
-├── freecad-patches/
-│   ├── apply-spacemouse-fix.py           Version-independent patch script
-│   └── spacemouse-smooth-navigation.patch  Static patch for FreeCAD 1.0.2
-├── freecad-pacman-build/
-│   ├── PKGBUILD                          Arch package build with patch
-│   ├── apply-spacemouse-fix.py           Patch script (copy for makepkg)
-│   ├── fix-opencascade-7.9.patch         Arch upstream patch
-│   └── boost-1.89.patch                  Arch upstream patch
-├── docs/
-│   └── FREECAD_SPACEMOUSE_FIX.md         Full guide for FreeCAD fix
-├── install.sh                            Automated installer
-├── uninstall.sh                          Automated uninstaller
-└── LICENSE
+
+If it's not running, restart it:
+
+```bash
+systemctl --user restart spacemouse-config
+```
+
+### Navigation works but buttons don't respond
+
+Buttons are mapped by the profile. Open the tray icon settings and check that button actions are set (default: Left = Overview, Right = Show Desktop). In Blender/FreeCAD profiles, buttons are disabled by default to avoid conflicts.
+
+### Desktop scrolling/zoom works but not in a specific app
+
+Some apps need their own profile. Open the tray icon and create a profile with the app's window class. You can find the window class by running `spacemouse-test --check` while the app is focused.
+
+## Advanced
+
+### Diagnostics
+
+```bash
+spacemouse-test --check   # System checks (USB, spacenavd, uinput)
+spacemouse-test --live    # Real-time axis and button monitor
+spacemouse-test --led     # LED toggle test
+```
+
+### Profile customization
+
+Profiles are stored in `~/.config/spacemouse/config.json`. You can edit them with the GUI (tray icon) or by hand. Each profile can set deadzone, scroll speed, zoom speed, axis mappings, and which windows it applies to.
+
+### Supported devices
+
+| Device | Status |
+|--------|--------|
+| SpaceNavigator | Tested |
+| SpaceMouse Compact | Supported |
+| SpaceMouse Wireless | Supported |
+| SpaceMouse Pro (Wireless) | Supported |
+| SpaceMouse Enterprise | Supported |
+| SpaceExplorer | Supported |
+| SpacePilot Pro | Supported |
+
+Any device supported by spacenavd should work.
+
+### Services
+
+The driver runs as three services:
+
+```bash
+sudo systemctl status spacenavd            # System daemon (reads USB device)
+systemctl --user status spacemouse-desktop  # Desktop navigation (scroll/zoom/desktops)
+systemctl --user status spacemouse-config   # Tray icon and settings GUI
 ```
 
 ## License
 
-GPLv3 - See [LICENSE](LICENSE) for details.
+GPLv3 — See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [spacenavd](https://github.com/FreeSpacenav/spacenavd) - The underlying device daemon
-- [libspnav](https://github.com/FreeSpacenav/libspnav) - Client library for 6DOF input
+- [spacenavd](https://github.com/FreeSpacenav/spacenavd) — Open-source SpaceMouse device daemon
+- [libspnav](https://github.com/FreeSpacenav/libspnav) — Client library for SpaceMouse input
