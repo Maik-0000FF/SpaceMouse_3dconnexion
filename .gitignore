@@ -19,6 +19,15 @@ __pycache__/
 # Claude Code
 CLAUDE.md
 
+# FreeCAD build artifacts (source trees, compiled objects)
+freecad-build/
+freecad-src/
+freecad-pacman-build/src/
+freecad-pacman-build/pkg/
+freecad-pacman-build/freecad/
+freecad-pacman-build/*.pkg.tar.zst
+freecad-pacman-build/*.log
+
 # OS
 .DS_Store
 Thumbs.db

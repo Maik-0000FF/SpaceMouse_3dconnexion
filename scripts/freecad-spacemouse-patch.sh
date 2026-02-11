@@ -201,7 +201,8 @@ set_bool(motion, "RollEnable", True)
 set_bool(motion, "SpinEnable", True)
 
 # GlobalSensitivity = 0 (default). The SpaceNavFix addon overrides
-# this at runtime to -40 for controlled sensitivity.
+# this at runtime to -45 for controlled sensitivity.
+# Valid range: -55 (1%) to 0 (100%). Below -55 INVERTS axes!
 set_int(motion, "GlobalSensitivity", 0)
 set_int(motion, "PanLRSensitivity", 0)
 set_int(motion, "PanUDSensitivity", 0)
@@ -241,8 +242,8 @@ echo "    - FlipYZ enabled (intuitive zoom direction)"
 echo "    - All 6DOF axes enabled (pan, zoom, tilt, roll, spin)"
 echo "    - Button 0: Fit All, Button 1: Home View"
 echo ""
-echo -e "  ${BOLD}Next step — install the SpaceNavFix addon:${NC}"
-echo "    cp -r freecad-addon/SpaceNavFix ~/.local/share/FreeCAD/Mod/"
+echo -e "  ${BOLD}Next step — build FreeCAD with SpaceMouse patch:${NC}"
+echo "    ./scripts/freecad-build-patched.sh"
 echo ""
 echo -e "  ${YELLOW}FreeCAD must be restarted for changes to take effect.${NC}"
 echo ""

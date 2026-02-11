@@ -1,130 +1,126 @@
-# FreeCAD SpaceMouse Patch — Entwicklungsstand
+# FreeCAD SpaceMouse Patch — Development Log
 
-## Status: NICHT FUNKTIONSFÄHIG (Stand 2026-02-08)
+## Status: WORKING (2026-02-11)
 
-Die SpaceMouse-Navigation in FreeCAD auf Linux funktioniert noch nicht zufriedenstellend.
-Rotation um Objektmittelpunkt, Sensitivity-Kontrolle und Smoothing sind ungelöst.
+Two minimal C++ patches fix jerky SpaceMouse navigation on Linux.
+The SpaceNavFix Python addon is no longer needed and has been disabled.
 
-## Kernproblem
+## Root Cause
 
-- **Windows/macOS**: FreeCAD nutzt 3Dconnexion **NavLib SDK** — professionelles Smoothing, Object-Center-Rotation, Velocity-Curves, Pivot-Visualisierung
-- **Linux**: FreeCAD nutzt **Legacy spacenavd** mit `processMotionEvent()` in `NavigationStyle.cpp` — rohe Werte direkt auf Kamera, kein Smoothing, kein Pivot, kein Deadzone
-- **NavLib ist für Linux in CMake blockiert** (`FREECAD_3DCONNEXION_SUPPORT` nur Windows/macOS)
-- **Issue #9543 ist seit 2,5 Jahren OFFEN** — kein Fix für das Rotationszentrum gemerged
-- **FreeCADs Linux SpaceMouse-Code (`GuiNativeEventLinux.cpp`) ist seit 2018 unverändert**
+FreeCAD's SpaceMouse event pipeline on Linux has two performance bugs:
 
-## Getestete Ansätze (alle gescheitert)
+1. **No event coalescing** — `pollSpacenav()` posts every spnav event (125-250Hz)
+   individually via Qt, each triggering a separate `processMotionEvent()` + Coin3D redraw
+2. **Double redraws per event** — `camera->orientation` and `camera->position` each
+   trigger separate Coin3D notifications = 2 redraws per event
 
-### 1. user.cfg Konfiguration (funktioniert teilweise)
-- `LegacySpaceMouseDevices = 1` ← muss AN sein, sonst kein SpaceMouse-Input
-- `NavigationStyle = Gui::BlenderNavigationStyle`, `OrbitStyle = 1` (Trackball)
-- `RotationMode = 2` — hat keinen Effekt auf Spaceball-Events (Issue #9543)
-- `FlipYZ = 1`, alle Achsen enabled, Buttons konfiguriert
-- **Ergebnis**: SpaceMouse Input funktioniert, aber Navigation sprunghaft, kein Objektzentrum
+Combined: up to 500 redraws/sec. The renderer can't keep up, causing stutter.
+Blender doesn't have this problem because it accumulates NDOF input once per frame.
 
-### 2. Shell-Script `scripts/freecad-spacemouse-patch.sh` (funktioniert)
-- Patcht user.cfg automatisch inkl. Button-Mappings
-- Backup + Restore (`--restore`), idempotent
+On Windows/macOS, FreeCAD uses the NavLib SDK (handles smoothing internally).
+On Linux, NavLib is disabled in CMake — the legacy spnav path is used instead.
 
-### 3. Focal-Distance-Fix per QTimer (nicht ausreichend)
-- **Idee**: `camera.focalDistance` kontinuierlich auf BoundingBox-Center setzen
-- `processMotionEvent()` nutzt `focalDistance` als Rotationspivot
-- **Problem**: Timer ist asynchron zu SpaceMouse-Events → stale focalDistance
-  zwischen Updates, Rotation "wobbelt", Translation-Feedback-Loop → Fly-Away
-- Getestete Timer-Raten: 50ms (20fps), 16ms (60fps) — kein spürbarer Unterschied
+## Patches
 
-### 4. SoMotion3Event Interception per SoEventCallback (aktueller Stand)
-- **Idee**: Coin3D SoEventCallback fängt SoMotion3Event im Scenegraph ab,
-  `event_cb.setHandled()` verhindert dass FreeCADs processMotionEvent läuft,
-  eigene Kamera-Steuerung mit Rotation um Szenen-/Selektionsmittelpunkt
-- **Implementiert**: Rotation um Pivot, Deadzone, Smoothing, Dominant-Mode,
-  Pan in Kameraebene, Zoom mit absolutem Clamp
-- **Problem**: Kamera-Distanz konvergiert gegen Null beim Drehen.
-  Eventuell sind die SoMotion3Event-Werte (getTranslation/getRotation) anders
-  skaliert als erwartet. Debug-Logging ist eingebaut aber noch nicht ausgewertet.
-- **Offene Frage**: Werden SoMotion3Events überhaupt durch den Scenegraph
-  dispatched? Oder verarbeitet FreeCAD sie auf Qt-Ebene bevor Quarter
-  sie in Coin3D-Events konvertiert?
+### Patch 1: Event Coalescing (`GuiNativeEventLinux.cpp`)
 
-### 5. Eigene spnav-Verbindung (GESCHEITERT — Sackgasse)
-- `spnav_open() = -1` innerhalb FreeCAD — libspnav erlaubt nur EINE Verbindung
-  pro Prozess, FreeCAD hält sie bereits
+Only post the **last** motion event per `QSocketNotifier` activation instead of each one.
+spnav motion events represent current puck deflection, not accumulated deltas.
 
-## Offene Probleme
+### Patch 2: Batched Camera Updates (`NavigationStyle.cpp`)
 
-1. **Rotation nicht um Objektmittelpunkt** — Kernproblem, bisher kein Fix funktioniert
-2. **Navigation sprunghaft/hakelig** — kein Smoothing, kein Velocity-Curve
-3. **Kamera fliegt weg** (Focal-Distance-Ansatz) oder **Distanz geht auf Null**
-   (Event-Interception-Ansatz)
-4. **Buttons** — unklar ob FreeCADs native Handler oder unser Coin3D-Callback funktioniert
-5. **Werteskalierung** — die genauen Wertebereiche von SoMotion3Event.getTranslation()
-   und getRotation() in FreeCADs Kontext sind nicht dokumentiert
+Wrap camera property changes in `enableNotify(false/true)` + `touch()` to trigger
+a single Coin3D redraw instead of two.
 
-## Nächste Schritte
+**Patch file:** `freecad-patches/spacemouse-smooth-navigation.patch` (+13/-3 lines)
 
-1. **Debug-Output auswerten**: Das aktuelle Addon loggt Roh-Werte alle 60 Frames
-   in die Report-View. Diese Werte müssen analysiert werden um die Skalierung
-   und Achszuordnung zu verstehen.
-2. **MCP für FreeCAD**: Es gibt MCP-Server für FreeCAD
-   (z.B. neka-nat/freecad-mcp, bonninr/freecad_mcp) die direkten Python-Zugriff
-   auf FreeCADs Laufzeitumgebung ermöglichen → ermöglicht Live-Debugging
-3. **SoFieldSensor statt Timer**: Sensor auf camera.position/orientation
-   der synchron nach jedem processMotionEvent feuert
-4. **processMotionEvent C++ patchen**: Als letzter Ausweg direkt FreeCADs
-   C++ Code patchen und eigenes Build erstellen
-
-## Installierte Dateien
+## Event Pipeline Reference
 
 ```
-~/.local/share/FreeCAD/Mod/SpaceNavFix/    # Auto-Loading Addon
-  __init__.py
-  InitGui.py          # QTimer-basierter Auto-Starter (pollt alle 2s auf 3D View)
-  freecad_spacenav.py # SoMotion3Event Interceptor (aktueller Ansatz)
-
-~/.local/share/FreeCAD/Macro/
-  freecad_spacenav.py # Standalone-Version (exec() in Konsole)
+SpaceMouse (USB HID)
+    -> spacenavd (daemon, /var/run/spnav.sock, 125-250Hz)
+    -> libspnav fd
+    -> QSocketNotifier::activated
+    -> pollSpacenav()                    <- PATCH 1: Coalescing
+        -> postMotionEvent()
+            -> importSettings()          (Sensitivity, Calibration, Axis enable)
+            -> Spaceball::MotionEvent
+            -> QApplication::postEvent()
+    -> Qt Event Loop
+    -> GUIApplication::notify()
+    -> SpaceNavigatorDevice::translateEvent()
+        -> Rotation: int * 0.0001 -> Radians
+        -> SoMotion3Event
+    -> NavigationStyle::processMotionEvent()  <- PATCH 2: Batched Updates
+        -> Camera orientation + position
+        -> Single Coin3D redraw
 ```
 
-## Repo-Dateien
+## Failed Approaches
 
+### 1. Custom processMotionEvent() with Deadzone/Smoothing/Curves
+- Added custom deadzone, exponential smoothing, non-linear curve, extra scaling
+- Fought against `importSettings()` sensitivity pipeline
+- Caused lag (smoothing state takes time to drain) and drift
+- Root cause was the event pipeline, not `processMotionEvent()`
+
+### 2. SoFieldSensor + focalDistance (Python Addon v2)
+- SoFieldSensor on camera.position fired after every processMotionEvent
+- Set focalDistance = projection of BBox center onto view direction
+- Worked but conflicted with C++ patches and added overhead
+
+### 3. BBox Center as Rotation Pivot (in processMotionEvent)
+- SoGetBoundingBoxAction every frame: too expensive (scene graph traversal at 60Hz)
+- Even cached (every 30 frames) still problematic
+- reorientCamera() has orthographic special case that overrides camera position
+- Focal distance updates created feedback loop with getWorldToScreenScale()
+
+### 4. SoMotion3Event Interception via SoEventCallback (dead end)
+- SoMotion3Events never reach the scene graph (BlenderNavStyle sets processed=true)
+
+### 5. Separate spnav connection (dead end)
+- `spnav_open() = -1` — libspnav allows only ONE connection per process
+
+## Configuration
+
+### FreeCAD Sensitivity
+```python
+# In FreeCAD Python console (View > Panels > Python console):
+p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Spaceball/Motion")
+p.SetInt("GlobalSensitivity", -15)   # -50 (slow) to +50 (fast)
 ```
-freecad-addon/SpaceNavFix/       # Addon-Quellcode (identisch mit installierter Version)
-scripts/
-  freecad-spacemouse-patch.sh    # user.cfg Patcher
-  freecad-spacemouse-setup.FCMacro
-  freecad_spacenav.py            # Standalone-Version
-```
 
-## Konfiguration
-
-### user.cfg (aktuell gesetzt)
+### user.cfg settings
 - LegacySpaceMouseDevices = 1
 - NavigationStyle = Gui::BlenderNavigationStyle
 - OrbitStyle = 1 (Trackball), RotationMode = 2
-- FlipYZ = 1, alle 6 Achsen enabled
-- GlobalSensitivity = -15
+- FlipYZ = 1, all 6 axes enabled
 - Buttons: 0=Std_ViewFitAll, 1=Std_ViewHome
-
-### spacemouse-desktop Daemon (config.json)
-- FreeCAD-Profil: alle Achsen + Buttons = "none" (kein Doppel-Input)
 
 ### spnavrc
 - sensitivity=1.5, dead-zone=5
 
-## System-Umgebung
-- Arch Linux, KDE Plasma (Wayland), Kernel 6.18.7-arch1-1
-- FreeCAD 1.0.2 (1.1 hat Regressionen bei SpaceMouse — Issue #27132)
-- Python 3.14, PySide6 6.10.2
+## Build
+
+```bash
+# Arch Linux package
+cd freecad-pacman-build && makepkg -sf -s
+sudo pacman -U freecad-*.pkg.tar.zst
+
+# Or from source
+cd freecad-build/build && ninja -j$(nproc) bin/FreeCAD
+```
+
+## System Environment
+- Arch Linux, KDE Plasma (Wayland)
+- FreeCAD 1.0.2
 - spacenavd (AUR), libspnav
 - Hardware: 3Dconnexion SpaceNavigator (046d:c626)
 
-## Quellen
-- FreeCAD `processMotionEvent()` in NavigationStyle.cpp
-- FreeCAD `GuiNativeEventLinux.cpp` — negiert alle Achsen, kein Pivot
-- FreeCAD `NavlibPivot.cpp` — Pivot nur für Win/Mac
-- Issue #9543: SpaceMouse Rotation Center (OFFEN seit Mai 2023)
-- Issue #27132: SpaceMouse broken in FreeCAD 1.1/1.2
-- Discussion #25449: Driverless HID Support (Vorschlag ohne Resonanz)
-- PR #12929: NavLib Integration (Windows/macOS only)
-- PR #18244: Runtime-Auswahl Legacy/NavLib
-- MCP-Server: neka-nat/freecad-mcp, bonninr/freecad_mcp
+## References
+- FreeCAD `GuiNativeEventLinux.cpp` — pollSpacenav() event loop (line 66)
+- FreeCAD `NavigationStyle.cpp` — processMotionEvent() (line 1912)
+- FreeCAD `GuiApplicationNativeEventAware.cpp` — importSettings + Sensitivity
+- FreeCAD `View3DInventorViewer.cpp` — SpaceNavigatorDevice event conversion
+- [Issue #9543](https://github.com/FreeCAD/FreeCAD/issues/9543): SpaceMouse Rotation Center (open since May 2023)
+- [Issue #27132](https://github.com/FreeCAD/FreeCAD/issues/27132): SpaceMouse broken in FreeCAD 1.1/1.2

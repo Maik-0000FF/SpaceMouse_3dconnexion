@@ -171,6 +171,24 @@ systemctl --user status spacemouse-config
 ./uninstall.sh
 ```
 
+## FreeCAD SpaceMouse Fix
+
+FreeCAD on Linux has notoriously jerky, unusable SpaceMouse navigation. This repo includes a patch that fixes the root cause. See **[docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md)** for the full guide.
+
+**Quick start** (Arch Linux):
+
+```bash
+# 1. Configure FreeCAD user.cfg for SpaceMouse
+./scripts/freecad-spacemouse-patch.sh
+
+# 2. Build and install patched FreeCAD as Arch package
+cd freecad-pacman-build
+makepkg -sf -s
+sudo pacman -U freecad-*.pkg.tar.zst
+```
+
+The patch is minimal (+13 lines, 2 files) and fixes a performance bug in FreeCAD's event pipeline that has existed since 2018.
+
 ## Project Structure
 
 ```
@@ -190,6 +208,16 @@ spacemouse-linux/
 ├── systemd/
 │   ├── spacemouse-desktop.service
 │   └── spacemouse-config.service
+├── freecad-patches/
+│   └── spacemouse-smooth-navigation.patch   FreeCAD SpaceMouse fix
+├── freecad-pacman-build/
+│   └── PKGBUILD                             Arch package with patch
+├── scripts/
+│   ├── freecad-spacemouse-patch.sh          FreeCAD user.cfg configurator
+│   ├── freecad-pacman-build.sh              Arch package build script
+│   └── freecad-build-patched.sh             Source build script
+├── docs/
+│   └── FREECAD_SPACEMOUSE_FIX.md            Full guide for FreeCAD fix
 ├── install.sh
 ├── uninstall.sh
 └── LICENSE

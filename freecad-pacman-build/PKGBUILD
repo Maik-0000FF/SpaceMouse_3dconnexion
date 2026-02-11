@@ -1,0 +1,146 @@
+# Maintainer: George Rawlinson <grawlinson@archlinux.org>
+# Maintainer: Caleb Maclennan <caleb@alerque.com>
+# Contributor: Alexander F. Rødseth <xyproto@archlinux.org>
+# Contributor: Sven-Hendrik Haase <svenstaro@archlinux.org>
+# Contributor: loqs <bugs-archlinux@entropy-collector.net>
+# Contributor: Gabriel Souza Franco <gabrielfrancosouza@gmail.com>
+# Contributor: Florian Pritz
+# Contributor: Jonas Heinrich <onny@project-insanity.org>
+# Contributor: Jordi De Groof <jordi.degroof@gmail.com>
+# Contributor: mickele
+# Contributor: manwithgrenade
+# Contributor: bricem13
+# Contributor: gborzi
+# Contributor: Adrian Insaurralde
+# Contributor: Martin Rodriguez Reboredo
+# Contributor: Jamin Collins
+
+pkgname=freecad
+pkgver=1.0.2
+pkgrel=8
+pkgdesc='Feature based parametric 3D CAD modeler'
+arch=(x86_64)
+url='https://www.freecad.org'
+license=(LGPL-2.0-only)
+depends=(
+  boost-libs
+  coin
+  fmt
+  glew
+  libspnav
+  med
+  opencascade
+  openmpi
+  pugixml
+  pyside6
+  yaml-cpp
+  python-markdown
+  python-matplotlib
+  python-pip
+  python-pivy
+  python-ply
+  python-yaml
+  qt6-svg
+  qt6-tools
+  verdict
+  vtk
+  xerces-c
+)
+makedepends=(
+  boost
+  cgns
+  cmake
+  eigen
+  git
+  libharu
+  liblas
+  ninja
+  nlohmann-json
+  openvdb
+  openvr
+  ospray
+  pdal
+  postgresql-libs
+  python-mpi4py
+  shiboken6
+  swig
+  utf8cpp
+  dos2unix
+  microsoft-gsl
+  fast_float
+)
+optdepends=(
+  'graphviz: dependency graph support'
+  'opencamlib: CAM workbench support'
+  'openscad: OpenSCAD support'
+  'python-ladybug-core: Solar/Wind diagram support'
+)
+options=(!lto)
+source=("git+https://github.com/$pkgname/$pkgname#tag=$pkgver"
+        fix-opencascade-7.9.patch
+        boost-1.89.patch
+        apply-spacemouse-fix.py)
+sha512sums=('SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP')
+b2sums=('SKIP'
+        'SKIP'
+        'SKIP'
+        'SKIP')
+
+prepare() {
+  cd freecad
+  git submodule update --init --recursive
+  patch -p1 -i ../fix-opencascade-7.9.patch
+  git cherry-pick -n 60aa5ff3730d77037ffad0c77ba96b99ef0c7df3 # Fix crashes on Wayland
+  git cherry-pick -n 8547e798fb3b0f51953b18a2cb98f60aec0a7e33 # Fix build with Eigen 5
+  patch -p1 -i ../boost-1.89.patch
+  python3 ../apply-spacemouse-fix.py .
+}
+
+build() {
+  local cmake_options=(
+    -B build
+    -S "$pkgname"
+    -D BUILD_FLAT_MESH=ON
+    -D BUILD_ENABLE_CXX_STD=C++17
+    -D BUILD_DESIGNER_PLUGIN=ON
+    -D CMAKE_BUILD_TYPE=Release
+    -D CMAKE_C_FLAGS="$CFLAGS -ffat-lto-objects -fPIC -w"
+    -D CMAKE_CXX_FLAGS="$CXXFLAGS -ffat-lto-objects -fPIC -w"
+    -D CMAKE_INSTALL_BINDIR=/usr/lib/freecad/bin
+    -D CMAKE_INSTALL_DATADIR=/usr/share/freecad
+    -D CMAKE_INSTALL_DATAROOTDIR=/usr/share
+    -D CMAKE_INSTALL_DOCDIR=/usr/share/freecad/doc
+    -D CMAKE_INSTALL_LIBDIR=/usr/lib/freecad/lib
+    -D CMAKE_INSTALL_PREFIX=/usr/lib/freecad
+    -D FREECAD_USE_EXTERNAL_PIVY=ON
+    -D FREECAD_USE_OCC_VARIANT='Official Version'
+    -D FREECAD_USE_QT_FILEDIALOG=ON
+    -D FREECAD_QT_VERSION=6
+    -D INSTALL_TO_SITEPACKAGES=ON
+    -D PYTHON_EXECUTABLE=/usr/bin/python
+    -G Ninja
+    -W no-dev
+  )
+
+  cmake "${cmake_options[@]}"
+
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+
+  # tools
+  cd "$pkgname"
+  install -Dm755 src/Tools/{$pkgname-thumbnailer,fcinfo} -t "$pkgdir/usr/bin"
+
+  # symlinks
+  install -d "$pkgdir/usr/bin"
+  ln -sf /usr/lib/freecad/bin/FreeCAD "$pkgdir/usr/bin/freecad"
+  ln -sf /usr/lib/freecad/bin/FreeCAD "$pkgdir/usr/bin/FreeCAD"
+  ln -sf /usr/lib/freecad/bin/FreeCADCmd "$pkgdir/usr/bin/freecadcmd"
+  ln -sf /usr/lib/freecad/bin/FreeCADCmd "$pkgdir/usr/bin/FreeCADCmd"
+}
