@@ -50,7 +50,7 @@ ok "Arch Linux detected, AUR helper: $AUR_HELPER"
 step "Installing packages"
 
 # Official repos
-OFFICIAL_PKGS="libspnav json-c dbus"
+OFFICIAL_PKGS="libspnav json-c dbus python-pyside6"
 for pkg in $OFFICIAL_PKGS; do
     if pacman -Q "$pkg" &>/dev/null; then
         ok "$pkg already installed"

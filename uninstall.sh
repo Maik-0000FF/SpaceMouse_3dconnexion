@@ -22,8 +22,15 @@ info "Stopping spacemouse-desktop..."
 systemctl --user stop spacemouse-desktop.service 2>/dev/null || true
 systemctl --user disable spacemouse-desktop.service 2>/dev/null || true
 rm -f "$HOME/.config/systemd/user/spacemouse-desktop.service"
-systemctl --user daemon-reload
 ok "Desktop daemon stopped and disabled"
+
+info "Stopping spacemouse-config GUI..."
+systemctl --user stop spacemouse-config.service 2>/dev/null || true
+systemctl --user disable spacemouse-config.service 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/spacemouse-config.service"
+ok "Config GUI stopped and disabled"
+
+systemctl --user daemon-reload
 
 # ── Stop spacenavd ──────────────────────────────────────────────
 
@@ -51,7 +58,8 @@ info "Removing user files..."
 rm -f "$HOME/.local/bin/spacemouse-desktop"
 rm -f "$HOME/.local/bin/spacemouse-test"
 rm -f "$HOME/.local/bin/spnav_example"
-ok "Binaries removed"
+rm -f "$HOME/.local/bin/spacemouse-config.py"
+ok "Binaries and GUI removed"
 
 read -rp "Remove config directory ~/.config/spacemouse/? [y/N] " ans
 if [[ "$ans" == [yY] ]]; then

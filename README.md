@@ -1,4 +1,4 @@
-# spacemouse-linux
+# SpaceMouse 3Dconnexion — Linux Driver & Desktop Integration
 
 Open-source driver stack and desktop integration for 3Dconnexion SpaceMouse devices on Linux.
 
@@ -67,8 +67,8 @@ Blender   FreeCAD     spacemouse-desktop daemon
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USER/spacemouse-linux.git
-cd spacemouse-linux
+git clone https://github.com/Maik-0000FF/SpaceMouse_3dconnexion.git
+cd SpaceMouse_3dconnexion
 chmod +x install.sh
 ./install.sh
 ```
@@ -192,34 +192,37 @@ The patch is minimal (+13 lines, 2 files) and fixes a performance bug in FreeCAD
 ## Project Structure
 
 ```
-spacemouse-linux/
+SpaceMouse_3dconnexion/
 ├── src/
-│   ├── spacemouse-desktop.c    C daemon (profiles, uinput, D-Bus, cmd socket)
-│   ├── spacemouse-test.c       Diagnostic tool
-│   ├── spnav_example.c         libspnav client example
+│   ├── spacemouse-desktop.c       C daemon (profiles, uinput, D-Bus, cmd socket)
+│   ├── spacemouse-test.c          Diagnostic tool
+│   ├── spnav_example.c            libspnav client example
 │   └── Makefile
 ├── gui/
-│   ├── spacemouse-config.py    PySide6 GUI (tray, profiles, window detection)
+│   ├── spacemouse-config.py       PySide6 GUI (tray, profiles, window detection)
 │   └── spacemouse-config.desktop
 ├── config/
-│   ├── 99-spacemouse.rules     udev rules
-│   ├── spnavrc                 spacenavd configuration
-│   └── spacemouse-desktop.conf Default profile presets
+│   ├── 99-spacemouse.rules        udev rules
+│   ├── spnavrc                    spacenavd configuration
+│   └── spacemouse-desktop.conf    Default profile presets
 ├── systemd/
 │   ├── spacemouse-desktop.service
 │   └── spacemouse-config.service
-├── freecad-patches/
-│   └── spacemouse-smooth-navigation.patch   FreeCAD SpaceMouse fix
-├── freecad-pacman-build/
-│   └── PKGBUILD                             Arch package with patch
 ├── scripts/
-│   ├── freecad-spacemouse-patch.sh          FreeCAD user.cfg configurator
-│   ├── freecad-pacman-build.sh              Arch package build script
-│   └── freecad-build-patched.sh             Source build script
+│   ├── freecad-spacemouse-patch.sh       FreeCAD user.cfg configurator
+│   └── freecad-spacemouse-setup.FCMacro  FreeCAD macro for SpaceMouse setup
+├── freecad-patches/
+│   ├── apply-spacemouse-fix.py           Version-independent patch script
+│   └── spacemouse-smooth-navigation.patch  Static patch for FreeCAD 1.0.2
+├── freecad-pacman-build/
+│   ├── PKGBUILD                          Arch package build with patch
+│   ├── apply-spacemouse-fix.py           Patch script (copy for makepkg)
+│   ├── fix-opencascade-7.9.patch         Arch upstream patch
+│   └── boost-1.89.patch                  Arch upstream patch
 ├── docs/
-│   └── FREECAD_SPACEMOUSE_FIX.md            Full guide for FreeCAD fix
-├── install.sh
-├── uninstall.sh
+│   └── FREECAD_SPACEMOUSE_FIX.md         Full guide for FreeCAD fix
+├── install.sh                            Automated installer
+├── uninstall.sh                          Automated uninstaller
 └── LICENSE
 ```
 
