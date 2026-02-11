@@ -32,7 +32,13 @@ Once installed, the SpaceMouse works on your desktop like this:
 - **Left button** → KDE Overview
 - **Right button** → Show Desktop
 
-A **system tray icon** appears in your taskbar. Click it to open the settings GUI, where you can adjust sensitivity, axis behavior, and per-application profiles.
+A **system tray icon** appears in your taskbar. Click it to open **SpaceMouse Control** — a unified settings app with three pages:
+
+- **Desktop** — sensitivity, axis mapping, button actions, per-application profiles
+- **FreeCAD** — SpaceMouse sensitivity, axis enable/invert, navigation style (writes directly to FreeCAD's config)
+- **Blender** — NDOF sensitivity, deadzone, axis inversion, Lock Horizon toggle
+
+A live preview bar at the bottom shows real-time axis movement and button state.
 
 The driver **automatically detects** when you switch to Blender or FreeCAD and gets out of the way so the native 3D navigation takes over.
 
@@ -40,7 +46,15 @@ The driver **automatically detects** when you switch to Blender or FreeCAD and g
 
 Blender works out of the box — no extra setup needed. When you switch to Blender, the driver disables itself and Blender's built-in SpaceMouse support handles all 3D navigation directly.
 
-> **Tip:** If pitch/tilt doesn't work in Blender, go to **Edit > Preferences > Navigation** and disable **Lock Camera to Horizon** (Blender enables it by default, which blocks the pitch axis).
+To configure Blender's SpaceMouse settings from the unified GUI:
+
+1. Open **SpaceMouse Control** (tray icon) and go to the **Blender** page
+2. Adjust sensitivity, deadzone, axis inversion, etc.
+3. Click **Apply** — settings are saved to `~/.config/spacemouse/blender-ndof.json`
+4. Click **Install Startup Script** (first time only) — this copies a sync script to Blender's startup directory
+5. Restart Blender — settings are applied automatically on every launch
+
+> **Tip:** If pitch/tilt doesn't work in Blender, make sure **Lock Horizon** is OFF in the Blender page (Blender enables it by default, which blocks the pitch axis).
 
 ## FreeCAD SpaceMouse Fix
 
@@ -48,13 +62,17 @@ FreeCAD on Linux has a long-standing bug that makes SpaceMouse navigation extrem
 
 ### Step 1: Configure FreeCAD
 
-First, start FreeCAD at least once (so it creates its config files), then run:
+First, start FreeCAD at least once (so it creates its config files), then configure it using **one** of these methods:
+
+**Option A — GUI (recommended):** Open **SpaceMouse Control** (tray icon) → **FreeCAD** page. Adjust sensitivity, axes, navigation style, then click **Apply**. Close FreeCAD first — it overwrites its config on exit.
+
+**Option B — Script:** Run the config script for a one-time setup with sensible defaults:
 
 ```bash
 ./scripts/freecad-spacemouse-patch.sh
 ```
 
-This configures FreeCAD to work properly with the SpaceMouse on Linux (enables the correct device mode, sets navigation style, enables all axes).
+Both methods configure FreeCAD to work properly with the SpaceMouse on Linux (enables the correct device mode, sets navigation style, enables all axes).
 
 ### Step 2: Build patched FreeCAD
 
@@ -74,14 +92,16 @@ What the flags mean:
 
 ### Step 3: Adjust sensitivity (optional)
 
-If the SpaceMouse feels too fast or slow in FreeCAD, open FreeCAD's Python console (**View > Panels > Python console**) and run:
+If the SpaceMouse feels too fast or slow in FreeCAD, open **SpaceMouse Control** → **FreeCAD** page and move the **Global Sensitivity** slider (-50 = very slow, +50 = very fast, -15 is a good default).
+
+Alternatively, use FreeCAD's Python console (**View > Panels > Python console**):
 
 ```python
 p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Spaceball/Motion")
 p.SetInt("GlobalSensitivity", -15)
 ```
 
-Lower values = slower (try -30 for slow, 0 for fast). The change takes effect immediately.
+The Python console method takes effect immediately without restarting FreeCAD.
 
 > For technical details about what the patch changes and alternative build methods (source build, manual patching), see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
 

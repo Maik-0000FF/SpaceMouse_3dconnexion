@@ -224,9 +224,17 @@ set_bool(motion, "SpinReverse", False)
 # ── Spaceball buttons: Root/BaseApp/Spaceball/Buttons ──
 buttons = ensure_group(spaceball, "Buttons")
 
+# Clean up old wrong-format entries (flat FCText with Name="0"/"1")
+for stale in list(buttons):
+    if stale.tag == "FCText" and stale.get("Name") in ("0", "1"):
+        buttons.remove(stale)
+        print(f"  Removed stale FCText Name={stale.get('Name')}")
+
 print("\n[Spaceball Buttons]")
-set_text(buttons, "0", "Std_ViewFitAll")
-set_text(buttons, "1", "Std_ViewHome")
+btn0 = ensure_group(buttons, "0")
+set_text(btn0, "Command", "Std_ViewFitAll")
+btn1 = ensure_group(buttons, "1")
+set_text(btn1, "Command", "Std_ViewHome")
 
 tree.write(user_cfg, xml_declaration=True, encoding="utf-8")
 print("\n[Done] Configuration patched successfully.")
