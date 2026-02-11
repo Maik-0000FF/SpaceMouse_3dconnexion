@@ -115,32 +115,25 @@ sudo pacman -S freecad
 sudo pacman -S base-devel cmake ninja git
 ```
 
-**2. Build the package:**
+**2. Build and install the package:**
 
 Open a terminal and run:
 
 ```bash
 cd freecad-pacman-build
-makepkg -sf -s
+makepkg -sfi
 ```
 
 What the flags mean:
-- `-s` = automatically install missing build dependencies (will ask for your sudo password)
+- `-s` = automatically install missing build dependencies
 - `-f` = overwrite any previous build output
+- `-i` = install the package automatically after building
 
-This downloads the FreeCAD source code, applies all patches (including the SpaceMouse fix), and compiles everything. **This takes 15-45 minutes** depending on your CPU. You'll see lots of compiler output — that's normal. Just wait until it finishes.
+You will be asked for your sudo password (for dependency installation and package installation).
 
-When it's done, you'll see a file like `freecad-1.0.2-8-x86_64.pkg.tar.zst` in the directory.
+This downloads the FreeCAD source code, applies all patches (including the SpaceMouse fix), and compiles everything. **This takes 15-45 minutes** depending on your CPU. You'll see lots of compiler output — that's normal. Just wait until it finishes. The patched FreeCAD will be installed automatically when the build completes.
 
-**3. Install the package:**
-
-```bash
-sudo pacman -U freecad-1.0.2-8-x86_64.pkg.tar.zst
-```
-
-(The exact filename may differ — use tab-completion or `ls *.pkg.tar.zst` to find it.)
-
-**4. Done!** Launch FreeCAD normally:
+**3. Done!** Launch FreeCAD normally:
 
 ```bash
 freecad
@@ -150,8 +143,7 @@ freecad
 > ```bash
 > cd freecad-pacman-build
 > # Update PKGBUILD if needed (check Arch GitLab for new version)
-> makepkg -sf -s
-> sudo pacman -U freecad-*.pkg.tar.zst
+> makepkg -sfi
 > ```
 
 ---
@@ -307,8 +299,7 @@ The patch only changes event handling, not core functionality. If FreeCAD crashe
 ```bash
 # Clean rebuild
 cd freecad-pacman-build
-makepkg -sfC -s    # -C cleans build dir first
-sudo pacman -U freecad-*.pkg.tar.zst
+makepkg -sfCi      # -C cleans build dir first
 ```
 
 ### Patch doesn't apply cleanly

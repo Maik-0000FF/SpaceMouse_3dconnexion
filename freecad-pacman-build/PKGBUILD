@@ -91,6 +91,8 @@ b2sums=('SKIP'
 
 prepare() {
   cd freecad
+  # Reset any previously applied patches so prepare() is idempotent
+  git checkout -- . 2>/dev/null || true
   git submodule update --init --recursive
   patch -p1 -i ../fix-opencascade-7.9.patch
   git cherry-pick -n 60aa5ff3730d77037ffad0c77ba96b99ef0c7df3 # Fix crashes on Wayland

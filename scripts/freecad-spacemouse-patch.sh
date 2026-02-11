@@ -200,10 +200,11 @@ set_bool(motion, "TiltEnable", True)
 set_bool(motion, "RollEnable", True)
 set_bool(motion, "SpinEnable", True)
 
-# GlobalSensitivity = 0 (default). The SpaceNavFix addon overrides
-# this at runtime to -45 for controlled sensitivity.
-# Valid range: -55 (1%) to 0 (100%). Below -55 INVERTS axes!
-set_int(motion, "GlobalSensitivity", 0)
+# GlobalSensitivity: controls overall input scaling.
+# Valid range: -50 (very slow, ~1%) to +50 (very fast).
+# 0 = 100% raw input (too sensitive for most users).
+# -15 = moderate (~30%), good default with the event coalescing patch.
+set_int(motion, "GlobalSensitivity", -15)
 set_int(motion, "PanLRSensitivity", 0)
 set_int(motion, "PanUDSensitivity", 0)
 set_int(motion, "ZoomSensitivity", 0)
@@ -243,7 +244,7 @@ echo "    - All 6DOF axes enabled (pan, zoom, tilt, roll, spin)"
 echo "    - Button 0: Fit All, Button 1: Home View"
 echo ""
 echo -e "  ${BOLD}Next step — build FreeCAD with SpaceMouse patch:${NC}"
-echo "    ./scripts/freecad-build-patched.sh"
+echo "    cd freecad-pacman-build && makepkg -sfi"
 echo ""
 echo -e "  ${YELLOW}FreeCAD must be restarted for changes to take effect.${NC}"
 echo ""

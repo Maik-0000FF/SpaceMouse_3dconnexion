@@ -183,8 +183,7 @@ FreeCAD on Linux has notoriously jerky, unusable SpaceMouse navigation. This rep
 
 # 2. Build and install patched FreeCAD as Arch package
 cd freecad-pacman-build
-makepkg -sf -s
-sudo pacman -U freecad-*.pkg.tar.zst
+makepkg -sfi
 ```
 
 The patch is minimal (+13 lines, 2 files) and fixes a performance bug in FreeCAD's event pipeline that has existed since 2018.

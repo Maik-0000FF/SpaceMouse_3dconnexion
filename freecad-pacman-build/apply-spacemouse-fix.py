@@ -58,19 +58,32 @@ def patch_poll_spacenav(source_dir):
         1
     )
 
-    # Add the if(hasMotion) block before the closing brace of pollSpacenav
-    # Find the closing "}\n}" pattern (inner loop closing + function closing)
-    # We need to add it after the while loop ends, before the function closes
-    old_end = "    }\n}"
-    new_end = "    }\n    if (hasMotion) {\n        mainApp->postMotionEvent(motionDataArray);\n    }\n}"
+    # Add the if(hasMotion) block after the while loop closes, before the function ends.
+    # Use a specific pattern anchored to the button handler to avoid matching
+    # the wrong function (e.g. initSpaceball which also ends with "}\n}").
+    old_end = (
+        "mainApp->postButtonEvent(ev.button.bnum, ev.button.press);\n"
+        "                break;\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "}"
+    )
+    new_end = (
+        "mainApp->postButtonEvent(ev.button.bnum, ev.button.press);\n"
+        "                break;\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "    if (hasMotion) {\n"
+        "        mainApp->postMotionEvent(motionDataArray);\n"
+        "    }\n"
+        "}"
+    )
 
     if old_end not in content:
-        # Try alternate brace style
-        old_end = "    }\n}\n"
-        new_end = "    }\n    if (hasMotion) {\n        mainApp->postMotionEvent(motionDataArray);\n    }\n}\n"
-
-    if old_end not in content:
-        print(f"  FAIL: Could not find end-of-function pattern in {os.path.relpath(filepath, source_dir)}")
+        print(f"  FAIL: Could not find pollSpacenav end pattern in {os.path.relpath(filepath, source_dir)}")
+        print(f"        (looking for postButtonEvent + closing braces)")
         return False
 
     content = content.replace(old_end, new_end, 1)
