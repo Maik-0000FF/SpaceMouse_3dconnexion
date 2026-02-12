@@ -56,6 +56,10 @@ AXIS_NAMES = ["TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
               "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)"]
 AXIS_KEYS = ["tx", "ty", "tz", "rx", "ry", "rz"]
 
+SPNAV_CFG_LED_OFF = 0
+SPNAV_CFG_LED_ON = 1
+SPNAV_CFG_LED_AUTO = 2
+
 FREECAD_BTN_COMMANDS = [
     "Std_ViewFitAll", "Std_ViewHome", "Std_ViewIsometric",
     "Std_ViewFront", "Std_ViewTop", "Std_ViewRight",
@@ -328,6 +332,11 @@ class SpnavReader(QThread):
     def set_suspended(self, suspended):
         """Suspend/resume event reading (called when 3D apps gain/lose focus)."""
         self._suspended = suspended
+
+    def set_led(self, state):
+        """Control SpaceMouse LED (0=off, 1=on, 2=auto). Uses existing connection."""
+        if self._lib:
+            self._lib.spnav_cfg_set_led(state)
 
     def run(self):
         import select
@@ -2001,11 +2010,9 @@ class SettingsWindow(QMainWindow):
         self.stack.setCurrentIndex(0)
         self._sync_deadzones()
 
-        # Status timer
+        # Status timer (stopped by default — started when window becomes visible)
         self._status_timer = QTimer()
         self._status_timer.timeout.connect(self._update_status)
-        self._status_timer.start(3000)
-        self._update_status()
 
         self._dirty = False
 
@@ -2274,19 +2281,10 @@ class SpaceMouseApp:
         self.tray.setContextMenu(menu)
 
     def _rebuild_tray_menu(self, menu):
-        profiles = self.config.get("profiles", {})
-        for name in profiles:
-            action = QAction(f"Profile: {name}", menu)
-            action.setData(name)
-            action.triggered.connect(lambda _c=False, n=name: self._switch_profile(n))
-            menu.addAction(action)
-
-        menu.addSeparator()
-
-        pause_action = QAction(
-            "Resume Daemon" if self._paused else "Pause Daemon", menu)
-        pause_action.triggered.connect(self._toggle_pause)
-        menu.addAction(pause_action)
+        toggle_action = QAction(
+            "Enable" if self._paused else "Disable", menu)
+        toggle_action.triggered.connect(self._toggle_pause)
+        menu.addAction(toggle_action)
 
         settings_action = QAction("Settings...", menu)
         settings_action.triggered.connect(self._show_settings)
@@ -2294,7 +2292,7 @@ class SpaceMouseApp:
 
         menu.addSeparator()
 
-        quit_action = QAction("Quit (stop all)", menu)
+        quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
 
@@ -2317,6 +2315,7 @@ class SpaceMouseApp:
     def _toggle_pause(self):
         if self._paused:
             self._paused = False
+            self.spnav_reader.set_led(SPNAV_CFG_LED_AUTO)
             subprocess.Popen(
                 ["systemctl", "--user", "start", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2326,10 +2325,11 @@ class SpaceMouseApp:
         else:
             self._paused = True
             self._stop_window_monitor()
+            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
             subprocess.Popen(
                 ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.tray.setToolTip("SpaceMouse: PAUSED")
+            self.tray.setToolTip("SpaceMouse: DISABLED")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
         menu = QMenu()
         self._rebuild_tray_menu(menu)
@@ -2356,11 +2356,13 @@ class SpaceMouseApp:
     def _on_gui_shown(self):
         """GUI visible: enable live preview, block desktop actions (window opens focused)."""
         self.spnav_reader.set_suspended(False)
+        self.settings_window._status_timer.start(3000)
         send_daemon_cmd("PROFILE _passthrough")
 
     def _on_gui_hidden(self):
-        """GUI hidden: suspend reader, restore daemon profile."""
+        """GUI hidden: suspend reader and status timer, restore daemon profile."""
         self.spnav_reader.set_suspended(True)
+        self.settings_window._status_timer.stop()
         send_daemon_cmd(f"PROFILE {self._saved_profile}")
 
     def _on_gui_focused(self):
