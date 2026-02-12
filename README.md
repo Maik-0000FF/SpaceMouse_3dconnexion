@@ -40,9 +40,20 @@ A **system tray icon** appears in your taskbar. Click it to open **SpaceMouse Co
 - **FreeCAD** — SpaceMouse sensitivity, axis enable/invert, navigation style (writes directly to FreeCAD's config)
 - **Blender** — NDOF sensitivity, deadzone, axis inversion, Lock Horizon toggle
 
-A live preview bar at the bottom shows real-time axis movement and button state.
+A live preview bar at the bottom shows real-time axis movement and button state. While the settings window is focused, desktop actions (scroll, zoom, workspace switching) are automatically disabled so the SpaceMouse doesn't interfere while you configure it. Click on the desktop to test your settings — the live preview stays visible.
 
-The driver **automatically detects** when you switch to Blender or FreeCAD and gets out of the way so the native 3D navigation takes over.
+The driver **automatically detects** when you switch between windows. The currently focused application always gets full SpaceMouse performance — all other consumers go idle to minimize resource usage.
+
+## Resource Management
+
+The driver is designed to be lightweight. Only the focused application actively processes SpaceMouse input — everything else goes idle:
+
+- **Desktop focused** — daemon handles scroll/zoom/workspace, GUI reader suspended
+- **Blender/FreeCAD focused** — native 3D navigation active, daemon and GUI reader idle (zero CPU)
+- **Settings GUI focused** — live preview active, daemon desktop actions blocked (no accidental workspace switches)
+- **Settings GUI open but unfocused** — live preview active, daemon normal (test your settings on the desktop)
+
+The C daemon automatically detects "passthrough" profiles (all axes/buttons set to `none`) and skips event processing entirely. The GUI's SpaceMouse reader uses event-driven I/O (`select()` on the spnav file descriptor) instead of polling — zero CPU when no events arrive.
 
 ## Blender
 
