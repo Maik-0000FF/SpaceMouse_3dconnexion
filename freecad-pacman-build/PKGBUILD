@@ -126,6 +126,12 @@ prepare() {
 
   # SpaceMouse smooth navigation patch (works on all versions)
   python3 ../apply-spacemouse-fix.py .
+
+  # Arch HDF5 2.0: pkg-config module is "hdf5", not "hdf5-serial"
+  # Also remove NO_DEFAULT_PATH from find_file (cmake strips /usr/include as system dir)
+  sed -i -e 's/set(HDF5_VARIANT "hdf5-serial")/set(HDF5_VARIANT "hdf5")/' \
+         -e 's/find_file(Hdf5dotH hdf5.h PATHS ${HDF5_INCLUDE_DIRS} NO_DEFAULT_PATH)/find_file(Hdf5dotH hdf5.h)/' \
+    cMake/FreeCAD_Helpers/SetupSalomeSMESH.cmake
 }
 
 build() {

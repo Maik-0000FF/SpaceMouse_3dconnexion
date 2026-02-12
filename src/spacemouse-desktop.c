@@ -66,6 +66,7 @@ enum btn_action {
 
 struct config {
 	int deadzone;
+	int axis_deadzone[6]; /* per-axis deadzone, 0 = use global */
 	double scroll_speed;
 	double scroll_exponent;
 	double zoom_speed;
@@ -447,6 +448,16 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 	if (json_object_object_get_ex(obj, "sensitivity", &val))
 		c->sensitivity = json_object_get_double(val);
 
+	struct json_object *adz;
+	if (json_object_object_get_ex(obj, "axis_deadzone", &adz)) {
+		struct json_object *dv;
+		const char *dz_keys[] = {"tx", "ty", "tz", "rx", "ry", "rz"};
+		for (int i = 0; i < 6; i++) {
+			if (json_object_object_get_ex(adz, dz_keys[i], &dv))
+				c->axis_deadzone[i] = json_object_get_int(dv);
+		}
+	}
+
 	struct json_object *amap;
 	if (json_object_object_get_ex(obj, "axis_mapping", &amap)) {
 		struct json_object *ax;
@@ -752,24 +763,25 @@ int main(int argc, char **argv)
 					};
 
 					for (int i = 0; i < 6; i++) {
+						int dz = c->axis_deadzone[i] > 0 ? c->axis_deadzone[i] : c->deadzone;
 						double val;
 						switch (c->axis_map[i]) {
 						case ACT_SCROLL_H:
-							val = apply_curve(axes[i], c->deadzone,
+							val = apply_curve(axes[i], dz,
 								c->scroll_exponent, c->scroll_speed)
 								* c->sensitivity;
 							if (c->invert_scroll_x) val = -val;
 							sacc.acc_x += val;
 							break;
 						case ACT_SCROLL_V:
-							val = apply_curve(axes[i], c->deadzone,
+							val = apply_curve(axes[i], dz,
 								c->scroll_exponent, c->scroll_speed)
 								* c->sensitivity;
 							if (c->invert_scroll_y) val = -val;
 							sacc.acc_y -= val;
 							break;
 						case ACT_ZOOM:
-							val = apply_curve(axes[i], c->deadzone,
+							val = apply_curve(axes[i], dz,
 								c->scroll_exponent, c->zoom_speed)
 								* c->sensitivity;
 							sacc.acc_z += val;

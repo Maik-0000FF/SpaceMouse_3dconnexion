@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PATCH_FILE="$REPO_DIR/freecad-patches/spacemouse-smooth-navigation.patch"
+PATCH_SCRIPT="$REPO_DIR/freecad-patches/apply-spacemouse-fix.py"
 WORK_DIR="$REPO_DIR/freecad-pacman-build"
 
 RED='\033[0;31m'
@@ -36,8 +36,8 @@ DO_INSTALL=false
 
 # ── Check prerequisites ─────────────────────────────────────────
 
-if [[ ! -f "$PATCH_FILE" ]]; then
-    fail "Patch not found: $PATCH_FILE"
+if [[ ! -f "$PATCH_SCRIPT" ]]; then
+    fail "Patch script not found: $PATCH_SCRIPT"
 fi
 
 if ! command -v makepkg &>/dev/null; then
@@ -77,14 +77,14 @@ else
     info "Using existing PKGBUILD"
 fi
 
-# ── Copy patch into build dir ────────────────────────────────────
+# ── Copy patch script into build dir ─────────────────────────────
 
-cp "$PATCH_FILE" "$WORK_DIR/spacemouse-smooth-navigation.patch"
-ok "Patch copied to build directory"
+cp "$PATCH_SCRIPT" "$WORK_DIR/apply-spacemouse-fix.py"
+ok "Patch script copied to build directory"
 
 # ── Modify PKGBUILD to include our patch ─────────────────────────
 
-if grep -q "spacemouse-smooth-navigation.patch" PKGBUILD; then
+if grep -q "apply-spacemouse-fix.py" PKGBUILD; then
     info "PKGBUILD already patched"
 else
     info "Adding SpaceMouse patch to PKGBUILD..."
@@ -95,19 +95,16 @@ import re
 with open("PKGBUILD", "r") as f:
     content = f.read()
 
-# Add patch file to source array
-# Find the source=( ... ) block and add our patch
-if "spacemouse-smooth-navigation.patch" not in content:
-    # Add to source array - find the closing ) of source=(
-    # Handle both single-line and multi-line source arrays
+if "apply-spacemouse-fix.py" not in content:
+    # Add to source array
     content = re.sub(
         r'(source=\([^)]*)',
-        r'\1\n        "spacemouse-smooth-navigation.patch"',
+        r'\1\n        apply-spacemouse-fix.py',
         content,
         count=1
     )
 
-    # Add to sha256sums or b2sums - add SKIP for our local file
+    # Add SKIP checksum for our local file
     for sums_name in ['b2sums', 'sha256sums', 'sha512sums', 'md5sums']:
         pattern = rf'({sums_name}=\([^)]*)'
         if re.search(pattern, content):
@@ -119,17 +116,26 @@ if "spacemouse-smooth-navigation.patch" not in content:
             )
             break
 
-    # Add patch command to prepare() function
+    # HDF5 2.0 fix + SpaceMouse patch for prepare()
+    hdf5_fix = (
+        '  # Arch HDF5 2.0: pkg-config module is "hdf5", not "hdf5-serial"\n'
+        '  sed -i -e \'s/set(HDF5_VARIANT "hdf5-serial")/set(HDF5_VARIANT "hdf5")/\' \\\n'
+        '         -e \'s/find_file(Hdf5dotH hdf5.h PATHS ${HDF5_INCLUDE_DIRS} NO_DEFAULT_PATH)/find_file(Hdf5dotH hdf5.h)/\' \\\n'
+        '    cMake/FreeCAD_Helpers/SetupSalomeSMESH.cmake 2>/dev/null || true'
+    )
+    spacemouse_fix = '  python3 "$srcdir/apply-spacemouse-fix.py" .'
+    patch_block = f'  # SpaceMouse smooth navigation patch\n{spacemouse_fix}\n{hdf5_fix}'
+
+    # Add to prepare() function
     if "prepare()" in content:
         content = content.replace(
             "prepare() {",
-            'prepare() {\n  # SpaceMouse smooth navigation patch\n  patch -Np1 -i "$srcdir/spacemouse-smooth-navigation.patch"'
+            'prepare() {\n' + patch_block
         )
     else:
-        # No prepare() exists, add one before build()
         content = content.replace(
             "build() {",
-            'prepare() {\n  cd "${pkgname}-${pkgver}"\n  # SpaceMouse smooth navigation patch\n  patch -Np1 -i "$srcdir/spacemouse-smooth-navigation.patch"\n}\n\nbuild() {'
+            'prepare() {\n  cd "${pkgname}-${pkgver}"\n' + patch_block + '\n}\n\nbuild() {'
         )
 
 with open("PKGBUILD", "w") as f:

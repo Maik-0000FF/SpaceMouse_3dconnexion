@@ -162,6 +162,87 @@ def patch_process_motion_event(source_dir):
     print(f"        The code may have changed in this FreeCAD version.")
     return False
 
+def patch_per_axis_deadzone(source_dir):
+    """Fix 3: Per-axis deadzone filtering in pollSpacenav().
+
+    Reads per-axis deadzone values from FreeCAD user.cfg (BaseApp/Spaceball/Motion)
+    and zeroes out axis values below their threshold before posting the motion event.
+    Applied on top of the event coalescing patch (requires hasMotion block).
+    """
+    filepath = find_file(source_dir, "GuiNativeEventLinux.cpp")
+    if not filepath:
+        print("  SKIP: GuiNativeEventLinux.cpp not found")
+        return False
+
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    if "axisDeadzone" in content:
+        print(f"  OK:   {os.path.relpath(filepath, source_dir)} (deadzone already patched)")
+        return True
+
+    if "hasMotion" not in content:
+        print(f"  FAIL: Event coalescing patch must be applied first")
+        return False
+
+    # Add #include for ParameterGrp (FreeCAD's config API) at top of file
+    # Find the last #include line and add after it
+    include_line = '#include "GuiNativeEvent.h"'
+    if include_line not in content:
+        # Try alternative include pattern
+        include_line = '#include <App/Application.h>'
+    if include_line in content:
+        if '#include <App/Application.h>' not in content:
+            content = content.replace(
+                include_line,
+                include_line + '\n#include <App/Application.h>',
+                1
+            )
+    else:
+        # Fallback: add after first include
+        first_include = content.find('#include')
+        eol = content.find('\n', first_include)
+        content = content[:eol+1] + '#include <App/Application.h>\n' + content[eol+1:]
+
+    # Replace the simple "if (hasMotion) { postMotionEvent }" block with
+    # one that reads deadzone values and filters axes before posting
+    old_motion_block = (
+        "    if (hasMotion) {\n"
+        "        mainApp->postMotionEvent(motionDataArray);\n"
+        "    }"
+    )
+    new_motion_block = (
+        '    if (hasMotion) {\n'
+        '        // Per-axis deadzone filtering (reads from user.cfg)\n'
+        '        static const char *axisDeadzoneKeys[] = {\n'
+        '            "PanLRDeadzone", "PanUDDeadzone", "ZoomDeadzone",\n'
+        '            "TiltDeadzone", "RollDeadzone", "SpinDeadzone"\n'
+        '        };\n'
+        '        auto hGrp = App::GetApplication().GetParameterGroupByPath(\n'
+        '            "User parameter:BaseApp/Spaceball/Motion");\n'
+        '        for (int i = 0; i < 6; i++) {\n'
+        '            int dz = (int)hGrp->GetInt(axisDeadzoneKeys[i], 0);\n'
+        '            if (dz > 0 && motionDataArray[i] > -dz && motionDataArray[i] < dz) {\n'
+        '                motionDataArray[i] = 0;\n'
+        '            }\n'
+        '        }\n'
+        '        mainApp->postMotionEvent(motionDataArray);\n'
+        '    }'
+    )
+
+    if old_motion_block not in content:
+        print(f"  FAIL: Could not find hasMotion block in {os.path.relpath(filepath, source_dir)}")
+        return False
+
+    content = content.replace(old_motion_block, new_motion_block, 1)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Per-axis deadzone applied")
+    return True
+
+
 def main():
     check_only = False
     args = [a for a in sys.argv[1:] if a != "--check"]
@@ -194,25 +275,37 @@ def main():
         print("Checking if SpaceMouse fix can be applied...")
         ok = True
         if spnav_file:
+            rel = os.path.relpath(spnav_file, source_dir)
             with open(spnav_file) as f:
                 c = f.read()
+            # Fix 1: Event coalescing
             if "hasMotion" in c:
-                print(f"  OK: {os.path.relpath(spnav_file, source_dir)} already patched")
+                print(f"  OK: {rel} event coalescing already patched")
             elif "mainApp->postMotionEvent(motionDataArray)" in c:
-                print(f"  OK: {os.path.relpath(spnav_file, source_dir)} can be patched")
+                print(f"  OK: {rel} event coalescing can be patched")
             else:
-                print(f"  WARN: {os.path.relpath(spnav_file, source_dir)} - pattern not found")
+                print(f"  WARN: {rel} - event coalescing pattern not found")
+                ok = False
+            # Fix 3: Per-axis deadzone
+            if "axisDeadzone" in c:
+                print(f"  OK: {rel} per-axis deadzone already patched")
+            elif "hasMotion" in c or "mainApp->postMotionEvent(motionDataArray)" in c:
+                print(f"  OK: {rel} per-axis deadzone can be patched")
+            else:
+                print(f"  WARN: {rel} - per-axis deadzone requires event coalescing first")
                 ok = False
 
         if nav_file:
+            rel = os.path.relpath(nav_file, source_dir)
             with open(nav_file) as f:
                 c = f.read()
+            # Fix 2: Batched camera updates
             if "enableNotify(false)" in c:
-                print(f"  OK: {os.path.relpath(nav_file, source_dir)} already patched")
+                print(f"  OK: {rel} batched camera updates already patched")
             elif "camera->orientation.setValue(newRotation)" in c and "camera->orientation.getValue().multVec(dir" in c:
-                print(f"  OK: {os.path.relpath(nav_file, source_dir)} can be patched")
+                print(f"  OK: {rel} batched camera updates can be patched")
             else:
-                print(f"  WARN: {os.path.relpath(nav_file, source_dir)} - pattern not found")
+                print(f"  WARN: {rel} - batched camera updates pattern not found")
                 ok = False
 
         sys.exit(0 if ok else 1)
@@ -222,9 +315,10 @@ def main():
 
     ok1 = patch_poll_spacenav(source_dir)
     ok2 = patch_process_motion_event(source_dir)
+    ok3 = patch_per_axis_deadzone(source_dir)
 
     print()
-    if ok1 and ok2:
+    if ok1 and ok2 and ok3:
         print("All patches applied successfully.")
         sys.exit(0)
     else:

@@ -6,7 +6,7 @@ This document covers the technical details of the FreeCAD SpaceMouse patch. For 
 
 ## Root Cause
 
-FreeCAD's SpaceMouse event handling on Linux has two performance bugs (present since 2018):
+FreeCAD's SpaceMouse event handling on Linux has two performance bugs (present since 2018) and lacks per-axis deadzone support:
 
 ### Bug 1: No Event Coalescing
 
@@ -28,58 +28,26 @@ At full deflection: 250 events/sec × 2 redraws = **500 redraws/sec**. The rende
 
 ## What the Patch Changes
 
-The patch is **+13 lines** across 2 files:
+The patch modifies 2 files with 3 fixes:
 
-### Fix 1: Event Coalescing
+### Fix 1: Event Coalescing (`GuiNativeEventLinux.cpp`)
 
 Instead of posting every event individually, the drain loop keeps only the **latest** motion state and posts it **once** per poll cycle. SpaceMouse events represent the current puck deflection (not accumulated deltas), so the latest event always contains the complete state.
 
-```diff
- void Gui::GuiNativeEvent::pollSpacenav()
- {
-     spnav_event ev;
-+    bool hasMotion = false;
-     while (spnav_poll_event(&ev)) {
-         switch (ev.type) {
-             case SPNAV_EVENT_MOTION: {
-                 motionDataArray[0] = -ev.motion.x;
-                 // ... axis mapping unchanged ...
-                 motionDataArray[5] = -ev.motion.ry;
--                mainApp->postMotionEvent(motionDataArray);
-+                hasMotion = true;
-                 break;
-             }
-             // button handling unchanged
-         }
-     }
-+    if (hasMotion) {
-+        mainApp->postMotionEvent(motionDataArray);
-+    }
- }
-```
-
-### Fix 2: Batched Camera Updates
+### Fix 2: Batched Camera Updates (`NavigationStyle.cpp`)
 
 Camera property changes are wrapped in `enableNotify(false)` / `enableNotify(true)` + `touch()`, so orientation and position updates trigger a **single** Coin3D redraw instead of two.
 
-```diff
-+    newRotation.multVec(dir, dir);
-+    SbVec3f finalPosition = newPosition + (dir * translationFactor);
-+
-+    camera->enableNotify(false);
-     camera->orientation.setValue(newRotation);
--    camera->orientation.getValue().multVec(dir, dir);
--    camera->position = newPosition + (dir * translationFactor);
-+    camera->position = finalPosition;
-+    camera->enableNotify(true);
-+    camera->touch();
-```
+### Fix 3: Per-Axis Deadzone Filtering (`GuiNativeEventLinux.cpp`)
+
+After coalescing, each axis value is checked against a per-axis deadzone threshold read from FreeCAD's `user.cfg` (`BaseApp/Spaceball/Motion/{Axis}Deadzone`). Values inside the deadzone are zeroed out before the motion event is posted. This prevents unintended drift on sensitive axes. Deadzone values are configurable via the SpaceMouse Control GUI.
 
 ### Result
 
 - ~60 redraws/sec instead of ~500 (matches display refresh rate)
 - Smooth, responsive rotation, panning, and zooming
 - Instant stop when the puck is released (no drift)
+- Per-axis deadzone for fine-grained axis filtering
 - Zero behavior changes — same rotation/translation math as upstream
 
 ---
@@ -128,7 +96,7 @@ If you already have a FreeCAD source tree (any version):
 python3 freecad-patches/apply-spacemouse-fix.py /path/to/freecad-source
 ```
 
-This script automatically finds the files to patch regardless of directory structure. It searches for the exact code patterns rather than relying on file paths or line numbers.
+This is the same script used by all build methods. It automatically finds the files to patch regardless of directory structure, searching for exact code patterns rather than relying on file paths or line numbers.
 
 To check if the patch can be applied without modifying anything:
 
@@ -171,13 +139,11 @@ makepkg -sfCi      # -C cleans build dir first
 
 ### Patch doesn't apply cleanly
 
-Use the Python patch script instead of the `.patch` file — it finds the correct code patterns automatically:
+The patch script finds code patterns automatically and works across FreeCAD versions. If it still fails, the code may have been significantly refactored. Use `--check` to diagnose:
 
 ```bash
-python3 freecad-patches/apply-spacemouse-fix.py /path/to/freecad-source
+python3 freecad-patches/apply-spacemouse-fix.py --check /path/to/freecad-source
 ```
-
-If this also fails, the code may have been significantly refactored. The changes are simple enough to apply by hand — see the diffs above.
 
 ---
 

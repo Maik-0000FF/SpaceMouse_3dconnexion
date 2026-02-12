@@ -5,6 +5,7 @@
 # Fixes jerky SpaceMouse input on Linux by:
 #   1. Coalescing spnav events (only latest motion per poll cycle)
 #   2. Batching Coin3D camera updates (single redraw per event)
+#   3. Per-axis deadzone filtering (reads from user.cfg)
 #
 # Usage:
 #   ./freecad-build-patched.sh                    # Build using existing source
@@ -20,7 +21,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PATCH_FILE="$SCRIPT_DIR/../freecad-patches/spacemouse-smooth-navigation.patch"
+PATCH_SCRIPT="$SCRIPT_DIR/../freecad-patches/apply-spacemouse-fix.py"
 BUILD_BASE="$SCRIPT_DIR/../freecad-build"
 INSTALL_PREFIX="$HOME/.local"
 
@@ -63,13 +64,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-# ── Check patch file ─────────────────────────────────────────────
+# ── Check patch script ────────────────────────────────────────────
 
-if [[ ! -f "$PATCH_FILE" ]]; then
-    fail "Patch file not found: $PATCH_FILE"
+if [[ ! -f "$PATCH_SCRIPT" ]]; then
+    fail "Patch script not found: $PATCH_SCRIPT"
 fi
 
-ok "Patch file: $PATCH_FILE"
+ok "Patch script: $PATCH_SCRIPT"
 
 # ── Clone source if requested ────────────────────────────────────
 
@@ -100,28 +101,24 @@ ok "FreeCAD source: $BUILD_BASE"
 
 # ── Apply patch ──────────────────────────────────────────────────
 
-cd "$BUILD_BASE"
-
-# Check if already applied
-if git apply --check --reverse "$PATCH_FILE" 2>/dev/null; then
-    info "Patch already applied, skipping."
+info "Applying SpaceMouse patch..."
+if python3 "$PATCH_SCRIPT" "$BUILD_BASE"; then
+    ok "Patch applied successfully"
 else
-    # Reset patched files to clean state first
-    git checkout -- \
-        src/Gui/3Dconnexion/GuiNativeEventLinux.cpp \
-        src/Gui/Navigation/NavigationStyle.cpp \
-        2>/dev/null || true
+    fail "Patch failed to apply. See errors above."
+fi
 
-    info "Applying SpaceMouse smooth navigation patch..."
-    if git apply "$PATCH_FILE"; then
-        ok "Patch applied successfully"
-    else
-        fail "Patch failed to apply. FreeCAD version may be incompatible.
-    The patch targets these files:
-      src/Gui/3Dconnexion/GuiNativeEventLinux.cpp  (unchanged since 2018)
-      src/Gui/Navigation/NavigationStyle.cpp       (processMotionEvent)
-    Try applying manually: cd $BUILD_BASE && git apply -v $PATCH_FILE"
-    fi
+# ── Fix HDF5 2.0 compatibility ──────────────────────────────────
+# Arch HDF5 2.0: pkg-config module is "hdf5", FreeCAD cmake expects "hdf5-serial"
+# cmake also strips /usr/include from INCLUDE_DIRS (system dir), breaking find_file
+
+SMESH_CMAKE="$BUILD_BASE/cMake/FreeCAD_Helpers/SetupSalomeSMESH.cmake"
+if [[ -f "$SMESH_CMAKE" ]] && grep -q 'hdf5-serial' "$SMESH_CMAKE"; then
+    info "Fixing HDF5 2.0 cmake compatibility..."
+    sed -i -e 's/set(HDF5_VARIANT "hdf5-serial")/set(HDF5_VARIANT "hdf5")/' \
+           -e 's/find_file(Hdf5dotH hdf5.h PATHS ${HDF5_INCLUDE_DIRS} NO_DEFAULT_PATH)/find_file(Hdf5dotH hdf5.h)/' \
+        "$SMESH_CMAKE"
+    ok "HDF5 cmake fix applied"
 fi
 
 # ── Configure (cmake) ───────────────────────────────────────────
@@ -136,8 +133,6 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
         -DBUILD_QT5=OFF \
-        -DBUILD_FEM=OFF \
-        -DBUILD_SHIP=OFF \
         2>&1 | tail -5
     ok "CMake configuration done"
 else

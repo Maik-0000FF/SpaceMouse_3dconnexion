@@ -20,6 +20,7 @@ import shutil
 import socket
 import subprocess
 import signal
+import tempfile
 import atexit
 import ctypes
 import xml.etree.ElementTree as ET
@@ -28,12 +29,12 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QLabel, QComboBox, QSlider,
-    QPushButton, QLineEdit, QProgressBar, QFormLayout,
+    QPushButton, QLineEdit, QFormLayout,
     QMessageBox, QMenu, QInputDialog, QSystemTrayIcon,
     QScrollArea, QFrame,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPropertyAnimation, Property, QEasingCurve, QSize
-from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont
+from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QPen
 
 # ── Constants ──────────────────────────────────────────────────────────
 
@@ -170,10 +171,8 @@ QComboBox::drop-down {
 }
 QComboBox::down-arrow {
     image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #a6adc8;
-    margin-right: 8px;
+    width: 0;
+    height: 0;
 }
 QComboBox QAbstractItemView {
     background-color: #313244;
@@ -358,8 +357,7 @@ class SpnavReader(QThread):
             if not ready:
                 continue
 
-            # Emit every motion event individually for smooth live preview
-            while self._lib.spnav_poll_event(ctypes.byref(ev)):
+            if self._lib.spnav_poll_event(ctypes.byref(ev)):
                 if ev.type == 1:  # SPNAV_EVENT_MOTION
                     self.axes_updated.emit([
                         ev.motion.x, ev.motion.y, ev.motion.z,
@@ -599,6 +597,8 @@ class FreeCADConfig:
             "tilt_enable": True, "roll_enable": True, "spin_enable": True,
             "pan_lr_reverse": False, "pan_ud_reverse": False, "zoom_reverse": False,
             "tilt_reverse": False, "roll_reverse": False, "spin_reverse": False,
+            "panlr_deadzone": 0, "panud_deadzone": 0, "zoom_deadzone": 0,
+            "tilt_deadzone": 0, "roll_deadzone": 0, "spin_deadzone": 0,
             "btn0_command": "Std_ViewFitAll",
             "btn1_command": "Std_ViewHome",
             "nav_style": "Gui::BlenderNavigationStyle",
@@ -642,6 +642,7 @@ class FreeCADConfig:
                 key_rev = axis.lower() + "_reverse"
                 result[key_en] = self._get_bool(motion, f"{axis}Enable", True)
                 result[key_rev] = self._get_bool(motion, f"{axis}Reverse", False)
+                result[f"{axis.lower()}_deadzone"] = self._get_int(motion, f"{axis}Deadzone", 0)
 
         # Buttons (BaseApp/Spaceball/Buttons/0, /1)
         buttons = self._find_group(spaceball, "Buttons")
@@ -695,6 +696,7 @@ class FreeCADConfig:
             key_rev = axis.lower() + "_reverse"
             self._set_bool(motion, f"{axis}Enable", settings.get(key_en, True))
             self._set_bool(motion, f"{axis}Reverse", settings.get(key_rev, False))
+            self._set_int(motion, f"{axis}Deadzone", settings.get(f"{axis.lower()}_deadzone", 0))
 
         # Buttons
         buttons = self._ensure_group(spaceball, "Buttons")
@@ -929,6 +931,169 @@ def make_toggle(label_text, checked=False):
     """Create an Apple-style toggle switch with label."""
     return ToggleSwitch(label_text, checked)
 
+# ── Reusable Axes Card ────────────────────────────────────────────────
+
+DISABLED_SLIDER_STYLE = """
+QSlider::groove:horizontal { background: #313244; height: 6px; border-radius: 3px; }
+QSlider::handle:horizontal { background: #45475a; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }
+QSlider::sub-page:horizontal { background: #45475a; border-radius: 3px; }
+"""
+
+class AxesCard(QWidget):
+    """Reusable 6-axis table with configurable columns per page.
+
+    Columns (all optional, configured via constructor booleans):
+      - action: QComboBox (Desktop: axis action dropdown)
+      - enable: ToggleSwitch (FreeCAD: per-axis enable)
+      - invert: ToggleSwitch (all pages: per-axis invert)
+      - deadzone: QSlider 0-100 (Desktop: active, FreeCAD/Blender: greyed out)
+    Extra toggles: appended below the axis grid.
+    """
+    changed = Signal()
+
+    def __init__(self, axis_labels, *,
+                 show_action=False, action_items=None,
+                 show_enable=False,
+                 show_invert=True,
+                 show_deadzone=True, deadzone_enabled=True,
+                 deadzone_max=300,
+                 extra_toggles=None,
+                 parent=None):
+        super().__init__(parent)
+        self._building = True
+        self._axis_labels = axis_labels
+        self._show_action = show_action
+        self._show_enable = show_enable
+        self._show_invert = show_invert
+        self._show_deadzone = show_deadzone
+        self._deadzone_enabled = deadzone_enabled
+        self._deadzone_max = deadzone_max
+
+        self.action_combos = []
+        self.enable_toggles = []
+        self.invert_toggles = []
+        self.deadzone_sliders = []
+        self.deadzone_labels = []
+        self.extra_toggle_widgets = []
+
+        card, cl = make_card("AXES")
+
+        # Header row
+        header = QHBoxLayout()
+        header.setSpacing(6)
+        axis_lbl = QLabel("Axis")
+        axis_lbl.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+        axis_lbl.setFixedWidth(130)
+        header.addWidget(axis_lbl)
+        if show_action:
+            h = QLabel("Action")
+            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setMinimumWidth(160)
+            header.addWidget(h, 1)
+        if show_enable:
+            h = QLabel("Enable")
+            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setFixedWidth(60)
+            header.addWidget(h)
+        if show_invert:
+            h = QLabel("Invert")
+            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setFixedWidth(60)
+            header.addWidget(h)
+        if show_deadzone:
+            h = QLabel("Deadzone")
+            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setMinimumWidth(100)
+            header.addWidget(h, 1)
+        cl.addLayout(header)
+
+        # Axis rows
+        for i, label in enumerate(axis_labels):
+            row = QHBoxLayout()
+            row.setSpacing(6)
+
+            name_lbl = QLabel(label)
+            name_lbl.setFixedWidth(130)
+            row.addWidget(name_lbl)
+
+            if show_action:
+                combo = QComboBox()
+                combo.addItems(action_items or [])
+                combo.currentIndexChanged.connect(self._emit_changed)
+                combo.setMinimumWidth(160)
+                row.addWidget(combo, 1)
+                self.action_combos.append(combo)
+
+            if show_enable:
+                en = ToggleSwitch("", False)
+                en.stateChanged.connect(self._emit_changed)
+                en.setFixedWidth(60)
+                row.addWidget(en)
+                self.enable_toggles.append(en)
+
+            if show_invert:
+                inv = ToggleSwitch("", False)
+                inv.stateChanged.connect(self._emit_changed)
+                inv.setFixedWidth(60)
+                row.addWidget(inv)
+                self.invert_toggles.append(inv)
+
+            if show_deadzone:
+                dz_container = QWidget()
+                dz_hl = QHBoxLayout(dz_container)
+                dz_hl.setContentsMargins(0, 0, 0, 0)
+                dz_hl.setSpacing(4)
+                dz_slider = QSlider(Qt.Orientation.Horizontal)
+                dz_slider.setRange(0, deadzone_max)
+                dz_slider.setValue(0)
+                dz_slider.setMinimumWidth(80)
+                dz_lbl = QLabel("0")
+                dz_lbl.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 28px;")
+                dz_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                dz_slider.valueChanged.connect(lambda v, l=dz_lbl: l.setText(str(v)))
+                dz_slider.valueChanged.connect(self._emit_changed)
+                if not deadzone_enabled:
+                    dz_slider.setEnabled(False)
+                    dz_slider.setStyleSheet(DISABLED_SLIDER_STYLE)
+                    dz_lbl.setStyleSheet("color: #45475a; font-weight: bold; min-width: 28px;")
+                dz_hl.addWidget(dz_slider, 1)
+                dz_hl.addWidget(dz_lbl)
+                row.addWidget(dz_container, 1)
+                self.deadzone_sliders.append(dz_slider)
+                self.deadzone_labels.append(dz_lbl)
+
+            cl.addLayout(row)
+
+        # Extra toggles row
+        if extra_toggles:
+            spacer = QWidget()
+            spacer.setFixedHeight(4)
+            cl.addWidget(spacer)
+            # Lay them out in rows of 2
+            for row_start in range(0, len(extra_toggles), 2):
+                row_hl = QHBoxLayout()
+                row_hl.setSpacing(16)
+                for j in range(row_start, min(row_start + 2, len(extra_toggles))):
+                    label, checked = extra_toggles[j][:2]
+                    toggle = make_toggle(label, checked)
+                    toggle.stateChanged.connect(self._emit_changed)
+                    row_hl.addWidget(toggle)
+                    self.extra_toggle_widgets.append(toggle)
+                row_hl.addStretch()
+                cl.addLayout(row_hl)
+
+        self._card = card
+        self._card_layout = cl
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(card)
+        self._building = False
+
+    def _emit_changed(self):
+        if not self._building:
+            self.changed.emit()
+
+
 # ── Desktop Page ──────────────────────────────────────────────────────
 
 class DesktopPage(QWidget):
@@ -955,7 +1120,7 @@ class DesktopPage(QWidget):
         profiles = self._config.get("profiles", {})
         profile_names = list(profiles.keys())
 
-        # Profile selector
+        # ── Card 1: PROFILE ──
         card, cl = make_card("PROFILE")
         hl = QHBoxLayout()
         self.profile_combo = QComboBox()
@@ -978,7 +1143,6 @@ class DesktopPage(QWidget):
 
         cl.addLayout(hl)
 
-        # WM class (hidden for default)
         self.wm_row = QWidget()
         wm_hl = QHBoxLayout(self.wm_row)
         wm_hl.setContentsMargins(0, 0, 0, 0)
@@ -990,8 +1154,8 @@ class DesktopPage(QWidget):
         cl.addWidget(self.wm_row)
         layout.addWidget(card)
 
-        # Speed / Sensitivity
-        card, cl = make_card("SPEED")
+        # ── Card 2: SENSITIVITY & SPEED ──
+        card, cl = make_card("SENSITIVITY & SPEED")
         fl = QFormLayout()
         fl.setSpacing(10)
 
@@ -1013,35 +1177,33 @@ class DesktopPage(QWidget):
 
         self.deadzone_w, self.deadzone_s, _ = make_slider(0, 100, 15, 0)
         self.deadzone_s.valueChanged.connect(self._emit_changed)
-        fl.addRow("Deadzone:", self.deadzone_w)
+        fl.addRow("Global Deadzone:", self.deadzone_w)
 
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # Axes
-        card, cl = make_card("AXES")
-        fl = QFormLayout()
-        fl.setSpacing(8)
-        self.axis_combos = []
-        for i, name in enumerate(AXIS_NAMES):
-            combo = QComboBox()
-            combo.addItems(AXIS_ACTION_LABELS)
-            combo.currentIndexChanged.connect(self._emit_changed)
-            fl.addRow(f"{name}:", combo)
-            self.axis_combos.append(combo)
+        # ── Card 3: AXES (AxesCard) ──
+        desktop_axis_labels = [
+            "TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
+            "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)",
+        ]
+        self.axes_card = AxesCard(
+            desktop_axis_labels,
+            show_action=True,
+            action_items=AXIS_ACTION_LABELS,
+            show_invert=True,
+            show_deadzone=True,
+            deadzone_enabled=True,
+            deadzone_max=100,
+            extra_toggles=[
+                ("Invert Horizontal Scroll", False),
+                ("Invert Vertical Scroll", False),
+            ],
+        )
+        self.axes_card.changed.connect(self._emit_changed)
+        layout.addWidget(self.axes_card)
 
-        self.invert_x = make_toggle("Invert Horizontal Scroll")
-        self.invert_x.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.invert_x)
-
-        self.invert_y = make_toggle("Invert Vertical Scroll")
-        self.invert_y.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.invert_y)
-
-        cl.addLayout(fl)
-        layout.addWidget(card)
-
-        # Buttons
+        # ── Card 4: BUTTONS ──
         card, cl = make_card("BUTTONS")
         fl = QFormLayout()
         fl.setSpacing(8)
@@ -1055,7 +1217,7 @@ class DesktopPage(QWidget):
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # Desktop switching
+        # ── Card 5: DESKTOP SWITCHING ──
         card, cl = make_card("DESKTOP SWITCHING")
         fl = QFormLayout()
         fl.setSpacing(8)
@@ -1077,7 +1239,6 @@ class DesktopPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
-        # Load first profile
         if profile_names:
             self._load_profile(profile_names[0])
 
@@ -1111,14 +1272,26 @@ class DesktopPage(QWidget):
         self.scroll_exp_s.setValue(int(data.get("scroll_exponent", 2.0) * 10))
         self.deadzone_s.setValue(data.get("deadzone", 15))
 
+        # Axes card
         amap = data.get("axis_mapping", {})
         for i, key in enumerate(AXIS_KEYS):
             action = amap.get(key, "none")
             idx = AXIS_ACTIONS.index(action) if action in AXIS_ACTIONS else 0
-            self.axis_combos[i].setCurrentIndex(idx)
+            self.axes_card.action_combos[i].setCurrentIndex(idx)
 
-        self.invert_x.setChecked(data.get("invert_scroll_x", False))
-        self.invert_y.setChecked(data.get("invert_scroll_y", False))
+        # Per-axis deadzone
+        adz = data.get("axis_deadzone", {})
+        for i, key in enumerate(AXIS_KEYS):
+            self.axes_card.deadzone_sliders[i].setValue(adz.get(key, 0))
+
+        # Invert toggles (axes card has no per-axis invert in config yet,
+        # but the toggle is there for future use — default all off)
+        for toggle in self.axes_card.invert_toggles:
+            toggle.setChecked(False)
+
+        # Extra toggles: [0] = Invert H Scroll, [1] = Invert V Scroll
+        self.axes_card.extra_toggle_widgets[0].setChecked(data.get("invert_scroll_x", False))
+        self.axes_card.extra_toggle_widgets[1].setChecked(data.get("invert_scroll_y", False))
 
         bmap = data.get("button_mapping", {})
         for i in range(2):
@@ -1176,14 +1349,18 @@ class DesktopPage(QWidget):
 
         data["axis_mapping"] = {}
         for i, key in enumerate(AXIS_KEYS):
-            data["axis_mapping"][key] = AXIS_ACTIONS[self.axis_combos[i].currentIndex()]
+            data["axis_mapping"][key] = AXIS_ACTIONS[self.axes_card.action_combos[i].currentIndex()]
+
+        data["axis_deadzone"] = {}
+        for i, key in enumerate(AXIS_KEYS):
+            data["axis_deadzone"][key] = self.axes_card.deadzone_sliders[i].value()
 
         data["button_mapping"] = {}
         for i in range(2):
             data["button_mapping"][str(i)] = BTN_ACTIONS[self.btn_combos[i].currentIndex()]
 
-        data["invert_scroll_x"] = self.invert_x.isChecked()
-        data["invert_scroll_y"] = self.invert_y.isChecked()
+        data["invert_scroll_x"] = self.axes_card.extra_toggle_widgets[0].isChecked()
+        data["invert_scroll_y"] = self.axes_card.extra_toggle_widgets[1].isChecked()
         data["desktop_switch_threshold"] = self.dswitch_thresh_s.value()
         data["desktop_switch_cooldown_ms"] = self.dswitch_cool_s.value()
         return data
@@ -1221,6 +1398,8 @@ class FreeCADPage(QWidget):
     """FreeCAD SpaceMouse settings editor."""
     changed = Signal()
 
+    _FC_AXIS_KEYS = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
+
     def __init__(self):
         super().__init__()
         self._building = True
@@ -1239,28 +1418,29 @@ class FreeCADPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
-        # Warning if FreeCAD not found
+        # ── Card 1: FREECAD (app-specific warnings) ──
+        card, cl = make_card("FREECAD")
         if not self._fc.is_available():
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
                 "color: #f9e2af; background-color: #3a3636; "
                 "border-radius: 6px; padding: 8px;")
             warn.setWordWrap(True)
-            layout.addWidget(warn)
+            cl.addWidget(warn)
 
-        # Running warning
         self.running_warn = QLabel(
-            "FreeCAD is running — it overwrites user.cfg on exit.\n"
+            "FreeCAD is running \u2014 it overwrites user.cfg on exit.\n"
             "Close FreeCAD before applying changes.")
         self.running_warn.setStyleSheet(
             "color: #f38ba8; background-color: #3a2a2a; "
             "border-radius: 6px; padding: 8px;")
         self.running_warn.setWordWrap(True)
         self.running_warn.setVisible(False)
-        layout.addWidget(self.running_warn)
+        cl.addWidget(self.running_warn)
+        layout.addWidget(card)
 
-        # Sensitivity
-        card, cl = make_card("SENSITIVITY")
+        # ── Card 2: SENSITIVITY & SPEED ──
+        card, cl = make_card("SENSITIVITY & SPEED")
         fl = QFormLayout()
         fl.setSpacing(10)
         self.sensitivity_w, self.sensitivity_s, _ = make_slider(-50, 50, -15, 0)
@@ -1269,43 +1449,28 @@ class FreeCADPage(QWidget):
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # Axes enable/disable
-        card, cl = make_card("AXES")
-        fl = QFormLayout()
-        fl.setSpacing(8)
+        # ── Card 3: AXES (AxesCard) ──
+        fc_axis_labels = [
+            "TX \u2014 PanLR", "TY \u2014 PanUD", "TZ \u2014 Zoom",
+            "RX \u2014 Tilt", "RY \u2014 Spin", "RZ \u2014 Roll",
+        ]
+        self.axes_card = AxesCard(
+            fc_axis_labels,
+            show_action=False,
+            show_enable=True,
+            show_invert=True,
+            show_deadzone=True,
+            deadzone_enabled=True,
+            deadzone_max=100,
+            extra_toggles=[
+                ("Flip Y/Z", True),
+                ("Dominant Mode", False),
+            ],
+        )
+        self.axes_card.changed.connect(self._emit_changed)
+        layout.addWidget(self.axes_card)
 
-        axis_names = ["PanLR (Left/Right)", "PanUD (Up/Down)", "Zoom",
-                      "Tilt (Pitch)", "Roll", "Spin (Yaw)"]
-        self._fc_axis_keys = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
-
-        self.fc_enable_toggles = []
-        self.fc_reverse_toggles = []
-        for i, name in enumerate(axis_names):
-            row = QHBoxLayout()
-            en = make_toggle("Enable")
-            en.stateChanged.connect(self._emit_changed)
-            rev = make_toggle("Invert")
-            rev.stateChanged.connect(self._emit_changed)
-            row.addWidget(QLabel(name))
-            row.addStretch()
-            row.addWidget(en)
-            row.addWidget(rev)
-            fl.addRow(row)
-            self.fc_enable_toggles.append(en)
-            self.fc_reverse_toggles.append(rev)
-
-        self.fc_flip_yz = make_toggle("Flip Y/Z")
-        self.fc_flip_yz.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.fc_flip_yz)
-
-        self.fc_dominant = make_toggle("Dominant Mode (single axis at a time)")
-        self.fc_dominant.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.fc_dominant)
-
-        cl.addLayout(fl)
-        layout.addWidget(card)
-
-        # Buttons
+        # ── Card 4: BUTTONS ──
         card, cl = make_card("BUTTONS")
         fl = QFormLayout()
         fl.setSpacing(8)
@@ -1319,7 +1484,7 @@ class FreeCADPage(QWidget):
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # Navigation
+        # ── Card 5: NAVIGATION ──
         card, cl = make_card("NAVIGATION")
         fl = QFormLayout()
         fl.setSpacing(8)
@@ -1344,7 +1509,6 @@ class FreeCADPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
-        # Timer to check if FreeCAD is running
         self._running_timer = QTimer()
         self._running_timer.timeout.connect(self._check_running)
         self._running_timer.start(5000)
@@ -1359,20 +1523,21 @@ class FreeCADPage(QWidget):
     def _load_settings(self):
         settings = self._fc.read()
         self.sensitivity_s.setValue(settings["global_sensitivity"])
-        self.fc_flip_yz.setChecked(settings["flip_yz"])
-        self.fc_dominant.setChecked(settings["dominant"])
 
-        for i, key in enumerate(self._fc_axis_keys):
-            self.fc_enable_toggles[i].setChecked(settings.get(f"{key}_enable", True))
-            self.fc_reverse_toggles[i].setChecked(settings.get(f"{key}_reverse", False))
+        for i, key in enumerate(self._FC_AXIS_KEYS):
+            self.axes_card.enable_toggles[i].setChecked(settings.get(f"{key}_enable", True))
+            self.axes_card.invert_toggles[i].setChecked(settings.get(f"{key}_reverse", False))
+            self.axes_card.deadzone_sliders[i].setValue(settings.get(f"{key}_deadzone", 0))
 
-        # Buttons
+        # Extra toggles: [0] = Flip Y/Z, [1] = Dominant
+        self.axes_card.extra_toggle_widgets[0].setChecked(settings.get("flip_yz", True))
+        self.axes_card.extra_toggle_widgets[1].setChecked(settings.get("dominant", False))
+
         for i, combo in enumerate(self.fc_btn_combos):
             cmd = settings.get(f"btn{i}_command", "")
             idx = FREECAD_BTN_COMMANDS.index(cmd) if cmd in FREECAD_BTN_COMMANDS else 0
             combo.setCurrentIndex(idx)
 
-        # Navigation
         nav = settings.get("nav_style", "")
         idx = FREECAD_NAV_STYLES.index(nav) if nav in FREECAD_NAV_STYLES else 1
         self.fc_nav_combo.setCurrentIndex(idx)
@@ -1386,12 +1551,13 @@ class FreeCADPage(QWidget):
         """Return dict of FreeCAD settings."""
         s = {
             "global_sensitivity": self.sensitivity_s.value(),
-            "flip_yz": self.fc_flip_yz.isChecked(),
-            "dominant": self.fc_dominant.isChecked(),
+            "flip_yz": self.axes_card.extra_toggle_widgets[0].isChecked(),
+            "dominant": self.axes_card.extra_toggle_widgets[1].isChecked(),
         }
-        for i, key in enumerate(self._fc_axis_keys):
-            s[f"{key}_enable"] = self.fc_enable_toggles[i].isChecked()
-            s[f"{key}_reverse"] = self.fc_reverse_toggles[i].isChecked()
+        for i, key in enumerate(self._FC_AXIS_KEYS):
+            s[f"{key}_enable"] = self.axes_card.enable_toggles[i].isChecked()
+            s[f"{key}_reverse"] = self.axes_card.invert_toggles[i].isChecked()
+            s[f"{key}_deadzone"] = self.axes_card.deadzone_sliders[i].value()
 
         for i in range(2):
             idx = self.fc_btn_combos[i].currentIndex()
@@ -1432,8 +1598,8 @@ class BlenderPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
-        # Startup script status
-        card, cl = make_card("SYNC SCRIPT")
+        # ── Card 1: BLENDER SYNC (app-specific) ──
+        card, cl = make_card("BLENDER SYNC")
         self.script_status = QLabel()
         self.script_status.setWordWrap(True)
         cl.addWidget(self.script_status)
@@ -1444,8 +1610,8 @@ class BlenderPage(QWidget):
         self._update_script_status()
         layout.addWidget(card)
 
-        # Sensitivity
-        card, cl = make_card("SENSITIVITY")
+        # ── Card 2: SENSITIVITY & SPEED ──
+        card, cl = make_card("SENSITIVITY & SPEED")
         fl = QFormLayout()
         fl.setSpacing(10)
 
@@ -1459,57 +1625,45 @@ class BlenderPage(QWidget):
 
         self.bl_deadzone_w, self.bl_deadzone_s, _ = make_slider(0.0, 1.0, 0.1, 2)
         self.bl_deadzone_s.valueChanged.connect(self._emit_changed)
-        fl.addRow("Deadzone:", self.bl_deadzone_w)
+        fl.addRow("Global Deadzone:", self.bl_deadzone_w)
 
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # Behavior
-        card, cl = make_card("BEHAVIOR")
-        fl = QFormLayout()
-        fl.setSpacing(8)
+        # ── Card 3: AXES (AxesCard) ──
+        bl_axis_labels = [
+            "TX \u2014 Pan X", "TY \u2014 Pan Y", "TZ \u2014 Pan Z",
+            "RX \u2014 Rot X", "RY \u2014 Rot Y", "RZ \u2014 Rot Z",
+        ]
+        self.axes_card = AxesCard(
+            bl_axis_labels,
+            show_action=False,
+            show_enable=True,
+            show_invert=True,
+            show_deadzone=False,
+            extra_toggles=[
+                ("Lock Horizon", False),
+                ("Swap Y/Z Panning", False),
+                ("Invert Zoom", False),
+            ],
+        )
+        self.axes_card.changed.connect(self._emit_changed)
+        layout.addWidget(self.axes_card)
 
-        self.bl_lock_horizon = make_toggle("Lock Horizon")
-        self.bl_lock_horizon.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.bl_lock_horizon)
-
-        lock_warn = QLabel("Lock Horizon blocks RX/pitch axis — keep OFF for full 6DOF")
+        # Lock Horizon warning (below axes card)
+        lock_warn = QLabel(
+            "Lock Horizon blocks the RX/pitch axis \u2014 keep OFF for full 6DOF")
         lock_warn.setStyleSheet(
-            "color: #f9e2af; font-size: 11px; background: transparent;")
+            "color: #f9e2af; font-size: 11px; background: transparent; padding: 0 12px;")
         lock_warn.setWordWrap(True)
-        fl.addRow("", lock_warn)
+        layout.addWidget(lock_warn)
 
-        self.bl_swap_yz = make_toggle("Swap Y/Z Panning")
-        self.bl_swap_yz.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.bl_swap_yz)
-
-        self.bl_zoom_invert = make_toggle("Invert Zoom")
-        self.bl_zoom_invert.stateChanged.connect(self._emit_changed)
-        fl.addRow("", self.bl_zoom_invert)
-
-        cl.addLayout(fl)
-        layout.addWidget(card)
-
-        # Invert axes
-        card, cl = make_card("INVERT AXES")
-        fl = QFormLayout()
-        fl.setSpacing(8)
-
-        self.bl_rot_inverts = []
-        for axis in ["X", "Y", "Z"]:
-            cb = make_toggle(f"Rotation {axis}")
-            cb.stateChanged.connect(self._emit_changed)
-            fl.addRow("", cb)
-            self.bl_rot_inverts.append(cb)
-
-        self.bl_pan_inverts = []
-        for axis in ["X", "Y", "Z"]:
-            cb = make_toggle(f"Pan {axis}")
-            cb.stateChanged.connect(self._emit_changed)
-            fl.addRow("", cb)
-            self.bl_pan_inverts.append(cb)
-
-        cl.addLayout(fl)
+        # ── Card 4: BUTTONS ──
+        card, cl = make_card("BUTTONS")
+        info = QLabel("Blender buttons are configured via Blender's Keymap Editor")
+        info.setStyleSheet("color: #a6adc8; font-style: italic; background: transparent;")
+        info.setWordWrap(True)
+        cl.addWidget(info)
         layout.addWidget(card)
 
         layout.addStretch()
@@ -1549,17 +1703,28 @@ class BlenderPage(QWidget):
         self.bl_sensitivity_s.setValue(int(s["ndof_sensitivity"] * 100))
         self.bl_orbit_s.setValue(int(s["ndof_orbit_sensitivity"] * 100))
         self.bl_deadzone_s.setValue(int(s["ndof_deadzone"] * 100))
-        self.bl_lock_horizon.setChecked(s["ndof_lock_horizon"])
-        self.bl_swap_yz.setChecked(s["ndof_pan_yz_swap_axis"])
-        self.bl_zoom_invert.setChecked(s["ndof_zoom_invert"])
 
-        rot_keys = ["ndof_rotx_invert_axis", "ndof_roty_invert_axis", "ndof_rotz_invert_axis"]
-        for i, key in enumerate(rot_keys):
-            self.bl_rot_inverts[i].setChecked(s.get(key, False))
+        # Enable toggles: all enabled by default (Blender has no per-axis enable,
+        # stored in our JSON for UI consistency)
+        enable_keys = [
+            "ndof_panx_enable", "ndof_pany_enable", "ndof_panz_enable",
+            "ndof_rotx_enable", "ndof_roty_enable", "ndof_rotz_enable",
+        ]
+        for i, key in enumerate(enable_keys):
+            self.axes_card.enable_toggles[i].setChecked(s.get(key, True))
 
+        # Invert toggles: pan[0-2] and rot[3-5]
         pan_keys = ["ndof_panx_invert_axis", "ndof_pany_invert_axis", "ndof_panz_invert_axis"]
+        rot_keys = ["ndof_rotx_invert_axis", "ndof_roty_invert_axis", "ndof_rotz_invert_axis"]
         for i, key in enumerate(pan_keys):
-            self.bl_pan_inverts[i].setChecked(s.get(key, False))
+            self.axes_card.invert_toggles[i].setChecked(s.get(key, False))
+        for i, key in enumerate(rot_keys):
+            self.axes_card.invert_toggles[i + 3].setChecked(s.get(key, False))
+
+        # Extra toggles: [0] = Lock Horizon, [1] = Swap Y/Z, [2] = Invert Zoom
+        self.axes_card.extra_toggle_widgets[0].setChecked(s.get("ndof_lock_horizon", False))
+        self.axes_card.extra_toggle_widgets[1].setChecked(s.get("ndof_pan_yz_swap_axis", False))
+        self.axes_card.extra_toggle_widgets[2].setChecked(s.get("ndof_zoom_invert", False))
 
     def get_settings(self):
         """Return dict of Blender NDOF settings."""
@@ -1567,28 +1732,96 @@ class BlenderPage(QWidget):
             "ndof_sensitivity": self.bl_sensitivity_s.value() / 100.0,
             "ndof_orbit_sensitivity": self.bl_orbit_s.value() / 100.0,
             "ndof_deadzone": self.bl_deadzone_s.value() / 100.0,
-            "ndof_lock_horizon": self.bl_lock_horizon.isChecked(),
-            "ndof_pan_yz_swap_axis": self.bl_swap_yz.isChecked(),
-            "ndof_zoom_invert": self.bl_zoom_invert.isChecked(),
+            "ndof_lock_horizon": self.axes_card.extra_toggle_widgets[0].isChecked(),
+            "ndof_pan_yz_swap_axis": self.axes_card.extra_toggle_widgets[1].isChecked(),
+            "ndof_zoom_invert": self.axes_card.extra_toggle_widgets[2].isChecked(),
         }
         for i, axis in enumerate(["x", "y", "z"]):
-            s[f"ndof_rot{axis}_invert_axis"] = self.bl_rot_inverts[i].isChecked()
-            s[f"ndof_pan{axis}_invert_axis"] = self.bl_pan_inverts[i].isChecked()
+            s[f"ndof_pan{axis}_invert_axis"] = self.axes_card.invert_toggles[i].isChecked()
+            s[f"ndof_rot{axis}_invert_axis"] = self.axes_card.invert_toggles[i + 3].isChecked()
+            s[f"ndof_pan{axis}_enable"] = self.axes_card.enable_toggles[i].isChecked()
+            s[f"ndof_rot{axis}_enable"] = self.axes_card.enable_toggles[i + 3].isChecked()
         return s
 
     def apply_settings(self):
         """Write settings to blender-ndof.json."""
         self._bc.write(self.get_settings())
 
+# ── Axis Bar (custom painted) ─────────────────────────────────────────
+
+class AxisBar(QWidget):
+    """Custom axis bar with deadzone visualization.
+
+    Shows the current axis value as a bar from center, with the deadzone
+    region highlighted. Values inside the deadzone are dimmed, outside are
+    bright blue.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._value = 0
+        self._deadzone = 0
+        self.setFixedHeight(12)
+        self.setMinimumWidth(40)
+
+    def setValue(self, val):
+        self._value = max(-350, min(350, val))
+        self.update()
+
+    def setDeadzone(self, dz):
+        self._deadzone = max(0, min(350, dz))
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        center = w / 2.0
+
+        # Background
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0x31, 0x32, 0x44))
+        p.drawRoundedRect(0, 0, w, h, 3, 3)
+
+        # Deadzone region (centered, visible red-tinted area)
+        if self._deadzone > 0:
+            dz_half = (self._deadzone / 350.0) * (w / 2.0)
+            p.setBrush(QColor(0xf3, 0x8b, 0xa8, 50))
+            p.drawRoundedRect(int(center - dz_half), 0, int(dz_half * 2), h, 3, 3)
+            # Deadzone edge lines
+            pen = QPen(QColor(0xf3, 0x8b, 0xa8, 120))
+            pen.setWidthF(1.0)
+            p.setPen(pen)
+            p.drawLine(int(center - dz_half), 0, int(center - dz_half), h)
+            p.drawLine(int(center + dz_half), 0, int(center + dz_half), h)
+            p.setPen(Qt.PenStyle.NoPen)
+
+        # Value bar (from center)
+        if self._value != 0:
+            inside_dz = abs(self._value) <= self._deadzone
+            if inside_dz:
+                color = QColor(0xf3, 0x8b, 0xa8, 100)  # muted red inside deadzone
+            else:
+                color = QColor(0x52, 0x94, 0xe2)        # bright blue outside
+            p.setBrush(color)
+            val_x = center + (self._value / 350.0) * (w / 2.0)
+            if val_x > center:
+                p.drawRoundedRect(int(center), 0, int(val_x - center), h, 2, 2)
+            else:
+                p.drawRoundedRect(int(val_x), 0, int(center - val_x), h, 2, 2)
+
+        p.end()
+
+
 # ── Live Preview Bar ──────────────────────────────────────────────────
 
 class LivePreviewBar(QWidget):
-    """Compact horizontal live preview bar for the bottom of the window."""
+    """Compact horizontal live preview bar with deadzone visualization."""
 
     def __init__(self):
         super().__init__()
         self.setObjectName("live-bar")
-        self.setFixedHeight(48)
+        self.setFixedHeight(52)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 4, 12, 4)
@@ -1604,12 +1837,7 @@ class LivePreviewBar(QWidget):
             nl = QLabel(name)
             nl.setStyleSheet("color: #6c7086; font-size: 10px; min-width: 18px;")
             layout.addWidget(nl)
-            bar = QProgressBar()
-            bar.setRange(-350, 350)
-            bar.setValue(0)
-            bar.setTextVisible(False)
-            bar.setFixedHeight(8)
-            bar.setMinimumWidth(40)
+            bar = AxisBar()
             layout.addWidget(bar, 1)
             self.bars.append(bar)
 
@@ -1621,7 +1849,7 @@ class LivePreviewBar(QWidget):
 
         self.btn_labels = []
         for i in range(2):
-            bl = QLabel("\u25cb")  # circle
+            bl = QLabel("\u25cb")
             bl.setStyleSheet("font-size: 14px; color: #45475a;")
             layout.addWidget(bl)
             self.btn_labels.append(bl)
@@ -1632,7 +1860,6 @@ class LivePreviewBar(QWidget):
         self.profile_label.setStyleSheet("color: #5294e2; font-weight: bold; font-size: 11px;")
         layout.addWidget(self.profile_label)
 
-        # Status dot
         self.status_dot = QLabel("\u25cf")
         self.status_dot.setStyleSheet("font-size: 12px; color: #45475a;")
         self.status_dot.setToolTip("Daemon: checking...")
@@ -1642,6 +1869,12 @@ class LivePreviewBar(QWidget):
         for i, val in enumerate(values):
             if i < len(self.bars):
                 self.bars[i].setValue(val)
+
+    def set_deadzones(self, values):
+        """Update deadzone visualization on all 6 axis bars."""
+        for i, dz in enumerate(values):
+            if i < len(self.bars):
+                self.bars[i].setDeadzone(dz)
 
     def update_button(self, bnum, pressed):
         if 0 <= bnum < len(self.btn_labels):
@@ -1727,14 +1960,17 @@ class SettingsWindow(QMainWindow):
 
         self.desktop_page = DesktopPage(config_data)
         self.desktop_page.changed.connect(self._mark_dirty)
+        self.desktop_page.changed.connect(self._sync_deadzones)
         self.stack.addWidget(self.desktop_page)
 
         self.freecad_page = FreeCADPage()
         self.freecad_page.changed.connect(self._mark_dirty)
+        self.freecad_page.changed.connect(self._sync_deadzones)
         self.stack.addWidget(self.freecad_page)
 
         self.blender_page = BlenderPage()
         self.blender_page.changed.connect(self._mark_dirty)
+        self.blender_page.changed.connect(self._sync_deadzones)
         self.stack.addWidget(self.blender_page)
 
         # Content wrapper with padding
@@ -1763,6 +1999,7 @@ class SettingsWindow(QMainWindow):
         # Select first page
         self._page_buttons[0].setChecked(True)
         self.stack.setCurrentIndex(0)
+        self._sync_deadzones()
 
         # Status timer
         self._status_timer = QTimer()
@@ -1777,10 +2014,31 @@ class SettingsWindow(QMainWindow):
         if self.stack.currentIndex() == 0:
             self.desktop_page.save_current_profile()
         self.stack.setCurrentIndex(idx)
+        self._sync_deadzones()
 
     def _mark_dirty(self):
         self._dirty = True
         self.setWindowTitle("SpaceMouse Control *")
+
+    def _sync_deadzones(self):
+        """Push current page's deadzone values to the live preview bar."""
+        idx = self.stack.currentIndex()
+        if idx == 0:
+            # Desktop: per-axis deadzone from AxesCard, fallback to global
+            global_dz = self.desktop_page.deadzone_s.value()
+            values = []
+            for s in self.desktop_page.axes_card.deadzone_sliders:
+                v = s.value()
+                values.append(v if v > 0 else global_dz)
+            self.live_bar.set_deadzones(values)
+        elif idx == 1:
+            # FreeCAD: per-axis deadzone from AxesCard
+            values = [s.value() for s in self.freecad_page.axes_card.deadzone_sliders]
+            self.live_bar.set_deadzones(values)
+        elif idx == 2:
+            # Blender: global deadzone only (no per-axis support)
+            global_dz = self.blender_page.bl_deadzone_s.value()
+            self.live_bar.set_deadzones([global_dz] * 6)
 
     def _apply(self):
         page_idx = self.stack.currentIndex()
@@ -1850,6 +2108,22 @@ class SettingsWindow(QMainWindow):
                 self.window_unfocused.emit()
 
     def closeEvent(self, event):
+        if self._dirty:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Unsaved Changes")
+            msg.setText("You have unsaved changes.")
+            msg.setInformativeText("Do you want to save before closing?")
+            msg.setStandardButtons(
+                QMessageBox.StandardButton.Save |
+                QMessageBox.StandardButton.Discard |
+                QMessageBox.StandardButton.Cancel)
+            msg.setDefaultButton(QMessageBox.StandardButton.Save)
+            result = msg.exec()
+            if result == QMessageBox.StandardButton.Save:
+                self._apply()
+            elif result == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
         event.ignore()
         self.hide()
 
@@ -1877,7 +2151,25 @@ class SpaceMouseApp:
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
         self.app.setApplicationName("SpaceMouse Control")
-        self.app.setStyleSheet(DARK_THEME)
+
+        # Create chevron arrow for combo boxes
+        self._arrow_path = os.path.join(tempfile.gettempdir(), "spacemouse-combo-arrow.png")
+        pixmap = QPixmap(12, 8)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(0xa6, 0xad, 0xc8))
+        pen.setWidthF(1.8)
+        p.setPen(pen)
+        p.drawLine(1, 2, 6, 6)
+        p.drawLine(6, 6, 11, 2)
+        p.end()
+        pixmap.save(self._arrow_path)
+
+        theme = DARK_THEME.replace(
+            "image: none;\n    width: 0;\n    height: 0;",
+            f"image: url({self._arrow_path});\n    width: 12px;\n    height: 8px;")
+        self.app.setStyleSheet(theme)
 
         self.config = self._load_config()
         self._cleaned_up = False
