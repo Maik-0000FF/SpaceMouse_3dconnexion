@@ -19,6 +19,9 @@ __pycache__/
 # Claude Code
 CLAUDE.md
 
+# Dev tools
+docs/take_screenshots.py
+
 # FreeCAD build artifacts (source trees, compiled objects)
 freecad-build/
 freecad-src/

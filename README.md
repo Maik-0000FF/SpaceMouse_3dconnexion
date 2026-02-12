@@ -40,6 +40,10 @@ A **system tray icon** appears in your taskbar. Click it to open **SpaceMouse Co
 - **FreeCAD** — SpaceMouse sensitivity, axis enable/invert, navigation style (writes directly to FreeCAD's config)
 - **Blender** — NDOF sensitivity, deadzone, axis inversion, Lock Horizon toggle
 
+| Desktop | FreeCAD | Blender |
+|---------|---------|---------|
+| ![Desktop](docs/screenshot-desktop.png) | ![FreeCAD](docs/screenshot-freecad.png) | ![Blender](docs/screenshot-blender.png) |
+
 A live preview bar at the bottom shows real-time axis movement and button state. While the settings window is focused, desktop actions (scroll, zoom, workspace switching) are automatically disabled so the SpaceMouse doesn't interfere while you configure it. Click on the desktop to test your settings — the live preview stays visible.
 
 The driver **automatically detects** when you switch between windows. The currently focused application always gets full SpaceMouse performance — all other consumers go idle to minimize resource usage.
