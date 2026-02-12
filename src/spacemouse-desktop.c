@@ -83,6 +83,7 @@ struct profile {
 	char *wm_classes[MAX_WM_CLASSES];
 	int wm_class_count;
 	struct config cfg;
+	int passthrough; /* 1 if all axes+buttons are none → skip event processing */
 };
 
 struct scroll_acc {
@@ -488,6 +489,17 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 				p->wm_classes[p->wm_class_count++] = strdup(s);
 		}
 	}
+
+	/* Detect passthrough profiles (all axes+buttons none) — skip event processing */
+	p->passthrough = 1;
+	for (int i = 0; i < 6; i++) {
+		if (c->axis_map[i] != ACT_NONE) { p->passthrough = 0; break; }
+	}
+	if (p->passthrough) {
+		for (int i = 0; i < 16; i++) {
+			if (c->btn_map[i] != BTNACT_NONE) { p->passthrough = 0; break; }
+		}
+	}
 }
 
 static int config_load_all(const char *path)
@@ -540,11 +552,23 @@ static int config_load_all(const char *path)
 	}
 
 	json_object_put(root);
+	/* Add built-in _passthrough profile (GUI uses this while settings are open) */
+	if (g_profile_count < MAX_PROFILES) {
+		struct profile *pt = &g_profiles[g_profile_count];
+		memset(pt, 0, sizeof(*pt));
+		snprintf(pt->name, sizeof(pt->name), "_passthrough");
+		/* All axes and buttons default to 0 (ACT_NONE/BTNACT_NONE) from memset */
+		pt->passthrough = 1;
+		g_profile_count++;
+	}
+
 	fprintf(stderr, "spacemouse-desktop: loaded %d profile(s) from %s\n",
 		g_profile_count, path);
 	for (int i = 0; i < g_profile_count; i++)
-		fprintf(stderr, "  [%d] %s (wm_classes: %d)\n",
-			i, g_profiles[i].name, g_profiles[i].wm_class_count);
+		fprintf(stderr, "  [%d] %s%s (wm_classes: %d)\n",
+			i, g_profiles[i].name,
+			g_profiles[i].passthrough ? " [passthrough]" : "",
+			g_profiles[i].wm_class_count);
 	return 0;
 }
 
@@ -710,6 +734,14 @@ int main(int argc, char **argv)
 		/* Handle spnav events */
 		if (fds[0].revents & POLLIN) {
 			spnav_event ev;
+
+			/* Passthrough profile (blender/freecad): drain events, do nothing */
+			if (g_profiles[g_active_profile].passthrough) {
+				while (spnav_poll_event(&ev))
+					; /* discard */
+				continue;
+			}
+
 			while (spnav_poll_event(&ev)) {
 				struct config *c = &g_profiles[g_active_profile].cfg;
 

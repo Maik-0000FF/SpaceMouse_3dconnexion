@@ -311,16 +311,28 @@ class SpnavEvent(ctypes.Union):
 # ── SpaceMouse Reader Thread ──────────────────────────────────────────
 
 class SpnavReader(QThread):
-    """Reads SpaceMouse events via libspnav for live axis preview."""
+    """Reads SpaceMouse events via libspnav for live axis preview.
+
+    Uses select() on the spnav file descriptor instead of busy-polling.
+    Automatically suspends event reading when 3D apps (Blender/FreeCAD)
+    are active — no point updating a hidden preview bar.
+    """
     axes_updated = Signal(list)
     button_pressed = Signal(int, bool)
 
     def __init__(self):
         super().__init__()
         self._running = True
+        self._suspended = False
         self._lib = None
 
+    def set_suspended(self, suspended):
+        """Suspend/resume event reading (called when 3D apps gain/lose focus)."""
+        self._suspended = suspended
+
     def run(self):
+        import select
+
         try:
             self._lib = ctypes.CDLL("libspnav.so")
         except OSError:
@@ -329,19 +341,32 @@ class SpnavReader(QThread):
         if self._lib.spnav_open() == -1:
             return
 
+        self._lib.spnav_fd.restype = ctypes.c_int
+        spnav_fd = self._lib.spnav_fd()
+
         ev = SpnavEvent()
         while self._running:
-            ret = self._lib.spnav_poll_event(ctypes.byref(ev))
-            if ret == 0:
-                self.msleep(16)
+            # When suspended (3D app active), just sleep — don't consume events
+            if self._suspended:
+                self.msleep(200)
+                # Drain any queued events so they don't pile up
+                while self._lib.spnav_poll_event(ctypes.byref(ev)):
+                    pass
                 continue
-            if ev.type == 1:
-                self.axes_updated.emit([
-                    ev.motion.x, ev.motion.y, ev.motion.z,
-                    ev.motion.rx, ev.motion.ry, ev.motion.rz
-                ])
-            elif ev.type == 2:
-                self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))
+
+            ready, _, _ = select.select([spnav_fd], [], [], 0.5)
+            if not ready:
+                continue
+
+            # Emit every motion event individually for smooth live preview
+            while self._lib.spnav_poll_event(ctypes.byref(ev)):
+                if ev.type == 1:  # SPNAV_EVENT_MOTION
+                    self.axes_updated.emit([
+                        ev.motion.x, ev.motion.y, ev.motion.z,
+                        ev.motion.rx, ev.motion.ry, ev.motion.rz
+                    ])
+                elif ev.type == 2:  # SPNAV_EVENT_BUTTON
+                    self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))
 
         self._lib.spnav_close()
 
@@ -1642,6 +1667,10 @@ class LivePreviewBar(QWidget):
 
 class SettingsWindow(QMainWindow):
     """Main settings window with sidebar navigation."""
+    window_shown = Signal()
+    window_hidden = Signal()
+    window_focused = Signal()
+    window_unfocused = Signal()
 
     def __init__(self, config_data, on_save_callback):
         super().__init__()
@@ -1804,6 +1833,26 @@ class SettingsWindow(QMainWindow):
     def sync_settings(self, settings_state):
         self.autostart_cb.setChecked(settings_state.get("autostart", True))
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.window_shown.emit()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.window_hidden.emit()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == event.Type.ActivationChange:
+            if self.isActiveWindow():
+                self.window_focused.emit()
+            else:
+                self.window_unfocused.emit()
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
 # ── Tray Icon ─────────────────────────────────────────────────────────
 
 def create_tray_icon_pixmap(text="SM"):
@@ -1853,10 +1902,20 @@ class SpaceMouseApp:
         self.tray.setContextMenu(menu)
         self.tray.show()
 
-        # SpaceMouse reader
+        # SpaceMouse reader (starts suspended — only active when GUI is visible)
         self.spnav_reader = SpnavReader()
+        self.spnav_reader.set_suspended(True)
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
+
+        # GUI visibility: SpnavReader active when window is visible (live preview)
+        # GUI focus: daemon passthrough when window is focused (no desktop actions)
+        #            daemon normal when window loses focus (test settings on desktop)
+        self._saved_profile = "default"
+        self.settings_window.window_shown.connect(self._on_gui_shown)
+        self.settings_window.window_hidden.connect(self._on_gui_hidden)
+        self.settings_window.window_focused.connect(self._on_gui_focused)
+        self.settings_window.window_unfocused.connect(self._on_gui_unfocused)
 
         # Window monitor
         self._start_window_monitor()
@@ -1995,8 +2054,30 @@ class SpaceMouseApp:
         self.settings_window.activateWindow()
 
     def _on_window_changed(self, wm_class, profile_name):
+        self._saved_profile = profile_name
         self.tray.setToolTip(f"SpaceMouse: {profile_name} ({wm_class})")
         self.settings_window.set_profile_name(profile_name)
+        # Don't change SpnavReader state if GUI is visible (it stays active)
+        if not self.settings_window.isVisible():
+            self.spnav_reader.set_suspended(True)
+
+    def _on_gui_shown(self):
+        """GUI visible: enable live preview, block desktop actions (window opens focused)."""
+        self.spnav_reader.set_suspended(False)
+        send_daemon_cmd("PROFILE _passthrough")
+
+    def _on_gui_hidden(self):
+        """GUI hidden: suspend reader, restore daemon profile."""
+        self.spnav_reader.set_suspended(True)
+        send_daemon_cmd(f"PROFILE {self._saved_profile}")
+
+    def _on_gui_focused(self):
+        """GUI has keyboard focus: block daemon desktop actions (no scroll/zoom/workspace)."""
+        send_daemon_cmd("PROFILE _passthrough")
+
+    def _on_gui_unfocused(self):
+        """GUI lost focus (clicked on desktop): restore daemon so user can test settings."""
+        send_daemon_cmd(f"PROFILE {self._saved_profile}")
 
     def _quit(self):
         self._cleanup()
