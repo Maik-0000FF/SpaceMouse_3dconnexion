@@ -322,31 +322,22 @@ class SpnavReader(QThread):
     """
     axes_updated = Signal(list)
     button_pressed = Signal(int, bool)
+    spnav_connected = Signal()
 
     def __init__(self):
         super().__init__()
         self._running = True
         self._suspended = False
-        self._disconnected = False
         self._lib = None
+        self._ready = False
 
     def set_suspended(self, suspended):
         """Suspend/resume event reading (called when 3D apps gain/lose focus)."""
         self._suspended = suspended
 
-    def set_disconnected(self, disconnected):
-        """Disconnect/reconnect from spacenavd.
-
-        When disconnected, the spnav connection is closed so spacenavd
-        no longer sees this process as a client. This lets spacenavd
-        manage the LED based on remaining clients (FreeCAD/Blender) —
-        LED on when they're focused, off when nothing is connected.
-        """
-        self._disconnected = disconnected
-
     def set_led(self, state):
-        """Control SpaceMouse LED (0=off, 1=on, 2=auto). Uses existing connection."""
-        if self._lib:
+        """Control SpaceMouse LED (0=off, 1=on, 2=auto). Only works after spnav_connected."""
+        if self._ready:
             self._lib.spnav_cfg_set_led(state)
 
     def run(self):
@@ -362,27 +353,12 @@ class SpnavReader(QThread):
 
         self._lib.spnav_fd.restype = ctypes.c_int
         spnav_fd = self._lib.spnav_fd()
-        connected = True
+        self._ready = True
+        self.spnav_connected.emit()
 
         ev = SpnavEvent()
         while self._running:
-            # Disconnect from spacenavd when disabled (let spacenavd manage LED)
-            if self._disconnected:
-                if connected:
-                    self._lib.spnav_close()
-                    connected = False
-                self.msleep(200)
-                continue
-
-            # Reconnect after being disabled
-            if not connected:
-                if self._lib.spnav_open() == -1:
-                    self.msleep(1000)
-                    continue
-                spnav_fd = self._lib.spnav_fd()
-                connected = True
-
-            # When suspended (3D app active), just sleep — don't consume events
+            # When suspended, just sleep — don't consume events
             if self._suspended:
                 self.msleep(200)
                 # Drain any queued events so they don't pile up
@@ -403,8 +379,8 @@ class SpnavReader(QThread):
                 elif ev.type == 2:  # SPNAV_EVENT_BUTTON
                     self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))
 
-        if connected:
-            self._lib.spnav_close()
+        self._ready = False
+        self._lib.spnav_close()
 
     def stop(self):
         self._running = False
@@ -2233,12 +2209,12 @@ class SpaceMouseApp:
         # SpaceMouse reader (starts suspended — only active when GUI is visible)
         self.spnav_reader = SpnavReader()
         self.spnav_reader.set_suspended(True)
+        self.spnav_reader.spnav_connected.connect(self._on_spnav_connected)
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
 
-        # Apply persisted disabled state
+        # Apply persisted disabled state (LED set later via _on_spnav_connected)
         if self._paused:
-            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
             subprocess.Popen(
                 ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2418,6 +2394,11 @@ class SpaceMouseApp:
         # Don't change SpnavReader state if GUI is visible (it stays active)
         if not self.settings_window.isVisible():
             self.spnav_reader.set_suspended(True)
+
+    def _on_spnav_connected(self):
+        """SpnavReader connected to spacenavd — apply initial LED state."""
+        if self._paused:
+            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
 
     def _on_gui_shown(self):
         """GUI visible: enable live preview, block desktop actions (window opens focused)."""
