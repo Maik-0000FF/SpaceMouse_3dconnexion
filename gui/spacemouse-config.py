@@ -2222,7 +2222,7 @@ class SpaceMouseApp:
         self.tray.setToolTip("SpaceMouse: default")
         self.tray.activated.connect(self._on_tray_activated)
 
-        self._paused = False
+        self._paused = settings.get("disabled", False)
         self.window_monitor = None
 
         menu = QMenu()
@@ -2236,6 +2236,15 @@ class SpaceMouseApp:
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
 
+        # Apply persisted disabled state
+        if self._paused:
+            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
+            subprocess.Popen(
+                ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.tray.setToolTip("SpaceMouse: DISABLED")
+            self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
+
         # GUI visibility: SpnavReader active when window is visible (live preview)
         # GUI focus: daemon passthrough when window is focused (no desktop actions)
         #            daemon normal when window loses focus (test settings on desktop)
@@ -2245,7 +2254,7 @@ class SpaceMouseApp:
         self.settings_window.window_focused.connect(self._on_gui_focused)
         self.settings_window.window_unfocused.connect(self._on_gui_unfocused)
 
-        # Window monitor
+        # Window monitor (also needed when disabled for LED control)
         self._start_window_monitor()
 
         signal.signal(signal.SIGTERM, self._sigterm_handler)
@@ -2352,6 +2361,13 @@ class SpaceMouseApp:
         return (all(v == "none" for v in am.values()) and
                 all(v == "none" for v in bm.values()))
 
+    def _save_disabled_state(self):
+        """Persist disabled state to config.json."""
+        self.config.setdefault("settings", {})["disabled"] = self._paused
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(self.config, f, indent=2)
+
     def _toggle_pause(self):
         if self._paused:
             self._paused = False
@@ -2369,6 +2385,7 @@ class SpaceMouseApp:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.tray.setToolTip("SpaceMouse: DISABLED")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
+        self._save_disabled_state()
         menu = QMenu()
         self._rebuild_tray_menu(menu)
         self.tray.setContextMenu(menu)
