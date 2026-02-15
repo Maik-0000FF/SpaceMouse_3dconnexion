@@ -56,9 +56,24 @@ AXIS_NAMES = ["TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
               "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)"]
 AXIS_KEYS = ["tx", "ty", "tz", "rx", "ry", "rz"]
 
-SPNAV_CFG_LED_OFF = 0
-SPNAV_CFG_LED_ON = 1
-SPNAV_CFG_LED_AUTO = 2
+def set_spacemouse_led(on):
+    """Control SpaceMouse LED directly via USB HID (bypasses libspnav/spacenavd).
+
+    spnav_cfg_set_led doesn't work with spacenavd protocol 0.
+    Direct HID feature report (ID 0x04) works regardless of spacenavd version.
+    """
+    try:
+        for entry in Path("/sys/class/hidraw").iterdir():
+            uevent = entry / "device" / "uevent"
+            if uevent.exists() and "0000046D:0000C626" in uevent.read_text():
+                dev = Path("/dev") / entry.name
+                fd = os.open(str(dev), os.O_WRONLY | os.O_NONBLOCK)
+                os.write(fd, bytes([0x04, 0x01 if on else 0x00]))
+                os.close(fd)
+                return True
+    except OSError:
+        pass
+    return False
 
 FREECAD_BTN_COMMANDS = [
     "Std_ViewFitAll", "Std_ViewHome", "Std_ViewIsometric",
@@ -322,23 +337,16 @@ class SpnavReader(QThread):
     """
     axes_updated = Signal(list)
     button_pressed = Signal(int, bool)
-    spnav_connected = Signal()
 
     def __init__(self):
         super().__init__()
         self._running = True
         self._suspended = False
         self._lib = None
-        self._ready = False
 
     def set_suspended(self, suspended):
         """Suspend/resume event reading (called when 3D apps gain/lose focus)."""
         self._suspended = suspended
-
-    def set_led(self, state):
-        """Control SpaceMouse LED (0=off, 1=on, 2=auto). Only works after spnav_connected."""
-        if self._ready:
-            self._lib.spnav_cfg_set_led(state)
 
     def run(self):
         import select
@@ -353,8 +361,6 @@ class SpnavReader(QThread):
 
         self._lib.spnav_fd.restype = ctypes.c_int
         spnav_fd = self._lib.spnav_fd()
-        self._ready = True
-        self.spnav_connected.emit()
 
         ev = SpnavEvent()
         while self._running:
@@ -379,7 +385,6 @@ class SpnavReader(QThread):
                 elif ev.type == 2:  # SPNAV_EVENT_BUTTON
                     self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))
 
-        self._ready = False
         self._lib.spnav_close()
 
     def stop(self):
@@ -2209,12 +2214,12 @@ class SpaceMouseApp:
         # SpaceMouse reader (starts suspended — only active when GUI is visible)
         self.spnav_reader = SpnavReader()
         self.spnav_reader.set_suspended(True)
-        self.spnav_reader.spnav_connected.connect(self._on_spnav_connected)
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
 
-        # Apply persisted disabled state (LED set later via _on_spnav_connected)
+        # Apply persisted disabled state
         if self._paused:
+            set_spacemouse_led(False)
             subprocess.Popen(
                 ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2347,7 +2352,7 @@ class SpaceMouseApp:
     def _toggle_pause(self):
         if self._paused:
             self._paused = False
-            self.spnav_reader.set_led(SPNAV_CFG_LED_ON)
+            set_spacemouse_led(True)
             subprocess.Popen(
                 ["systemctl", "--user", "start", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2355,7 +2360,7 @@ class SpaceMouseApp:
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("SM")))
         else:
             self._paused = True
-            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
+            set_spacemouse_led(False)
             subprocess.Popen(
                 ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2383,8 +2388,7 @@ class SpaceMouseApp:
         if self._paused:
             # When disabled, only control LED: on for 3D apps, off otherwise
             is_3d_app = self._is_passthrough_profile(profile_name)
-            self.spnav_reader.set_led(
-                SPNAV_CFG_LED_ON if is_3d_app else SPNAV_CFG_LED_OFF)
+            set_spacemouse_led(is_3d_app)
             self.tray.setToolTip(
                 f"SpaceMouse: DISABLED ({wm_class})" if is_3d_app
                 else "SpaceMouse: DISABLED")
@@ -2394,11 +2398,6 @@ class SpaceMouseApp:
         # Don't change SpnavReader state if GUI is visible (it stays active)
         if not self.settings_window.isVisible():
             self.spnav_reader.set_suspended(True)
-
-    def _on_spnav_connected(self):
-        """SpnavReader connected to spacenavd — apply initial LED state."""
-        if self._paused:
-            self.spnav_reader.set_led(SPNAV_CFG_LED_OFF)
 
     def _on_gui_shown(self):
         """GUI visible: enable live preview, block desktop actions (window opens focused)."""
