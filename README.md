@@ -197,15 +197,15 @@ Profiles are stored in `~/.config/spacemouse/config.json`. You can edit them wit
 
 | Device | Status |
 |--------|--------|
-| SpaceNavigator | Tested |
-| SpaceMouse Compact | Supported |
-| SpaceMouse Wireless | Supported |
-| SpaceMouse Pro (Wireless) | Supported |
-| SpaceMouse Enterprise | Supported |
-| SpaceExplorer | Supported |
-| SpacePilot Pro | Supported |
+| SpaceNavigator (046d:c626) | Tested (fully working, including LED control) |
+| SpaceMouse Compact | Should work (untested) |
+| SpaceMouse Wireless | Should work (untested) |
+| SpaceMouse Pro (Wireless) | Should work (untested) |
+| SpaceMouse Enterprise | Should work (untested) |
+| SpaceExplorer | Should work (untested) |
+| SpacePilot Pro | Should work (untested) |
 
-Any device supported by spacenavd should work.
+The daemon and GUI use libspnav/spacenavd for input, so any 6DOF device supported by spacenavd should work for axis/button input. LED control currently only works for the SpaceNavigator (046d:c626) — other models may use different HID report formats. If you have a different model and it works (or doesn't), please [open an issue](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/issues) so we can update this table.
 
 ### Services
 
