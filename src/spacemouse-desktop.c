@@ -97,6 +97,7 @@ static volatile sig_atomic_t g_running = 1;
 static volatile sig_atomic_t g_reload = 0;
 
 static int g_uinput_fd = -1;
+static int g_spnav_connected = 0;
 static DBusConnection *g_dbus = NULL;
 static char g_config_path[512];
 static char g_sock_path[256];
@@ -644,17 +645,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "spacemouse-desktop: cannot connect to spacenavd\n");
 		return 1;
 	}
-	spnav_client_name("spacemouse-desktop");
 	fprintf(stderr, "spacemouse-desktop: connected to spacenavd\n");
-
-	{
-		char devname[256] = {0};
-		unsigned int vid = 0, pid = 0;
-		spnav_dev_name(devname, sizeof(devname));
-		spnav_dev_usbid(&vid, &pid);
-		fprintf(stderr, "spacemouse-desktop: device: %s (%04x:%04x)\n",
-			devname, vid, pid);
-	}
 
 	/* uinput */
 	g_uinput_fd = uinput_open();
@@ -692,9 +683,9 @@ int main(int argc, char **argv)
 	scroll_acc_reset(&sacc);
 	long long last_dswitch = 0;
 	int desktop_shown = 0;
-
 	/* poll()-based main loop */
 	int spnav_fdesc = spnav_fd();
+	g_spnav_connected = 1;
 
 	while (g_running) {
 		if (g_reload) {
@@ -716,17 +707,45 @@ int main(int argc, char **argv)
 			scroll_acc_reset(&sacc);
 		}
 
+		/* Passthrough: disconnect from spnav so other apps get all events.
+		 * spacenavd has a multiplexing issue where an aggressive reader
+		 * starves other clients. By closing the connection, Blender/FreeCAD
+		 * get full event throughput. */
+		int need_spnav = !g_profiles[g_active_profile].passthrough;
+
+		if (!need_spnav && g_spnav_connected) {
+			spnav_close();
+			g_spnav_connected = 0;
+			spnav_fdesc = -1;
+			fprintf(stderr, "spacemouse-desktop: spnav disconnected (passthrough)\n");
+		} else if (need_spnav && !g_spnav_connected) {
+			if (spnav_open() != -1) {
+				spnav_fdesc = spnav_fd();
+				g_spnav_connected = 1;
+				fprintf(stderr, "spacemouse-desktop: spnav reconnected\n");
+				/* Drain any stale events from buffer */
+				spnav_event drain_ev;
+				while (spnav_poll_event(&drain_ev))
+					;
+				scroll_acc_reset(&sacc);
+			}
+		}
+
 		struct pollfd fds[2];
 		int nfds = 0;
 
-		fds[0].fd = spnav_fdesc;
-		fds[0].events = POLLIN;
-		nfds = 1;
+		if (g_spnav_connected) {
+			fds[nfds].fd = spnav_fdesc;
+			fds[nfds].events = POLLIN;
+			nfds++;
+		}
 
+		int cmd_idx = -1;
 		if (cmd_fd >= 0) {
-			fds[1].fd = cmd_fd;
-			fds[1].events = POLLIN;
-			nfds = 2;
+			cmd_idx = nfds;
+			fds[nfds].fd = cmd_fd;
+			fds[nfds].events = POLLIN;
+			nfds++;
 		}
 
 		int ret = poll(fds, nfds, 100); /* 100ms timeout for signal handling */
@@ -737,21 +756,15 @@ int main(int argc, char **argv)
 		if (ret == 0) continue; /* timeout */
 
 		/* Handle command socket */
-		if (nfds > 1 && (fds[1].revents & POLLIN)) {
+		if (cmd_idx >= 0 && (fds[cmd_idx].revents & POLLIN)) {
 			cmd_handle_client(cmd_fd);
 			scroll_acc_reset(&sacc);
 		}
 
-		/* Handle spnav events */
-		if (fds[0].revents & POLLIN) {
+		/* Handle spnav events (only when connected and active profile) */
+		int spnav_idx = g_spnav_connected ? 0 : -1;
+		if (spnav_idx >= 0 && (fds[spnav_idx].revents & POLLIN)) {
 			spnav_event ev;
-
-			/* Passthrough profile (blender/freecad): drain events, do nothing */
-			if (g_profiles[g_active_profile].passthrough) {
-				while (spnav_poll_event(&ev))
-					; /* discard */
-				continue;
-			}
 
 			while (spnav_poll_event(&ev)) {
 				struct config *c = &g_profiles[g_active_profile].cfg;
@@ -844,7 +857,7 @@ int main(int argc, char **argv)
 
 cleanup:
 	fprintf(stderr, "spacemouse-desktop: shutting down\n");
-	spnav_close();
+	if (g_spnav_connected) spnav_close();
 	uinput_close(g_uinput_fd);
 	cmd_sock_close(cmd_fd, g_sock_path);
 	if (g_dbus) dbus_connection_unref(g_dbus);
