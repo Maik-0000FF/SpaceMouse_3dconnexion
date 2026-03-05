@@ -25,7 +25,7 @@
 # │                                                         │
 # │  Both versions get the SpaceMouse patch applied.        │
 # └─────────────────────────────────────────────────────────┘
-_build_version="stable"
+_build_version="rc"
 
 # Version mapping — update these when new versions are released
 _ver_stable="1.0.2"
@@ -154,6 +154,8 @@ build() {
     -D FREECAD_USE_OCC_VARIANT='Official Version'
     -D FREECAD_USE_QT_FILEDIALOG=ON
     -D FREECAD_QT_VERSION=6
+    -D PYCXX_INCLUDE_DIR="$srcdir/$pkgname/src/3rdParty/PyCXX"
+    -D PYCXX_SOURCE_DIR="$srcdir/$pkgname/src/3rdParty/PyCXX/CXX"
     -D INSTALL_TO_SITEPACKAGES=ON
     -D PYTHON_EXECUTABLE=/usr/bin/python
     -G Ninja
@@ -168,9 +170,11 @@ build() {
 package() {
   DESTDIR="$pkgdir" cmake --install build
 
-  # tools
+  # tools (stable has these in src/Tools, rc installs them via cmake)
   cd "$pkgname"
-  install -Dm755 src/Tools/{$pkgname-thumbnailer,fcinfo} -t "$pkgdir/usr/bin"
+  for tool in src/Tools/$pkgname-thumbnailer src/Tools/fcinfo; do
+    [ -f "$tool" ] && install -Dm755 "$tool" -t "$pkgdir/usr/bin"
+  done
 
   # symlinks
   install -d "$pkgdir/usr/bin"
