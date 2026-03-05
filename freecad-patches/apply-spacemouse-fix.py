@@ -3,9 +3,10 @@
 Apply SpaceMouse smooth navigation fix to FreeCAD source.
 
 Works across FreeCAD versions regardless of directory structure or line numbers.
-Finds the exact code patterns and applies the two fixes:
+Finds the exact code patterns and applies three fixes:
   1. Event coalescing in pollSpacenav()
   2. Batched camera updates in processMotionEvent()
+  3. Per-axis deadzone with cached Observer in pollSpacenav()
 
 Usage:
     python3 apply-spacemouse-fix.py /path/to/freecad-source
@@ -165,8 +166,10 @@ def patch_process_motion_event(source_dir):
 def patch_per_axis_deadzone(source_dir):
     """Fix 3: Per-axis deadzone filtering in pollSpacenav().
 
-    Reads per-axis deadzone values from FreeCAD user.cfg (BaseApp/Spaceball/Motion)
-    and zeroes out axis values below their threshold before posting the motion event.
+    Adds a DeadzoneCache class that reads per-axis deadzone values from
+    user.cfg (BaseApp/Spaceball/Motion) once and auto-updates via
+    ParameterGrp::ObserverType when values change. Zeroes out axis values
+    below their threshold before posting the motion event.
     Applied on top of the event coalescing patch (requires hasMotion block).
     """
     filepath = find_file(source_dir, "GuiNativeEventLinux.cpp")
@@ -177,7 +180,7 @@ def patch_per_axis_deadzone(source_dir):
     with open(filepath, "r") as f:
         content = f.read()
 
-    if "axisDeadzone" in content:
+    if "DeadzoneCache" in content:
         print(f"  OK:   {os.path.relpath(filepath, source_dir)} (deadzone already patched)")
         return True
 
@@ -185,33 +188,97 @@ def patch_per_axis_deadzone(source_dir):
         print(f"  FAIL: Event coalescing patch must be applied first")
         return False
 
-    # Add #include for ParameterGrp (FreeCAD's config API) at top of file
-    # Find the last #include line and add after it
-    include_line = '#include "GuiNativeEvent.h"'
-    if include_line not in content:
-        # Try alternative include pattern
-        include_line = '#include <App/Application.h>'
-    if include_line in content:
-        if '#include <App/Application.h>' not in content:
-            content = content.replace(
-                include_line,
-                include_line + '\n#include <array>\n#include <App/Application.h>',
-                1
-            )
-        elif '#include <array>' not in content:
+    # Add required includes
+    for inc in ['<array>', '<cmath>', '<cstring>']:
+        if f'#include {inc}' not in content:
             content = content.replace(
                 '#include <App/Application.h>',
-                '#include <array>\n#include <App/Application.h>',
+                f'#include {inc}\n#include <App/Application.h>',
                 1
             )
-    else:
-        # Fallback: add after first include
-        first_include = content.find('#include')
-        eol = content.find('\n', first_include)
-        content = content[:eol+1] + '#include <array>\n#include <App/Application.h>\n' + content[eol+1:]
+    if '#include <App/Application.h>' not in content:
+        content = content.replace(
+            '#include <FCConfig.h>\n',
+            '#include <FCConfig.h>\n#include <array>\n#include <cmath>\n#include <cstring>\n#include <App/Application.h>\n',
+            1
+        )
+    if '#include <Base/Parameter.h>' not in content:
+        content = content.replace(
+            '#include <Base/Console.h>',
+            '#include <Base/Console.h>\n#include <Base/Parameter.h>',
+            1
+        )
 
-    # Replace the simple "if (hasMotion) { postMotionEvent }" block with
-    # one that reads deadzone values and filters axes before posting
+    # Add DeadzoneCache class in anonymous namespace before first function definition
+    deadzone_cache_class = (
+        '\nnamespace\n'
+        '{\n'
+        '\n'
+        '// Cached per-axis deadzone values, auto-updated via Observer when user.cfg changes.\n'
+        'class DeadzoneCache: public ParameterGrp::ObserverType\n'
+        '{\n'
+        'public:\n'
+        '    static constexpr std::array<const char*, 6> keys = {\n'
+        '        "PanLRDeadzone",\n'
+        '        "PanUDDeadzone",\n'
+        '        "ZoomDeadzone",\n'
+        '        "TiltDeadzone",\n'
+        '        "RollDeadzone",\n'
+        '        "SpinDeadzone",\n'
+        '    };\n'
+        '\n'
+        '    std::array<int, 6> values {};\n'
+        '\n'
+        '    explicit DeadzoneCache(ParameterGrp::handle hGrp)\n'
+        '        : hGrp(std::move(hGrp))\n'
+        '    {\n'
+        '        loadAll();\n'
+        '        this->hGrp->Attach(this);\n'
+        '    }\n'
+        '\n'
+        '    ~DeadzoneCache() override\n'
+        '    {\n'
+        '        hGrp->Detach(this);\n'
+        '    }\n'
+        '\n'
+        '    void OnChange(ParameterGrp::SubjectType& /*rCaller*/,\n'
+        '                  ParameterGrp::MessageType reason) override\n'
+        '    {\n'
+        '        for (size_t i = 0; i < keys.size(); i++) {\n'
+        '            if (std::strcmp(reason, keys[i]) == 0) {\n'
+        '                values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n'
+        '                return;\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+        '\n'
+        'private:\n'
+        '    void loadAll()\n'
+        '    {\n'
+        '        for (size_t i = 0; i < keys.size(); i++) {\n'
+        '            values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n'
+        '        }\n'
+        '    }\n'
+        '\n'
+        '    ParameterGrp::handle hGrp;\n'
+        '};\n'
+        '\n'
+        '}  // namespace\n'
+    )
+
+    # Insert before the GuiNativeEvent constructor
+    constructor_pattern = 'Gui::GuiNativeEvent::GuiNativeEvent('
+    if constructor_pattern not in content:
+        print(f"  FAIL: Could not find GuiNativeEvent constructor in {os.path.relpath(filepath, source_dir)}")
+        return False
+
+    content = content.replace(
+        constructor_pattern,
+        deadzone_cache_class + '\n' + constructor_pattern,
+        1
+    )
+
+    # Replace the simple "if (hasMotion) { postMotionEvent }" block
     old_motion_block = (
         "    if (hasMotion) {\n"
         "        mainApp->postMotionEvent(motionDataArray);\n"
@@ -219,16 +286,16 @@ def patch_per_axis_deadzone(source_dir):
     )
     new_motion_block = (
         '    if (hasMotion) {\n'
-        '        // Per-axis deadzone filtering (reads from user.cfg)\n'
-        '        static const std::array<const char*, 6> axisDeadzoneKeys = {\n'
-        '            "PanLRDeadzone", "PanUDDeadzone", "ZoomDeadzone",\n'
-        '            "TiltDeadzone", "RollDeadzone", "SpinDeadzone"\n'
-        '        };\n'
-        '        auto hGrp = App::GetApplication().GetParameterGroupByPath(\n'
-        '            "User parameter:BaseApp/Spaceball/Motion");\n'
-        '        for (size_t i = 0; i < axisDeadzoneKeys.size(); i++) {\n'
-        '            int dz = (int)hGrp->GetInt(axisDeadzoneKeys[i], 0);\n'
-        '            if (dz > 0 && motionDataArray[i] > -dz && motionDataArray[i] < dz) {\n'
+        '        // Per-axis deadzone: zero out axes below their individual threshold.\n'
+        '        // Values cached and auto-updated via Observer when user.cfg changes.\n'
+        '        static DeadzoneCache dzCache(\n'
+        '            App::GetApplication().GetParameterGroupByPath(\n'
+        '                "User parameter:BaseApp/Spaceball/Motion"\n'
+        '            )\n'
+        '        );\n'
+        '        for (size_t i = 0; i < dzCache.values.size(); i++) {\n'
+        '            int dz = dzCache.values[i];\n'
+        '            if (dz > 0 && std::abs(motionDataArray[i]) < dz) {\n'
         '                motionDataArray[i] = 0;\n'
         '            }\n'
         '        }\n'
@@ -245,7 +312,7 @@ def patch_per_axis_deadzone(source_dir):
     with open(filepath, "w") as f:
         f.write(content)
 
-    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Per-axis deadzone applied")
+    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Per-axis deadzone with Observer cache applied")
     return True
 
 
@@ -292,9 +359,9 @@ def main():
             else:
                 print(f"  WARN: {rel} - event coalescing pattern not found")
                 ok = False
-            # Fix 3: Per-axis deadzone
-            if "axisDeadzone" in c:
-                print(f"  OK: {rel} per-axis deadzone already patched")
+            # Fix 3: Per-axis deadzone with Observer cache
+            if "DeadzoneCache" in c:
+                print(f"  OK: {rel} per-axis deadzone (cached) already patched")
             elif "hasMotion" in c or "mainApp->postMotionEvent(motionDataArray)" in c:
                 print(f"  OK: {rel} per-axis deadzone can be patched")
             else:
