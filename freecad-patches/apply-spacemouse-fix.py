@@ -195,14 +195,20 @@ def patch_per_axis_deadzone(source_dir):
         if '#include <App/Application.h>' not in content:
             content = content.replace(
                 include_line,
-                include_line + '\n#include <App/Application.h>',
+                include_line + '\n#include <array>\n#include <App/Application.h>',
+                1
+            )
+        elif '#include <array>' not in content:
+            content = content.replace(
+                '#include <App/Application.h>',
+                '#include <array>\n#include <App/Application.h>',
                 1
             )
     else:
         # Fallback: add after first include
         first_include = content.find('#include')
         eol = content.find('\n', first_include)
-        content = content[:eol+1] + '#include <App/Application.h>\n' + content[eol+1:]
+        content = content[:eol+1] + '#include <array>\n#include <App/Application.h>\n' + content[eol+1:]
 
     # Replace the simple "if (hasMotion) { postMotionEvent }" block with
     # one that reads deadzone values and filters axes before posting
@@ -214,13 +220,13 @@ def patch_per_axis_deadzone(source_dir):
     new_motion_block = (
         '    if (hasMotion) {\n'
         '        // Per-axis deadzone filtering (reads from user.cfg)\n'
-        '        static const char *axisDeadzoneKeys[] = {\n'
+        '        static const std::array<const char*, 6> axisDeadzoneKeys = {\n'
         '            "PanLRDeadzone", "PanUDDeadzone", "ZoomDeadzone",\n'
         '            "TiltDeadzone", "RollDeadzone", "SpinDeadzone"\n'
         '        };\n'
         '        auto hGrp = App::GetApplication().GetParameterGroupByPath(\n'
         '            "User parameter:BaseApp/Spaceball/Motion");\n'
-        '        for (int i = 0; i < 6; i++) {\n'
+        '        for (size_t i = 0; i < axisDeadzoneKeys.size(); i++) {\n'
         '            int dz = (int)hGrp->GetInt(axisDeadzoneKeys[i], 0);\n'
         '            if (dz > 0 && motionDataArray[i] > -dz && motionDataArray[i] < dz) {\n'
         '                motionDataArray[i] = 0;\n'
