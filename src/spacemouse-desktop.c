@@ -239,14 +239,13 @@ static void dbus_call_kwin(DBusConnection *conn, const char *method)
 	DBusMessage *msg = dbus_message_new_method_call(
 		"org.kde.KWin", "/KWin", "org.kde.KWin", method);
 	if (!msg) return;
-	DBusPendingCall *pending = NULL;
-	dbus_connection_send_with_reply(conn, msg, &pending, 200);
+	dbus_message_set_no_reply(msg, TRUE);
+	dbus_connection_send(conn, msg, NULL);
+	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
-	if (pending) {
-		dbus_connection_flush(conn);
-		dbus_pending_call_cancel(pending);
-		dbus_pending_call_unref(pending);
-	}
+	/* Drain any pending incoming messages */
+	while (dbus_connection_dispatch(conn) == DBUS_DISPATCH_DATA_REMAINS)
+		;
 }
 
 static void dbus_call_kglobalaccel(DBusConnection *conn, const char *shortcut)
@@ -257,14 +256,10 @@ static void dbus_call_kglobalaccel(DBusConnection *conn, const char *shortcut)
 		"org.kde.kglobalaccel.Component", "invokeShortcut");
 	if (!msg) return;
 	dbus_message_append_args(msg, DBUS_TYPE_STRING, &shortcut, DBUS_TYPE_INVALID);
-	DBusPendingCall *pending = NULL;
-	dbus_connection_send_with_reply(conn, msg, &pending, 200);
+	dbus_message_set_no_reply(msg, TRUE);
+	dbus_connection_send(conn, msg, NULL);
+	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
-	if (pending) {
-		dbus_connection_flush(conn);
-		dbus_pending_call_cancel(pending);
-		dbus_pending_call_unref(pending);
-	}
 }
 
 /* ── Command socket ─────────────────────────────────────────────────── */
@@ -753,7 +748,13 @@ int main(int argc, char **argv)
 			if (errno == EINTR) continue;
 			break;
 		}
-		if (ret == 0) continue; /* timeout */
+		if (ret == 0) {
+			/* Drain D-Bus incoming messages to prevent connection stall */
+			if (g_dbus)
+				while (dbus_connection_dispatch(g_dbus) == DBUS_DISPATCH_DATA_REMAINS)
+					;
+			continue;
+		}
 
 		/* Handle command socket */
 		if (cmd_idx >= 0 && (fds[cmd_idx].revents & POLLIN)) {
@@ -801,8 +802,13 @@ int main(int argc, char **argv)
 							break;
 						case ACT_DESKTOP_SWITCH: {
 							long long now = time_ms();
-							if (abs(axes[i]) > c->dswitch_threshold &&
-							    (now - last_dswitch) > c->dswitch_cooldown_ms) {
+							long long elapsed = now - last_dswitch;
+							int val = abs(axes[i]);
+							if (val > c->dswitch_threshold &&
+							    elapsed > c->dswitch_cooldown_ms) {
+								const char *dir = axes[i] > 0 ? "next" : "prev";
+								fprintf(stderr, "spacemouse-desktop: dswitch axis=%d val=%d thresh=%d elapsed=%lldms -> %s\n",
+									i, axes[i], c->dswitch_threshold, elapsed, dir);
 								if (axes[i] > 0)
 									dbus_call_kwin(g_dbus, "nextDesktop");
 								else
