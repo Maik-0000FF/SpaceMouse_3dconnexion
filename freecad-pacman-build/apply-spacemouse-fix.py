@@ -166,56 +166,91 @@ def patch_process_motion_event(source_dir):
 def patch_per_axis_deadzone(source_dir):
     """Fix 3: Per-axis deadzone filtering in pollSpacenav().
 
-    Adds a DeadzoneCache class that reads per-axis deadzone values from
-    user.cfg (BaseApp/Spaceball/Motion) once and auto-updates via
-    ParameterGrp::ObserverType when values change. Zeroes out axis values
-    below their threshold before posting the motion event.
+    Adds a Gui::DeadzoneCache class (member of GuiNativeEvent) that reads
+    per-axis deadzone values from user.cfg (BaseApp/Spaceball/Motion) once
+    and auto-updates via ParameterGrp::ObserverType when values change.
+    Initialized in initSpaceball(), zeroes out axis values below their
+    threshold before posting the motion event.
     Applied on top of the event coalescing patch (requires hasMotion block).
     """
-    filepath = find_file(source_dir, "GuiNativeEventLinux.cpp")
-    if not filepath:
+    cpp_path = find_file(source_dir, "GuiNativeEventLinux.cpp")
+    h_path = find_file(source_dir, "GuiNativeEventLinux.h")
+    if not cpp_path:
         print("  SKIP: GuiNativeEventLinux.cpp not found")
         return False
+    if not h_path:
+        print("  SKIP: GuiNativeEventLinux.h not found")
+        return False
 
-    with open(filepath, "r") as f:
-        content = f.read()
+    with open(cpp_path, "r") as f:
+        cpp = f.read()
+    with open(h_path, "r") as f:
+        header = f.read()
 
-    if "DeadzoneCache" in content:
-        print(f"  OK:   {os.path.relpath(filepath, source_dir)} (deadzone already patched)")
+    if "DeadzoneCache" in cpp:
+        print(f"  OK:   {os.path.relpath(cpp_path, source_dir)} (deadzone already patched)")
         return True
 
-    if "hasMotion" not in content:
+    if "hasMotion" not in cpp:
         print(f"  FAIL: Event coalescing patch must be applied first")
         return False
 
+    # --- Patch header: add forward declaration, include, and member ---
+
+    # Add #include <memory> if missing
+    if '#include <memory>' not in header:
+        header = header.replace(
+            '#include "GuiAbstractNativeEvent.h"',
+            '#include "GuiAbstractNativeEvent.h"\n#include <memory>',
+            1
+        )
+
+    # Add forward declaration of DeadzoneCache
+    if 'class DeadzoneCache;' not in header:
+        header = header.replace(
+            'class GUIApplicationNativeEventAware;',
+            'class GUIApplicationNativeEventAware;\nclass DeadzoneCache;',
+            1
+        )
+
+    # Add unique_ptr<DeadzoneCache> member before "private Q_SLOTS:"
+    if 'unique_ptr<DeadzoneCache>' not in header:
+        header = header.replace(
+            'private Q_SLOTS:',
+            '    std::unique_ptr<DeadzoneCache> dzCache;\n\nprivate Q_SLOTS:',
+            1
+        )
+
+    with open(h_path, "w") as f:
+        f.write(header)
+
+    # --- Patch cpp: add includes, class definition, init, and usage ---
+
     # Add required includes
     for inc in ['<array>', '<cmath>', '<cstring>']:
-        if f'#include {inc}' not in content:
-            content = content.replace(
+        if f'#include {inc}' not in cpp:
+            cpp = cpp.replace(
                 '#include <App/Application.h>',
                 f'#include {inc}\n#include <App/Application.h>',
                 1
             )
-    if '#include <App/Application.h>' not in content:
-        content = content.replace(
+    if '#include <App/Application.h>' not in cpp:
+        cpp = cpp.replace(
             '#include <FCConfig.h>\n',
             '#include <FCConfig.h>\n#include <array>\n#include <cmath>\n#include <cstring>\n#include <App/Application.h>\n',
             1
         )
-    if '#include <Base/Parameter.h>' not in content:
-        content = content.replace(
+    if '#include <Base/Parameter.h>' not in cpp:
+        cpp = cpp.replace(
             '#include <Base/Console.h>',
             '#include <Base/Console.h>\n#include <Base/Parameter.h>',
             1
         )
 
-    # Add DeadzoneCache class in anonymous namespace before first function definition
+    # Add Gui::DeadzoneCache class definition before the constructor
     deadzone_cache_class = (
-        '\nnamespace\n'
-        '{\n'
-        '\n'
-        '// Cached per-axis deadzone values, auto-updated via Observer when user.cfg changes.\n'
-        'class DeadzoneCache: public ParameterGrp::ObserverType\n'
+        '\n// Cached per-axis deadzone values, auto-updated via Observer when user.cfg changes.\n'
+        'class Gui::DeadzoneCache: public ParameterGrp::ObserverType\n'
         '{\n'
         'public:\n'
         '    static constexpr std::array<const char*, 6> keys = {\n'
@@ -262,21 +297,34 @@ def patch_per_axis_deadzone(source_dir):
         '\n'
         '    ParameterGrp::handle hGrp;\n'
         '};\n'
-        '\n'
-        '}  // namespace\n'
     )
 
-    # Insert before the GuiNativeEvent constructor
     constructor_pattern = 'Gui::GuiNativeEvent::GuiNativeEvent('
-    if constructor_pattern not in content:
-        print(f"  FAIL: Could not find GuiNativeEvent constructor in {os.path.relpath(filepath, source_dir)}")
+    if constructor_pattern not in cpp:
+        print(f"  FAIL: Could not find GuiNativeEvent constructor in {os.path.relpath(cpp_path, source_dir)}")
         return False
 
-    content = content.replace(
+    cpp = cpp.replace(
         constructor_pattern,
         deadzone_cache_class + '\n' + constructor_pattern,
         1
     )
+
+    # Add dzCache initialization in initSpaceball() after the connect() call
+    connect_pattern = 'connect(SpacenavNotifier, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));'
+    if connect_pattern not in cpp:
+        print(f"  FAIL: Could not find connect() pattern in initSpaceball()")
+        return False
+
+    dzCache_init = (
+        'connect(SpacenavNotifier, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));\n'
+        '        dzCache = std::make_unique<DeadzoneCache>(\n'
+        '            App::GetApplication().GetParameterGroupByPath(\n'
+        '                "User parameter:BaseApp/Spaceball/Motion"\n'
+        '            )\n'
+        '        );'
+    )
+    cpp = cpp.replace(connect_pattern, dzCache_init, 1)
 
     # Replace the simple "if (hasMotion) { postMotionEvent }" block
     old_motion_block = (
@@ -288,31 +336,28 @@ def patch_per_axis_deadzone(source_dir):
         '    if (hasMotion) {\n'
         '        // Per-axis deadzone: zero out axes below their individual threshold.\n'
         '        // Values cached and auto-updated via Observer when user.cfg changes.\n'
-        '        static DeadzoneCache dzCache(\n'
-        '            App::GetApplication().GetParameterGroupByPath(\n'
-        '                "User parameter:BaseApp/Spaceball/Motion"\n'
-        '            )\n'
-        '        );\n'
-        '        for (size_t i = 0; i < dzCache.values.size(); i++) {\n'
-        '            int dz = dzCache.values[i];\n'
-        '            if (dz > 0 && std::abs(motionDataArray[i]) < dz) {\n'
-        '                motionDataArray[i] = 0;\n'
+        '        if (dzCache) {\n'
+        '            for (size_t i = 0; i < dzCache->values.size(); i++) {\n'
+        '                int dz = dzCache->values[i];\n'
+        '                if (dz > 0 && std::abs(motionDataArray[i]) < dz) {\n'
+        '                    motionDataArray[i] = 0;\n'
+        '                }\n'
         '            }\n'
         '        }\n'
         '        mainApp->postMotionEvent(motionDataArray);\n'
         '    }'
     )
 
-    if old_motion_block not in content:
-        print(f"  FAIL: Could not find hasMotion block in {os.path.relpath(filepath, source_dir)}")
+    if old_motion_block not in cpp:
+        print(f"  FAIL: Could not find hasMotion block in {os.path.relpath(cpp_path, source_dir)}")
         return False
 
-    content = content.replace(old_motion_block, new_motion_block, 1)
+    cpp = cpp.replace(old_motion_block, new_motion_block, 1)
 
-    with open(filepath, "w") as f:
-        f.write(content)
+    with open(cpp_path, "w") as f:
+        f.write(cpp)
 
-    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Per-axis deadzone with Observer cache applied")
+    print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - Per-axis deadzone with member Observer cache applied")
     return True
 
 
