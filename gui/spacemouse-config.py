@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QLabel, QComboBox, QSlider,
     QPushButton, QLineEdit, QFormLayout,
-    QMessageBox, QMenu, QInputDialog, QSystemTrayIcon,
+    QMessageBox, QMenu, QSystemTrayIcon,
     QScrollArea, QFrame,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPropertyAnimation, Property, QEasingCurve, QSize
@@ -1126,7 +1126,7 @@ class AxesCard(QWidget):
 # ── Desktop Page ──────────────────────────────────────────────────────
 
 class DesktopPage(QWidget):
-    """Daemon profile editor page."""
+    """Desktop settings page (single profile)."""
     changed = Signal()
 
     def __init__(self, config_data):
@@ -1146,44 +1146,7 @@ class DesktopPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
-        profiles = self._config.get("profiles", {})
-        profile_names = list(profiles.keys())
-
-        # ── Card 1: PROFILE ──
-        card, cl = make_card("PROFILE")
-        hl = QHBoxLayout()
-        self.profile_combo = QComboBox()
-        self.profile_combo.addItems(profile_names)
-        self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
-        hl.addWidget(QLabel("Active Profile:"))
-        hl.addWidget(self.profile_combo, 1)
-
-        add_btn = QPushButton("+")
-        add_btn.setFixedWidth(32)
-        add_btn.setToolTip("Add profile")
-        add_btn.clicked.connect(self._add_profile)
-        hl.addWidget(add_btn)
-
-        self.del_btn = QPushButton("-")
-        self.del_btn.setFixedWidth(32)
-        self.del_btn.setToolTip("Delete profile")
-        self.del_btn.clicked.connect(self._del_profile)
-        hl.addWidget(self.del_btn)
-
-        cl.addLayout(hl)
-
-        self.wm_row = QWidget()
-        wm_hl = QHBoxLayout(self.wm_row)
-        wm_hl.setContentsMargins(0, 0, 0, 0)
-        wm_hl.addWidget(QLabel("Window Match:"))
-        self.wm_class_edit = QLineEdit()
-        self.wm_class_edit.setPlaceholderText("e.g. firefox, chromium")
-        self.wm_class_edit.textChanged.connect(self._emit_changed)
-        wm_hl.addWidget(self.wm_class_edit, 1)
-        cl.addWidget(self.wm_row)
-        layout.addWidget(card)
-
-        # ── Card 2: SENSITIVITY & SPEED ──
+        # ── Card 1: SENSITIVITY & SPEED ──
         card, cl = make_card("SENSITIVITY & SPEED")
         fl = QFormLayout()
         fl.setSpacing(10)
@@ -1268,32 +1231,15 @@ class DesktopPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
-        if profile_names:
-            self._load_profile(profile_names[0])
+        self._load_profile()
 
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
 
-    def _on_profile_changed(self, name):
-        if not name:
-            return
+    def _load_profile(self):
         profiles = self._config.get("profiles", {})
-        if name in profiles:
-            self._building = True
-            self._load_profile(name)
-            self._building = False
-
-    def _load_profile(self, name):
-        profiles = self._config.get("profiles", {})
-        data = profiles.get(name, {})
-        is_default = (name == "default")
-
-        self.wm_row.setVisible(not is_default)
-        self.del_btn.setEnabled(not is_default)
-
-        if not is_default:
-            self.wm_class_edit.setText(", ".join(data.get("match_wm_class", [])))
+        data = profiles.get("default", {})
 
         self.sensitivity_s.setValue(int(data.get("sensitivity", 1.0) * 10))
         self.scroll_speed_s.setValue(int(data.get("scroll_speed", 3.0) * 10))
@@ -1331,45 +1277,9 @@ class DesktopPage(QWidget):
         self.dswitch_thresh_s.setValue(data.get("desktop_switch_threshold", 200))
         self.dswitch_cool_s.setValue(data.get("desktop_switch_cooldown_ms", 500))
 
-    def _add_profile(self):
-        name, ok = QInputDialog.getText(
-            self, "New Profile", "Profile name (e.g. firefox, krita):")
-        if not ok or not name.strip():
-            return
-        name = name.strip().lower().replace(" ", "_")
-        profiles = self._config.get("profiles", {})
-        if name in profiles:
-            QMessageBox.warning(self, "Error", f"Profile '{name}' already exists.")
-            return
-        default_data = dict(profiles.get("default", {}))
-        default_data["match_wm_class"] = [name]
-        profiles[name] = default_data
-        self.profile_combo.addItem(name)
-        self.profile_combo.setCurrentText(name)
-
-    def _del_profile(self):
-        name = self.profile_combo.currentText()
-        if name == "default":
-            return
-        reply = QMessageBox.question(
-            self, "Delete Profile", f"Delete profile '{name}'?")
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        profiles = self._config.get("profiles", {})
-        profiles.pop(name, None)
-        idx = self.profile_combo.findText(name)
-        if idx >= 0:
-            self.profile_combo.removeItem(idx)
-
-    def get_current_profile_data(self):
-        """Return current profile data as dict."""
+    def _get_profile_data(self):
+        """Return current UI state as profile data dict."""
         data = {}
-        name = self.profile_combo.currentText()
-        if name != "default":
-            wm_text = self.wm_class_edit.text().strip()
-            if wm_text:
-                data["match_wm_class"] = [s.strip() for s in wm_text.split(",") if s.strip()]
-
         data["sensitivity"] = self.sensitivity_s.value() / 10.0
         data["scroll_speed"] = self.scroll_speed_s.value() / 10.0
         data["zoom_speed"] = self.zoom_speed_s.value() / 10.0
@@ -1394,31 +1304,17 @@ class DesktopPage(QWidget):
         data["desktop_switch_cooldown_ms"] = self.dswitch_cool_s.value()
         return data
 
-    def save_current_profile(self):
-        """Save current UI state back into config dict."""
-        name = self.profile_combo.currentText()
-        if not name:
-            return
-        profiles = self._config.setdefault("profiles", {})
-        profiles[name] = self.get_current_profile_data()
-
     def get_all_config(self):
-        """Return full daemon config dict with all profiles."""
-        self.save_current_profile()
+        """Return full daemon config dict with default profile."""
+        profiles = self._config.setdefault("profiles", {})
+        profiles["default"] = self._get_profile_data()
         return self._config
 
     def update_config(self, config):
         """Replace config data and refresh UI."""
         self._config = config
         self._building = True
-        current = self.profile_combo.currentText()
-        self.profile_combo.clear()
-        profiles = config.get("profiles", {})
-        self.profile_combo.addItems(list(profiles.keys()))
-        if current in profiles:
-            self.profile_combo.setCurrentText(current)
-        elif profiles:
-            self.profile_combo.setCurrentIndex(0)
+        self._load_profile()
         self._building = False
 
 # ── FreeCAD Page ──────────────────────────────────────────────────────
@@ -2038,9 +1934,6 @@ class SettingsWindow(QMainWindow):
         self._dirty = False
 
     def _switch_page(self, idx):
-        # Save current desktop page state before switching away
-        if self.stack.currentIndex() == 0:
-            self.desktop_page.save_current_profile()
         self.stack.setCurrentIndex(idx)
         self._sync_deadzones()
 
