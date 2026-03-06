@@ -1,6 +1,8 @@
 # FreeCAD SpaceMouse Fix — Technical Reference
 
-This document covers the technical details of the FreeCAD SpaceMouse patch. For the step-by-step installation guide, see the [README](../README.md#freecad-spacemouse-fix).
+This document covers the technical details of the FreeCAD SpaceMouse patch. For the step-by-step installation guide, see the [README](../README.md#freecad).
+
+The patch has been submitted upstream as [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110).
 
 ---
 
@@ -38,9 +40,9 @@ Instead of posting every event individually, the drain loop keeps only the **lat
 
 Camera property changes are wrapped in `enableNotify(false)` / `enableNotify(true)` + `touch()`, so orientation and position updates trigger a **single** Coin3D redraw instead of two.
 
-### Fix 3: Per-Axis Deadzone Filtering (`GuiNativeEventLinux.cpp`)
+### Fix 3: Per-Axis Deadzone Filtering (`GuiNativeEventLinux.cpp` + `GuiNativeEventLinux.h`)
 
-After coalescing, each axis value is checked against a per-axis deadzone threshold read from FreeCAD's `user.cfg` (`BaseApp/Spaceball/Motion/{Axis}Deadzone`). Values inside the deadzone are zeroed out before the motion event is posted. This prevents unintended drift on sensitive axes. Deadzone values are configurable via the SpaceMouse Control GUI.
+A `DeadzoneCache` member of `GuiNativeEvent` reads per-axis deadzone thresholds from `user.cfg` (`BaseApp/Spaceball/Motion/{Axis}Deadzone`) once at startup and auto-updates via `ParameterGrp::ObserverType` when values change — no polling overhead. After coalescing, each axis value below its threshold is zeroed out before posting. This prevents unintended drift on sensitive axes. Deadzone values default to 0 (disabled) and are configurable via FreeCAD preferences or the SpaceMouse Control GUI.
 
 ### Result
 
@@ -56,7 +58,7 @@ After coalescing, each axis value is checked against a per-axis deadzone thresho
 
 ### Method A: Arch Linux Package (Recommended)
 
-See the [README installation guide](../README.md#step-2-build-patched-freecad).
+See the [README installation guide](../README.md#1-build-and-install-the-patched-freecad).
 
 ---
 
@@ -152,8 +154,9 @@ python3 freecad-patches/apply-spacemouse-fix.py --check /path/to/freecad-source
 | FreeCAD Version | Status |
 |-----------------|--------|
 | 1.0.x | Tested, works |
+| 1.1rc2 | Tested, works |
 | 0.21.x | Should work (same code since 2018) |
-| 1.1.x / 1.2.x | Should work (affected code unchanged) |
+| 1.2.x (main) | Patch submitted as [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) |
 
 | Distribution | Method |
 |-------------|--------|
