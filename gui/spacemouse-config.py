@@ -20,6 +20,7 @@ import shutil
 import socket
 import subprocess
 import signal
+import ctypes
 import tempfile
 import atexit
 import ctypes
@@ -2356,10 +2357,15 @@ class SpaceMouseApp:
             return  # Already running
         # Ensure SpnavReader is disconnected (spacenavd only supports one reader)
         self.spnav_reader.set_suspended(True)
+        def _die_with_parent():
+            # Auto-kill daemon if GUI crashes or gets kill -9'd
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
         self._daemon_proc = subprocess.Popen(
             [str(Path.home() / ".local/bin/spacemouse-desktop"),
              "-f", "-c", str(CONFIG_PATH)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            preexec_fn=_die_with_parent)
         self._daemon_running = True
 
     def _stop_daemon(self):
