@@ -50,14 +50,16 @@ The driver **automatically detects** when you switch between windows. The curren
 
 ## Resource Management
 
-The driver is designed to be lightweight. Only the focused application actively processes SpaceMouse input — everything else goes idle:
+FreeCAD and Blender connect **directly** to spacenavd — they don't need the GUI or the daemon to be running. You can close SpaceMouse Control completely and 3D navigation keeps working. Settings you make in the GUI are written to each app's config file and persist across restarts.
+
+The GUI and daemon are only needed for **desktop features** (scroll, zoom, workspace switching). When the GUI quits, the daemon is automatically cleaned up — no orphaned processes, no conflicts.
+
+When the GUI is running, resources are managed per-window:
 
 - **Desktop focused** — daemon handles scroll/zoom/workspace, GUI reader suspended
-- **Blender/FreeCAD focused** — native 3D navigation active, daemon and GUI reader idle (zero CPU)
-- **Settings GUI focused** — live preview active, daemon desktop actions blocked (no accidental workspace switches)
-- **Settings GUI open but unfocused** — live preview active, daemon normal (test your settings on the desktop)
-
-The C daemon automatically detects "passthrough" profiles (all axes/buttons set to `none`) and skips event processing entirely. The GUI's SpaceMouse reader uses event-driven I/O (`select()` on the spnav file descriptor) instead of polling — zero CPU when no events arrive.
+- **Blender/FreeCAD focused** — daemon stopped, GUI reader idle (zero CPU)
+- **Settings GUI focused** — live preview active, desktop actions blocked
+- **GUI closed** — nothing running, 3D apps work on their own
 
 ## Blender
 
@@ -226,7 +228,7 @@ GPLv3 — See [LICENSE](LICENSE) for details.
 This project is **actively maintained**. Planned and in-progress work:
 
 - More per-application profiles (Krita, Inkscape, video editors)
-- FreeCAD upstream patch submission
+- FreeCAD upstream patch submitted ([PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110)) — under review
 - AUR package for the driver itself
 - Multi-device support (SpaceMouse Pro buttons)
 
