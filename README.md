@@ -1,8 +1,6 @@
 # SpaceMouse Linux Driver
 
-> **This project is under active development.** Contributions and feedback are welcome — feel free to open an issue or pull request.
->
-> If you find this project useful, consider supporting it: [Buy me a coffee on Ko-fi](https://ko-fi.com/maik0000ff)
+> **This project is under active development.** Contributions and feedback are welcome.
 
 Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
 Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it works natively inside Blender and FreeCAD for 3D navigation.
@@ -192,7 +190,7 @@ spacemouse-test --led     # LED toggle test
 | SpaceMouse Pro (Wireless) | Should work (untested) |
 | SpaceMouse Enterprise | Should work (untested) |
 
-Any 6DOF device supported by spacenavd should work. LED control currently only works for the SpaceNavigator — other models may use different HID report formats. If you have a different model, please [open an issue](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/issues).
+Any 6DOF device supported by spacenavd should work. LED control currently only works for the SpaceNavigator — other models may use different HID report formats.
 
 ## License
 
@@ -206,12 +204,6 @@ This project is **actively maintained**. Current focus: desktop navigation and 3
 - [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) — Smooth navigation + per-axis deadzone (**merged**)
 - [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) — Button fixes (in merge queue, milestone 1.2)
 - [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) — 100% CPU fix (PR planned)
-
-**Planned:**
-- AUR package for the driver itself
-- Multi-device support (SpaceMouse Pro buttons)
-
-Found a bug or have a feature request? [Open an issue](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/issues).
 
 ## Acknowledgments
 
