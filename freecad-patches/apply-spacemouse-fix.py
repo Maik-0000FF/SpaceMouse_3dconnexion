@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-Apply SpaceMouse smooth navigation fix to FreeCAD source.
+Apply SpaceMouse fixes to FreeCAD source.
 
 Works across FreeCAD versions regardless of directory structure or line numbers.
-Finds the exact code patterns and applies three fixes:
+Finds exact code patterns and applies six fixes:
+
+Performance (PR #28110):
   1. Event coalescing in pollSpacenav()
   2. Batched camera updates in processMotionEvent()
   3. Per-axis deadzone with cached Observer in pollSpacenav()
+
+Button fixes (PR #28181):
+  4. Button selection sync in DlgCustomizeSpaceball (#17812)
+  5. Checkable action invoke in SpaceBall handlers (#10073)
+
+Stability:
+  6. spnav disconnect detection in pollSpacenav() (#17809)
 
 Usage:
     python3 apply-spacemouse-fix.py /path/to/freecad-source
@@ -14,7 +23,6 @@ Usage:
 """
 import sys
 import os
-import glob
 
 def find_file(base_dir, filename):
     """Find a file anywhere in the source tree."""
@@ -23,6 +31,9 @@ def find_file(base_dir, filename):
             return os.path.join(root, filename)
     return None
 
+# ---------------------------------------------------------------------------
+# Fix 1: Event coalescing (PR #28110)
+# ---------------------------------------------------------------------------
 def patch_poll_spacenav(source_dir):
     """Fix 1: Event coalescing in pollSpacenav().
 
@@ -95,6 +106,9 @@ def patch_poll_spacenav(source_dir):
     print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Event coalescing applied")
     return True
 
+# ---------------------------------------------------------------------------
+# Fix 2: Batched camera updates (PR #28110)
+# ---------------------------------------------------------------------------
 def patch_process_motion_event(source_dir):
     """Fix 2: Batched camera updates in processMotionEvent().
 
@@ -163,6 +177,9 @@ def patch_process_motion_event(source_dir):
     print(f"        The code may have changed in this FreeCAD version.")
     return False
 
+# ---------------------------------------------------------------------------
+# Fix 3: Per-axis deadzone (PR #28110)
+# ---------------------------------------------------------------------------
 def patch_per_axis_deadzone(source_dir):
     """Fix 3: Per-axis deadzone filtering in pollSpacenav().
 
@@ -360,7 +377,356 @@ def patch_per_axis_deadzone(source_dir):
     print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - Per-axis deadzone with member Observer cache applied")
     return True
 
+# ---------------------------------------------------------------------------
+# Fix 4: Button selection sync (#17812)
+# ---------------------------------------------------------------------------
+def patch_button_select(source_dir):
+    """Fix 4: Sync currentIndex with selection in ButtonView::selectButton().
 
+    Before: selectButton() updates the visual selection but not currentIndex(),
+            so goChangedCommand() reads the wrong button when user clicks a row.
+    After:  setCurrentIndex() is called to keep both in sync.
+    Fixes: https://github.com/FreeCAD/FreeCAD/issues/17812
+    """
+    filepath = find_file(source_dir, "DlgCustomizeSpaceball.cpp")
+    if not filepath:
+        print("  SKIP: DlgCustomizeSpaceball.cpp not found")
+        return False
+
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    if "this->setCurrentIndex(idx)" in content:
+        print(f"  OK:   {os.path.relpath(filepath, source_dir)} (already patched)")
+        return True
+
+    old = (
+        "void ButtonView::selectButton(int number)\n"
+        "{\n"
+        "    this->selectionModel()->select(this->model()->index(number, 0), QItemSelectionModel::ClearAndSelect);\n"
+        "    this->scrollTo(this->model()->index(number, 0), QAbstractItemView::EnsureVisible);\n"
+        "}"
+    )
+    new = (
+        "void ButtonView::selectButton(int number)\n"
+        "{\n"
+        "    QModelIndex idx = this->model()->index(number, 0);\n"
+        "    this->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect);\n"
+        "    this->setCurrentIndex(idx);\n"
+        "    this->scrollTo(idx, QAbstractItemView::EnsureVisible);\n"
+        "}"
+    )
+
+    if old not in content:
+        print(f"  FAIL: Could not find selectButton pattern in {os.path.relpath(filepath, source_dir)}")
+        print(f"        The code may have changed in this FreeCAD version.")
+        return False
+
+    content = content.replace(old, new, 1)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button selection sync applied")
+    return True
+
+# ---------------------------------------------------------------------------
+# Fix 5: Checkable action invoke (#10073)
+# ---------------------------------------------------------------------------
+def patch_button_invoke(source_dir):
+    """Fix 5: Use invoke(1) for SpaceBall button commands.
+
+    Before: runCommandByName() calls invoke(0), which never satisfies
+            checkable action guards (if iMsg == 1), so commands like
+            Std_OrthographicCamera fail silently.
+    After:  getCommandByName() + invoke(1) in the two SpaceBall button
+            handlers (MainWindow.cpp for Linux/spnav, NavlibCmds.cpp for
+            Windows/macOS NavLib).
+    Fixes: https://github.com/FreeCAD/FreeCAD/issues/10073
+    """
+    ok_main = _patch_button_invoke_mainwindow(source_dir)
+    ok_navlib = _patch_button_invoke_navlib(source_dir)
+    return ok_main and ok_navlib
+
+def _patch_button_invoke_mainwindow(source_dir):
+    """Fix 5a: SpaceBall button handler in MainWindow.cpp (Linux/spnav)."""
+    filepath = find_file(source_dir, "MainWindow.cpp")
+    if not filepath:
+        print("  FAIL: MainWindow.cpp not found")
+        return False
+
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    # Check if already patched
+    if "cmd->invoke(1);" in content and "getCommandByName(\n                    commandName" in content:
+        print(f"  OK:   {os.path.relpath(filepath, source_dir)} (already patched)")
+        return True
+
+    old = (
+        '            if (commandName.empty()) {\n'
+        '                return true;\n'
+        '            }\n'
+        '            else {\n'
+        '                Application::Instance->commandManager().runCommandByName(commandName.c_str());\n'
+        '            }'
+    )
+    new = (
+        '            if (commandName.empty()) {\n'
+        '                return true;\n'
+        '            }\n'
+        '            else {\n'
+        '                Command* cmd = Application::Instance->commandManager().getCommandByName(\n'
+        '                    commandName.c_str());\n'
+        '                if (cmd) {\n'
+        '                    cmd->invoke(1);\n'
+        '                }\n'
+        '            }'
+    )
+
+    if old not in content:
+        print(f"  FAIL: Could not find SpaceBall button handler pattern in {os.path.relpath(filepath, source_dir)}")
+        print(f"        (looking for runCommandByName near commandName.empty())")
+        return False
+
+    content = content.replace(old, new, 1)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button invoke(1) applied")
+    return True
+
+def _patch_button_invoke_navlib(source_dir):
+    """Fix 5b: SpaceBall button handler in NavlibCmds.cpp (Windows/macOS)."""
+    filepath = find_file(source_dir, "NavlibCmds.cpp")
+    if not filepath:
+        print("  SKIP: NavlibCmds.cpp not found (NavLib not available?)")
+        return True  # Not a failure — NavLib may not be present
+
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    # Check if already patched
+    if "cmd->invoke(1);" in content and "getCommandByName(parsedData.commandName" in content:
+        print(f"  OK:   {os.path.relpath(filepath, source_dir)} (already patched)")
+        return True
+
+    old = (
+        '    else\n'
+        '        commandManager.runCommandByName(parsedData.commandName.c_str());'
+    )
+    new = (
+        '    else {\n'
+        '        Gui::Command* cmd = commandManager.getCommandByName(parsedData.commandName.c_str());\n'
+        '        if (cmd) {\n'
+        '            cmd->invoke(1);\n'
+        '        }\n'
+        '    }'
+    )
+
+    if old not in content:
+        print(f"  FAIL: Could not find NavLib button handler pattern in {os.path.relpath(filepath, source_dir)}")
+        print(f"        (looking for commandManager.runCommandByName(parsedData.commandName))")
+        return False
+
+    content = content.replace(old, new, 1)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button invoke(1) applied")
+    return True
+
+# ---------------------------------------------------------------------------
+# Fix 6: spnav disconnect detection (#17809)
+# ---------------------------------------------------------------------------
+def patch_spnav_disconnect(source_dir):
+    """Fix 6: Detect spacenavd disconnection to prevent 100% CPU usage.
+
+    Before: When spacenavd stops, QSocketNotifier fires continuously on
+            the dead socket fd (EOF is always "readable"). pollSpacenav()
+            spins in a tight loop pegging one CPU core at 100%.
+    After:  After an empty poll cycle, recv(MSG_PEEK) checks for EOF.
+            On disconnection, the QSocketNotifier is disabled and the
+            spnav connection is closed.
+    Requires: Fix 1 (event coalescing) must be applied first.
+    Fixes: https://github.com/FreeCAD/FreeCAD/issues/17809
+    """
+    cpp_path = find_file(source_dir, "GuiNativeEventLinux.cpp")
+    h_path = find_file(source_dir, "GuiNativeEventLinux.h")
+    if not cpp_path:
+        print("  SKIP: GuiNativeEventLinux.cpp not found")
+        return False
+    if not h_path:
+        print("  SKIP: GuiNativeEventLinux.h not found")
+        return False
+
+    with open(cpp_path, "r") as f:
+        cpp = f.read()
+    with open(h_path, "r") as f:
+        header = f.read()
+
+    if "spnavNotifier" in cpp:
+        print(f"  OK:   {os.path.relpath(cpp_path, source_dir)} (disconnect detection already patched)")
+        return True
+
+    if "hasMotion" not in cpp:
+        print(f"  FAIL: Event coalescing patch (Fix 1) must be applied first")
+        return False
+
+    # --- Patch header ---
+
+    # Add QSocketNotifier forward declaration
+    if 'class QSocketNotifier;' not in header:
+        header = header.replace(
+            'class QMainWindow;',
+            'class QMainWindow;\nclass QSocketNotifier;',
+            1
+        )
+
+    # Add spnavNotifier member
+    if 'spnavNotifier' not in header:
+        # Insert before "private Q_SLOTS:" or after dzCache if present
+        if 'std::unique_ptr<DeadzoneCache> dzCache;' in header:
+            header = header.replace(
+                '    std::unique_ptr<DeadzoneCache> dzCache;',
+                '    std::unique_ptr<DeadzoneCache> dzCache;\n'
+                '    QSocketNotifier* spnavNotifier {nullptr};',
+                1
+            )
+        else:
+            header = header.replace(
+                'private Q_SLOTS:',
+                '    QSocketNotifier* spnavNotifier {nullptr};\n\n'
+                'private Q_SLOTS:',
+                1
+            )
+
+    with open(h_path, "w") as f:
+        f.write(header)
+
+    # --- Patch cpp ---
+
+    # Add includes for recv/errno
+    if '#include <cerrno>' not in cpp:
+        cpp = cpp.replace(
+            '#include <spnav.h>',
+            '#include <cerrno>\n#include <sys/socket.h>\n\n#include <spnav.h>',
+            1
+        )
+
+    # Rename local SpacenavNotifier to member spnavNotifier
+    cpp = cpp.replace(
+        'QSocketNotifier* SpacenavNotifier\n'
+        '            = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);',
+        'spnavNotifier = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);',
+        1
+    )
+    # Also rename in connect() call (may have dzCache init after it)
+    cpp = cpp.replace('connect(SpacenavNotifier,', 'connect(spnavNotifier,', 1)
+
+    # Update destructor: only close if connection is active
+    old_dtor = (
+        'Gui::GuiNativeEvent::~GuiNativeEvent()\n'
+        '{\n'
+        '    if (spnav_close()) {\n'
+        '        Base::Console().log("Couldn\'t disconnect from spacenav daemon\\n");\n'
+        '    }\n'
+        '    else {\n'
+        '        Base::Console().log("Disconnected from spacenav daemon\\n");\n'
+        '    }\n'
+        '}'
+    )
+    new_dtor = (
+        'Gui::GuiNativeEvent::~GuiNativeEvent()\n'
+        '{\n'
+        '    if (spnavNotifier) {\n'
+        '        if (spnav_close()) {\n'
+        '            Base::Console().log("Couldn\'t disconnect from spacenav daemon\\n");\n'
+        '        }\n'
+        '        else {\n'
+        '            Base::Console().log("Disconnected from spacenav daemon\\n");\n'
+        '        }\n'
+        '    }\n'
+        '}'
+    )
+
+    if old_dtor not in cpp:
+        print(f"  FAIL: Could not find destructor pattern in {os.path.relpath(cpp_path, source_dir)}")
+        return False
+
+    cpp = cpp.replace(old_dtor, new_dtor, 1)
+
+    # Add 'bool gotEvent = false;' after 'bool hasMotion = false;'
+    if 'bool gotEvent = false;' not in cpp:
+        cpp = cpp.replace(
+            '    bool hasMotion = false;\n',
+            '    bool hasMotion = false;\n    bool gotEvent = false;\n\n',
+            1
+        )
+
+    # Add 'gotEvent = true;' at the top of the while loop body
+    cpp = cpp.replace(
+        '    while (spnav_poll_event(&ev)) {\n        switch (ev.type) {',
+        '    while (spnav_poll_event(&ev)) {\n        gotEvent = true;\n        switch (ev.type) {',
+        1
+    )
+
+    # Add EOF detection block after the if(hasMotion) block, before the function-closing brace.
+    # Anchor to the moc include to ensure we match the right closing brace.
+    eof_block = (
+        '\n'
+        '    if (!gotEvent) {\n'
+        '        // QSocketNotifier fired but no events were available.\n'
+        '        // Verify the connection is still alive using a non-consuming peek.\n'
+        '        int fd = spnav_fd();\n'
+        '        if (fd >= 0) {\n'
+        '            char buf;\n'
+        '            ssize_t ret = recv(fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);\n'
+        '            if (ret == 0 || (ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {\n'
+        '                // EOF or socket error — spacenavd disconnected\n'
+        '                Base::Console().warning("Lost connection to spacenav daemon\\n");\n'
+        '                spnavNotifier->setEnabled(false);\n'
+        '                spnav_close();\n'
+        '                spnavNotifier = nullptr;\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+    )
+
+    old_end = (
+        '        mainApp->postMotionEvent(motionDataArray);\n'
+        '    }\n'
+        '}\n'
+        '\n'
+        '#include "3Dconnexion/moc_GuiNativeEventLinux.cpp"'
+    )
+    new_end = (
+        '        mainApp->postMotionEvent(motionDataArray);\n'
+        '    }\n'
+        + eof_block +
+        '}\n'
+        '\n'
+        '#include "3Dconnexion/moc_GuiNativeEventLinux.cpp"'
+    )
+
+    if old_end not in cpp:
+        print(f"  FAIL: Could not find pollSpacenav end pattern for EOF block in {os.path.relpath(cpp_path, source_dir)}")
+        return False
+
+    cpp = cpp.replace(old_end, new_end, 1)
+
+    with open(cpp_path, "w") as f:
+        f.write(cpp)
+
+    print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - spnav disconnect detection applied")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
     check_only = False
     args = [a for a in sys.argv[1:] if a != "--check"]
@@ -370,8 +736,12 @@ def main():
     if not args:
         print(f"Usage: {sys.argv[0]} [--check] /path/to/freecad-source")
         print()
-        print("Applies SpaceMouse smooth navigation fix to FreeCAD source code.")
-        print("Use --check to verify if the patch can be applied without modifying files.")
+        print("Applies SpaceMouse fixes to FreeCAD source code:")
+        print("  Fixes 1-3: Performance (event coalescing, camera batching, per-axis deadzone)")
+        print("  Fixes 4-5: Button fixes (selection sync, checkable action invoke)")
+        print("  Fix 6:     Stability (spnav disconnect detection)")
+        print()
+        print("Use --check to verify if patches can be applied without modifying files.")
         sys.exit(1)
 
     source_dir = args[0]
@@ -390,8 +760,9 @@ def main():
         sys.exit(1)
 
     if check_only:
-        print("Checking if SpaceMouse fix can be applied...")
+        print("Checking if SpaceMouse fixes can be applied...")
         ok = True
+
         if spnav_file:
             rel = os.path.relpath(spnav_file, source_dir)
             with open(spnav_file) as f:
@@ -404,13 +775,21 @@ def main():
             else:
                 print(f"  WARN: {rel} - event coalescing pattern not found")
                 ok = False
-            # Fix 3: Per-axis deadzone with Observer cache
+            # Fix 3: Per-axis deadzone
             if "DeadzoneCache" in c:
-                print(f"  OK: {rel} per-axis deadzone (cached) already patched")
+                print(f"  OK: {rel} per-axis deadzone already patched")
             elif "hasMotion" in c or "mainApp->postMotionEvent(motionDataArray)" in c:
                 print(f"  OK: {rel} per-axis deadzone can be patched")
             else:
                 print(f"  WARN: {rel} - per-axis deadzone requires event coalescing first")
+                ok = False
+            # Fix 6: Disconnect detection
+            if "spnavNotifier" in c:
+                print(f"  OK: {rel} disconnect detection already patched")
+            elif "hasMotion" in c or "mainApp->postMotionEvent(motionDataArray)" in c:
+                print(f"  OK: {rel} disconnect detection can be patched")
+            else:
+                print(f"  WARN: {rel} - disconnect detection requires event coalescing first")
                 ok = False
 
         if nav_file:
@@ -426,17 +805,69 @@ def main():
                 print(f"  WARN: {rel} - batched camera updates pattern not found")
                 ok = False
 
+        # Fix 4: Button select
+        btn_file = find_file(source_dir, "DlgCustomizeSpaceball.cpp")
+        if btn_file:
+            rel = os.path.relpath(btn_file, source_dir)
+            with open(btn_file) as f:
+                c = f.read()
+            if "this->setCurrentIndex(idx)" in c:
+                print(f"  OK: {rel} button selection sync already patched")
+            elif "void ButtonView::selectButton" in c:
+                print(f"  OK: {rel} button selection sync can be patched")
+            else:
+                print(f"  WARN: {rel} - selectButton pattern not found")
+                ok = False
+
+        # Fix 5: Button invoke
+        mw_file = find_file(source_dir, "MainWindow.cpp")
+        if mw_file:
+            rel = os.path.relpath(mw_file, source_dir)
+            with open(mw_file) as f:
+                c = f.read()
+            if "cmd->invoke(1);" in c and "getCommandByName" in c:
+                print(f"  OK: {rel} button invoke already patched")
+            elif "runCommandByName(commandName.c_str())" in c:
+                print(f"  OK: {rel} button invoke can be patched")
+            else:
+                print(f"  WARN: {rel} - button invoke pattern not found")
+                ok = False
+
+        nl_file = find_file(source_dir, "NavlibCmds.cpp")
+        if nl_file:
+            rel = os.path.relpath(nl_file, source_dir)
+            with open(nl_file) as f:
+                c = f.read()
+            if "cmd->invoke(1);" in c and "getCommandByName(parsedData" in c:
+                print(f"  OK: {rel} NavLib button invoke already patched")
+            elif "runCommandByName(parsedData.commandName.c_str())" in c:
+                print(f"  OK: {rel} NavLib button invoke can be patched")
+            else:
+                print(f"  WARN: {rel} - NavLib button invoke pattern not found")
+                ok = False
+
         sys.exit(0 if ok else 1)
 
-    print("Applying SpaceMouse smooth navigation fix...")
+    print("Applying SpaceMouse fixes...")
     print()
 
+    print("--- Performance (PR #28110) ---")
     ok1 = patch_poll_spacenav(source_dir)
     ok2 = patch_process_motion_event(source_dir)
     ok3 = patch_per_axis_deadzone(source_dir)
 
     print()
-    if ok1 and ok2 and ok3:
+    print("--- Button fixes (PR #28181) ---")
+    ok4 = patch_button_select(source_dir)
+    ok5 = patch_button_invoke(source_dir)
+
+    print()
+    print("--- Stability (#17809) ---")
+    ok6 = patch_spnav_disconnect(source_dir)
+
+    print()
+    results = [ok1, ok2, ok3, ok4, ok5, ok6]
+    if all(results):
         print("All patches applied successfully.")
         sys.exit(0)
     else:

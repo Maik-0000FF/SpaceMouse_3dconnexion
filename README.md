@@ -66,7 +66,36 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 ## FreeCAD
 
-FreeCAD on Linux has a bug that makes SpaceMouse navigation jerky and unusable ([PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) submitted upstream). You need to build a patched version — it's just 3 commands.
+FreeCAD on Linux has several SpaceMouse issues. We've contributed fixes upstream — some are already merged, others are in progress. Until all fixes reach stable releases, you can build a fully patched version yourself.
+
+> **Availability:** PR #28110 is merged into FreeCAD `main` and will be available in **weekly builds after 2026-03-07** and in **FreeCAD 1.2**. It is **not** included in FreeCAD 1.0.x or 1.1.x releases. PR #28181 is targeted for FreeCAD 1.2.
+
+### FreeCAD SpaceMouse Patches
+
+| Fix | Issue | Status | Description |
+|-----|-------|--------|-------------|
+| Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Fixes jerky navigation (250Hz → 60fps) |
+| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Prevents double redraws per frame |
+| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Configurable deadzone per axis via `user.cfg` |
+| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | In merge queue | Fixes wrong button assignment in preferences |
+| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | In merge queue | Fixes camera toggle buttons not working |
+| Disconnect detection | [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | PR planned | Fixes 100% CPU when spacenavd stops |
+
+A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix.py`) applies all six fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
+
+**Target versions:** FreeCAD **1.0.x** and **1.1.x** (including RC builds). These versions do not include any of the above fixes. Starting with FreeCAD **1.2**, the merged fixes will be included natively and the patcher will skip them automatically.
+
+```bash
+# Check what can be patched (dry-run)
+python3 freecad-patches/apply-spacemouse-fix.py --check /path/to/freecad-source
+
+# Apply all fixes
+python3 freecad-patches/apply-spacemouse-fix.py /path/to/freecad-source
+```
+
+> For technical details, see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
+
+### Build patched FreeCAD (Arch Linux)
 
 **Choose your version** by editing `freecad-pacman-build/PKGBUILD` — change `_build_version` at the top:
 
@@ -75,34 +104,22 @@ FreeCAD on Linux has a bug that makes SpaceMouse navigation jerky and unusable (
 | `_build_version="stable"` | 1.0.2 | Latest stable release |
 | `_build_version="rc"` | 1.1rc2 | Release candidate (newer features) |
 
-### 1. Build and install the patched FreeCAD
-
 ```bash
 cd freecad-pacman-build
 makepkg -sfi
 ```
 
-This downloads the source, applies the fix, compiles, and installs as a normal Arch package. Takes **15–45 minutes** depending on your CPU.
+This downloads the source, applies the patcher, compiles, and installs as a normal Arch package. Takes **15–45 minutes** depending on your CPU.
 
 > After a system update (`pacman -Syu`), FreeCAD gets replaced with the stock version. Just run `cd freecad-pacman-build && makepkg -sfi` again.
 
-### 2. Start FreeCAD once, then close it
+### Configure the SpaceMouse
 
-This creates the config files that the next step needs.
+1. Start FreeCAD once and close it (creates config files)
+2. Run the setup script: `./scripts/freecad-spacemouse-patch.sh`
+3. Or use **SpaceMouse Control** → **FreeCAD** page to adjust settings
 
-### 3. Configure the SpaceMouse
-
-```bash
-./scripts/freecad-spacemouse-patch.sh
-```
-
-> **Important:** Always close FreeCAD before running this. FreeCAD overwrites its config on exit.
-
-### 4. Open FreeCAD — done
-
-If it feels too fast or too slow, open **SpaceMouse Control** → **FreeCAD** page and adjust the sensitivity slider (with FreeCAD closed).
-
-> For technical details, see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
+> **Important:** Always close FreeCAD before editing settings. FreeCAD overwrites its config on exit.
 
 ## Uninstall
 
@@ -126,11 +143,15 @@ sudo systemctl enable --now spacenavd
 
 ### FreeCAD SpaceMouse is jerky/stuttering
 
-You're running an unpatched FreeCAD. Rebuild:
+You're running an unpatched FreeCAD. The fix ([PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110)) is merged but may not be in your installed version yet. Rebuild with the patcher:
 
 ```bash
 cd freecad-pacman-build && makepkg -sfi
 ```
+
+### FreeCAD 100% CPU after spacenavd stops
+
+Known bug ([#17809](https://github.com/FreeCAD/FreeCAD/issues/17809)). When spacenavd crashes or stops, FreeCAD's QSocketNotifier loops on the dead socket. Build a patched version with the patcher to fix this, or restart FreeCAD after restarting spacenavd.
 
 ### Tray icon not showing
 
@@ -172,7 +193,12 @@ GPLv3 — See [LICENSE](LICENSE) for details.
 
 This project is **actively maintained**. Current focus: desktop navigation and 3D app integration.
 
-- FreeCAD upstream patch ([PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110)) — under review
+**FreeCAD upstream contributions:**
+- [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) — Smooth navigation + per-axis deadzone (**merged**)
+- [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) — Button fixes (in merge queue, milestone 1.2)
+- [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) — 100% CPU fix (PR planned)
+
+**Planned:**
 - AUR package for the driver itself
 - Multi-device support (SpaceMouse Pro buttons)
 
