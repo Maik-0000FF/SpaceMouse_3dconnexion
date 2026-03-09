@@ -1,6 +1,8 @@
 # SpaceMouse Linux Driver
 
 > **This project is under active development.** Contributions and feedback are welcome — feel free to open an issue or pull request.
+>
+> If you find this project useful, consider supporting it: [Buy me a coffee on Ko-fi](https://ko-fi.com/maik0000ff)
 
 Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
 Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it works natively inside Blender and FreeCAD for 3D navigation.
