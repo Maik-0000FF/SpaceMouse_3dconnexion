@@ -89,10 +89,17 @@ A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix
 
 ```bash
 # Check what can be patched (dry-run)
-python3 freecad-patches/apply-spacemouse-fix.py --check /path/to/freecad-source
+python3 apply-spacemouse-fix.py --check /path/to/freecad-source
 
 # Apply all fixes
-python3 freecad-patches/apply-spacemouse-fix.py /path/to/freecad-source
+python3 apply-spacemouse-fix.py /path/to/freecad-source
+```
+
+The patcher is a single Python file with no dependencies — it can be used standalone without installing this project:
+
+```bash
+wget https://raw.githubusercontent.com/Maik-0000FF/SpaceMouse_3dconnexion/main/freecad-patches/apply-spacemouse-fix.py
+python3 apply-spacemouse-fix.py /path/to/freecad-source
 ```
 
 > For technical details, see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
