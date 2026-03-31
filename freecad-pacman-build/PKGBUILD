@@ -20,26 +20,33 @@
 # │                                                         │
 # │  Change this to build the FreeCAD version you want:     │
 # │                                                         │
-# │    "stable"  → 1.0.2  (latest stable release)          │
-# │    "rc"      → 1.1rc2 (release candidate, newer)       │
+# │    "stable"  → 1.1.0  (latest stable release)           │
+# │    "weekly"  → latest main branch (weekly build)        │
 # │                                                         │
-# │  Both versions get the SpaceMouse patch applied.        │
+# │  All versions get the SpaceMouse patch applied.         │
+# │  Weekly already includes merged PRs — patcher only      │
+# │  adds unmerged fixes (currently: #17809 disconnect).    │
 # └─────────────────────────────────────────────────────────┘
-_build_version="rc"
+_build_version="stable"
 
-# Version mapping — update these when new versions are released
-_ver_stable="1.0.2"
-_ver_rc="1.1rc2"
+# Version mapping — update when new versions are released
+_ver_stable="1.1.0"
 
-if [[ "$_build_version" == "rc" ]]; then
-  pkgver="$_ver_rc"
+if [[ "$_build_version" == "weekly" ]]; then
+  pkgver=1.2.r0
+  _git_fragment="#branch=main"
 else
   pkgver="$_ver_stable"
+  _git_fragment="#tag=$pkgver"
 fi
 
 pkgname=freecad
-pkgrel=8
-pkgdesc='Feature based parametric 3D CAD modeler (with SpaceMouse patch)'
+pkgrel=1
+if [[ "$_build_version" == "weekly" ]]; then
+  pkgdesc='Feature based parametric 3D CAD modeler (weekly build from main)'
+else
+  pkgdesc='Feature based parametric 3D CAD modeler (with SpaceMouse patch)'
+fi
 arch=(x86_64)
 url='https://www.freecad.org'
 license=(LGPL-2.0-only)
@@ -97,18 +104,21 @@ optdepends=(
   'python-ladybug-core: Solar/Wind diagram support'
 )
 options=(!lto)
-source=("git+https://github.com/$pkgname/$pkgname#tag=$pkgver"
-        fix-opencascade-7.9.patch
-        boost-1.89.patch
+source=("git+https://github.com/$pkgname/$pkgname${_git_fragment}"
         apply-spacemouse-fix.py)
 sha512sums=('SKIP'
-            'SKIP'
-            'SKIP'
             'SKIP')
 b2sums=('SKIP'
-        'SKIP'
-        'SKIP'
         'SKIP')
+
+pkgver() {
+  cd freecad
+  if [[ "$_build_version" == "weekly" ]]; then
+    git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    echo "$_ver_stable"
+  fi
+}
 
 prepare() {
   cd freecad
@@ -116,15 +126,7 @@ prepare() {
   git checkout -- . 2>/dev/null || true
   git submodule update --init --recursive
 
-  # Version-specific patches (only needed for 1.0.x)
-  if [[ "$pkgver" == 1.0* ]]; then
-    patch -p1 -i ../fix-opencascade-7.9.patch
-    git cherry-pick -n 60aa5ff3730d77037ffad0c77ba96b99ef0c7df3 # Fix crashes on Wayland
-    git cherry-pick -n 8547e798fb3b0f51953b18a2cb98f60aec0a7e33 # Fix build with Eigen 5
-    patch -p1 -i ../boost-1.89.patch
-  fi
-
-  # SpaceMouse smooth navigation patch (works on all versions)
+  # SpaceMouse patch (auto-skips already merged fixes)
   python3 ../apply-spacemouse-fix.py .
 
   # Arch HDF5 2.0: pkg-config module is "hdf5", not "hdf5-serial"
