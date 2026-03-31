@@ -68,7 +68,7 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 FreeCAD on Linux has several SpaceMouse issues. We've contributed fixes upstream — some are already merged, others are in progress. Until all fixes reach stable releases, you can build a fully patched version yourself.
 
-> **Availability:** PRs #28110 and #28181 are merged into FreeCAD `main` and available in **weekly builds after 2026-03-28** and in **FreeCAD 1.2**. They are **not** included in FreeCAD 1.0.x or 1.1.x releases (including 1.1.0).
+> **Availability:** PRs #28110 and #28181 are merged into FreeCAD `main` and available in **weekly builds after 2026-03-28** and in **FreeCAD 1.2**. PR #28915 (disconnect detection) is open. None of these fixes are included in FreeCAD 1.0.x or 1.1.x releases (including 1.1.0).
 
 ### FreeCAD SpaceMouse Patches
 
@@ -79,7 +79,7 @@ FreeCAD on Linux has several SpaceMouse issues. We've contributed fixes upstream
 | Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Configurable deadzone per axis via `user.cfg` |
 | Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | Fixes wrong button assignment in preferences |
 | Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | Fixes camera toggle buttons not working |
-| Disconnect detection | [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | PR planned | Fixes 100% CPU when spacenavd stops |
+| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** | Fixes 100% CPU when spacenavd stops |
 
 A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix.py`) applies all six fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
 
@@ -158,7 +158,7 @@ cd freecad-pacman-build && makepkg -sfi
 
 ### FreeCAD 100% CPU after spacenavd stops
 
-Known bug ([#17809](https://github.com/FreeCAD/FreeCAD/issues/17809)). When spacenavd crashes or stops, FreeCAD's QSocketNotifier loops on the dead socket. Build a patched version with the patcher to fix this, or restart FreeCAD after restarting spacenavd.
+Known bug ([#17809](https://github.com/FreeCAD/FreeCAD/issues/17809)), fix submitted as [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915). When spacenavd crashes or stops, FreeCAD's QSocketNotifier loops on the dead socket. Build a patched version with the patcher to fix this, or restart FreeCAD after restarting spacenavd.
 
 ### Tray icon not showing
 
@@ -203,7 +203,7 @@ This project is **actively maintained**. Current focus: desktop navigation and 3
 **FreeCAD upstream contributions:**
 - [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) — Smooth navigation + per-axis deadzone (**merged**)
 - [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) — Button fixes (**merged**, milestone 1.2)
-- [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) — 100% CPU fix (PR planned)
+- [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) — 100% CPU disconnect fix (**open**)
 
 ## Acknowledgments
 
