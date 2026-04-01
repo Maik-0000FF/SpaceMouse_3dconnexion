@@ -726,6 +726,68 @@ def patch_spnav_disconnect(source_dir):
 
 
 # ---------------------------------------------------------------------------
+# Fix 7: Spaceball button dialog reset (#19366)
+# ---------------------------------------------------------------------------
+def patch_spaceball_reset(source_dir):
+    """Fix 7: Fix Spaceball button dialog Reset not updating the view.
+
+    Before: loadConfig() calls goClear() (beginRemoveRows/endRemoveRows)
+            then load3DConnexionButtons() which writes new entries to
+            user.cfg without notifying the Qt model. The view keeps
+            showing the old button list until the dialog is reopened.
+    After:  loadConfig() uses beginResetModel/endResetModel to wrap the
+            entire clear+load operation, so the view updates immediately.
+    Fixes: https://github.com/FreeCAD/FreeCAD/issues/19366
+    """
+    cpp_path = find_file(source_dir, "DlgCustomizeSpaceball.cpp")
+    if not cpp_path:
+        print("  SKIP: DlgCustomizeSpaceball.cpp not found")
+        return False
+
+    with open(cpp_path, "r") as f:
+        cpp = f.read()
+
+    if "beginResetModel" in cpp:
+        print(f"  OK:   {os.path.relpath(cpp_path, source_dir)} (reset fix already patched)")
+        return True
+
+    old_loadconfig = (
+        'void ButtonModel::loadConfig(const char* RequiredDeviceName)\n'
+        '{\n'
+        '    goClear();\n'
+        '    if (!RequiredDeviceName) {\n'
+        '        return;\n'
+        '    }\n'
+        '    load3DConnexionButtons(RequiredDeviceName);\n'
+        '}'
+    )
+
+    new_loadconfig = (
+        'void ButtonModel::loadConfig(const char* RequiredDeviceName)\n'
+        '{\n'
+        '    beginResetModel();\n'
+        '    spaceballButtonGroup()->Clear();\n'
+        '    if (RequiredDeviceName) {\n'
+        '        load3DConnexionButtons(RequiredDeviceName);\n'
+        '    }\n'
+        '    endResetModel();\n'
+        '}'
+    )
+
+    if old_loadconfig not in cpp:
+        print(f"  FAIL: Could not find loadConfig pattern in {os.path.relpath(cpp_path, source_dir)}")
+        return False
+
+    cpp = cpp.replace(old_loadconfig, new_loadconfig, 1)
+
+    with open(cpp_path, "w") as f:
+        f.write(cpp)
+
+    print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} - spaceball reset fix applied")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -741,6 +803,7 @@ def main():
         print("  Fixes 1-3: Performance (event coalescing, camera batching, per-axis deadzone)")
         print("  Fixes 4-5: Button fixes (selection sync, checkable action invoke)")
         print("  Fix 6:     Stability (spnav disconnect detection)")
+        print("  Fix 7:     UI (spaceball reset button fix)")
         print()
         print("Use --check to verify if patches can be applied without modifying files.")
         sys.exit(1)
@@ -867,7 +930,11 @@ def main():
     ok6 = patch_spnav_disconnect(source_dir)
 
     print()
-    results = [ok1, ok2, ok3, ok4, ok5, ok6]
+    print("--- UI fixes (#19366) ---")
+    ok7 = patch_spaceball_reset(source_dir)
+
+    print()
+    results = [ok1, ok2, ok3, ok4, ok5, ok6, ok7]
     if all(results):
         print("All patches applied successfully.")
         sys.exit(0)
