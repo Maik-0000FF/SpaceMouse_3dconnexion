@@ -11,24 +11,27 @@ This document covers the technical details of all FreeCAD SpaceMouse patches. Fo
 | Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `GuiNativeEventLinux.cpp` |
 | Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `NavigationStyle.cpp` |
 | Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `GuiNativeEventLinux.cpp/.h` |
-| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | In merge queue | `DlgCustomizeSpaceball.cpp` |
-| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | In merge queue | `MainWindow.cpp`, `NavlibCmds.cpp` |
-| Disconnect detection | [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | PR planned | `GuiNativeEventLinux.cpp/.h` |
+| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | `DlgCustomizeSpaceball.cpp` |
+| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | `MainWindow.cpp`, `NavlibCmds.cpp` |
+| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** (approved) | `GuiNativeEventLinux.cpp/.h` |
+| Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only | `DlgCustomizeSpaceball.cpp` |
 
-All six fixes are applied by a single patcher: `freecad-patches/apply-spacemouse-fix.py`
+All seven fixes are applied by a single patcher: `freecad-patches/apply-spacemouse-fix.py`
 
 ---
 
 ## Availability
 
-| Version | Performance (PR #28110) | Button fixes (PR #28181) | Disconnect fix (#17809) |
-|---------|------------------------|--------------------------|------------------------|
-| FreeCAD 1.0.x | Not included | Not included | Not included |
-| FreeCAD 1.1.x (incl. RC3) | Not included | Not included | Not included |
-| Weekly builds (after 2026-03-07) | **Included** | Not yet | Not yet |
-| FreeCAD 1.2 | **Included** | **Planned** (milestone 1.2) | PR planned |
+| Version | Performance (PR #28110) | Button fixes (PR #28181) | Disconnect fix (PR #28915) | Reset fix (#19366) |
+|---------|------------------------|--------------------------|---------------------------|-------------------|
+| FreeCAD 1.0.x | Not included | Not included | Not included | Not included |
+| FreeCAD 1.1.x (incl. 1.1.0) | Not included | Not included | Not included | Not included |
+| Weekly 2026-03-11 – 2026-03-25 | **Included** | Not yet | Not yet | Not yet |
+| Weekly 2026-04-01+ | **Included** | **Included** | Not yet | Not yet |
+| FreeCAD 1.2 | **Included** | **Included** | Pending merge | No PR yet |
 
-For FreeCAD 1.0.x and 1.1.x: use the patcher to get all fixes.
+For FreeCAD 1.0.x and 1.1.x: use the patcher to get all seven fixes.
+For weekly builds: the patcher detects natively included fixes and only applies what's missing (currently fixes 6–7).
 
 ---
 
@@ -163,11 +166,11 @@ Both fixes are cross-platform (Linux, Windows, macOS).
 
 ---
 
-## Fix 6: Disconnect Detection (#17809)
+## Fix 6: Disconnect Detection ([PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915))
 
 **Files:** `src/Gui/3Dconnexion/GuiNativeEventLinux.cpp` + `GuiNativeEventLinux.h`
 
-**Fixes:** [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809)
+**Fixes:** [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | **Status:** Open (approved by chennes, `Approved: Code Quality` + `Approved: Tested` labels)
 
 ### Problem
 
@@ -213,9 +216,37 @@ This fix is Linux-only (Windows/macOS use NavLib SDK).
 
 ---
 
+## Fix 7: Spaceball Button Dialog Reset ([#19366](https://github.com/FreeCAD/FreeCAD/issues/19366))
+
+**File:** `src/Gui/Dialogs/DlgCustomizeSpaceball.cpp`
+
+**Fixes:** [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | **Status:** Patcher only (no PR yet)
+
+### Problem
+
+In the Spaceball button customization dialog, clicking "Reset" calls `loadConfig()` which uses `goClear()` (`beginRemoveRows`/`endRemoveRows`) followed by `load3DConnexionButtons()`. The load function writes new entries to `user.cfg` but doesn't notify the Qt model. The view keeps showing the old button list until the dialog is reopened.
+
+### Fix
+
+Replace `goClear()` with `beginResetModel()`/`endResetModel()` to wrap the entire clear+load operation, so the view updates immediately:
+
+```cpp
+void ButtonModel::loadConfig(const char* RequiredDeviceName)
+{
+    beginResetModel();
+    spaceballButtonGroup()->Clear();
+    if (RequiredDeviceName) {
+        load3DConnexionButtons(RequiredDeviceName);
+    }
+    endResetModel();
+}
+```
+
+---
+
 ## The Patcher
 
-`freecad-patches/apply-spacemouse-fix.py` applies all six fixes to any FreeCAD source tree. It uses pattern matching — no line numbers, no version-specific code. Already-applied fixes are detected and skipped.
+`freecad-patches/apply-spacemouse-fix.py` applies all seven fixes to any FreeCAD source tree. It uses pattern matching — no line numbers, no version-specific code. Already-applied fixes are detected and skipped.
 
 ```bash
 # Standalone download (no dependencies, just Python 3)
@@ -301,9 +332,10 @@ python3 apply-spacemouse-fix.py --check /path/to/freecad-source
 
 | FreeCAD Version | Status |
 |-----------------|--------|
-| 1.0.x | Tested, all 6 fixes work |
-| 1.1rc2/rc3 | Tested, all 6 fixes work |
-| 1.2.x (main) | PR #28110 merged, PR #28181 in merge queue |
+| 1.0.x | Tested, all 7 fixes applied by patcher |
+| 1.1.x (incl. 1.1.0) | Tested, all 7 fixes applied by patcher |
+| Weekly 2026-04-01+ | Fixes 1–5 natively included, patcher applies fixes 6–7 |
+| FreeCAD 1.2 | Fixes 1–5 included (milestone 1.2), patcher applies fixes 6–7 |
 
 | Distribution | Method |
 |-------------|--------|
@@ -342,4 +374,4 @@ On Linux, FreeCAD uses the legacy spacenavd/libspnav path (`GuiNativeEventLinux.
 - [#17812](https://github.com/FreeCAD/FreeCAD/issues/17812) — Wrong button assignment in preferences
 - [#9543](https://github.com/FreeCAD/FreeCAD/issues/9543) — SpaceMouse rotation center
 - [#6214](https://github.com/FreeCAD/FreeCAD/issues/6214) — 3D view jumps on switch
-- [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) — Reset button design issue
+- [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) — Spaceball button dialog reset not updating view

@@ -68,22 +68,23 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 FreeCAD on Linux has several SpaceMouse issues. We've contributed fixes upstream — some are already merged, others are in progress. Until all fixes reach stable releases, you can build a fully patched version yourself.
 
-> **Availability:** PRs #28110 and #28181 are merged into FreeCAD `main` and available in **weekly builds after 2026-03-28** and in **FreeCAD 1.2**. PR #28915 (disconnect detection) is open. None of these fixes are included in FreeCAD 1.0.x or 1.1.x releases (including 1.1.0).
+> **Availability:** PRs #28110 and #28181 are merged into FreeCAD `main`. PR #28110 is in weekly builds since **2026-03-11**, PR #28181 since **2026-04-01**. Both will be in **FreeCAD 1.2**. PR #28915 (disconnect detection) is open with approvals. None of these fixes are in FreeCAD 1.0.x or 1.1.x (including 1.1.0).
 
 ### FreeCAD SpaceMouse Patches
 
 | Fix | Issue | Status | Description |
 |-----|-------|--------|-------------|
-| Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Fixes jerky navigation (250Hz → 60fps) |
-| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Prevents double redraws per frame |
-| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | Configurable deadzone per axis via `user.cfg` |
-| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | Fixes wrong button assignment in preferences |
-| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | Fixes camera toggle buttons not working |
-| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** | Fixes 100% CPU when spacenavd stops |
+| Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** (weekly 2026-03-11) | Fixes jerky navigation (250Hz → 60fps) |
+| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** (weekly 2026-03-11) | Prevents double redraws per frame |
+| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** (weekly 2026-03-11) | Configurable deadzone per axis via `user.cfg` |
+| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** (weekly 2026-04-01) | Fixes wrong button assignment in preferences |
+| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** (weekly 2026-04-01) | Fixes camera toggle buttons not working |
+| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** (approved) | Fixes 100% CPU when spacenavd stops |
+| Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only | Fixes Spaceball button dialog reset not updating |
 
-A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix.py`) applies all six fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
+A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix.py`) applies all seven fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
 
-**Target versions:** FreeCAD **1.0.x** and **1.1.x** (including 1.1.0 stable). These versions do not include any of the above fixes. Starting with FreeCAD **1.2** (and weekly builds after 2026-03-28), the merged fixes are included natively and the patcher skips them automatically.
+**Target versions:** FreeCAD **1.0.x** and **1.1.x** (including 1.1.0 stable) — these versions need all seven fixes. Starting with **weekly 2026-04-01** (and FreeCAD **1.2**), fixes 1–5 are included natively and the patcher skips them automatically. Fixes 6–7 are still applied by the patcher on all versions.
 
 ```bash
 # Check what can be patched (dry-run)
@@ -108,8 +109,8 @@ python3 apply-spacemouse-fix.py /path/to/freecad-source
 
 | Setting | Version | Description |
 |---------|---------|-------------|
-| `_build_version="stable"` | 1.1.0 | Latest stable release |
-| `_build_version="weekly"` | main | Latest development build (includes all merged PRs) |
+| `_build_version="stable"` | 1.1.0 | Latest stable release (needs all 7 patches) |
+| `_build_version="weekly"` | main | Latest development build (only needs patches 6–7) |
 
 ```bash
 cd freecad-pacman-build
@@ -201,9 +202,9 @@ GPLv3 — See [LICENSE](LICENSE) for details.
 This project is **actively maintained**. Current focus: desktop navigation and 3D app integration.
 
 **FreeCAD upstream contributions:**
-- [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) — Smooth navigation + per-axis deadzone (**merged**)
-- [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) — Button fixes (**merged**, milestone 1.2)
-- [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) — 100% CPU disconnect fix (**open**)
+- [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) — Smooth navigation + per-axis deadzone (**merged**, in weekly since 2026-03-11)
+- [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) — Button fixes (**merged**, in weekly since 2026-04-01)
+- [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) — 100% CPU disconnect fix (**open**, approved)
 
 ## Acknowledgments
 
