@@ -921,7 +921,6 @@ def patch_navlib_fallback(source_dir):
             '            if (!Instance->pNavlibInterface->enableNavigation()) {\n'
             '                Base::Console().log("Init: 3Dconnexion Navigation Framework failed, "\n'
             '                                    "falling back to legacy support\\n");\n'
-            '                delete Instance->pNavlibInterface;\n'
             '                Instance->pNavlibInterface = nullptr;\n'
             '            }'
         )
