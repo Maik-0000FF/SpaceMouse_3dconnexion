@@ -57,7 +57,9 @@ enum axis_action {
 	ACT_SCROLL_V,
 	ACT_ZOOM,
 	ACT_DESKTOP_SWITCH,
-	ACT_VOLUME
+	ACT_VOLUME,
+	ACT_KEY_PAIR,
+	ACT_SEEK_AUTO
 };
 
 enum btn_action {
@@ -69,11 +71,58 @@ enum btn_action {
 	BTNACT_MUTE,
 	BTNACT_PLAY_PAUSE,
 	BTNACT_NEXT_TRACK,
-	BTNACT_PREV_TRACK
+	BTNACT_PREV_TRACK,
+	BTNACT_KEY,
+	BTNACT_PLAY_PAUSE_AUTO
 };
 
 #define VOLUME_COOLDOWN_MS  80
 #define VOLUME_THRESHOLD    60
+#define KEY_PAIR_THRESHOLD  60
+
+/* Mapping from human-readable key name (used in config.json) to kernel keycode.
+ * Sentinel-terminated. Used for "key:NAME" button actions and
+ * "key_pair:NEG,POS" axis actions. */
+struct key_name_entry {
+	const char *name;
+	int code;
+};
+
+static const struct key_name_entry KEY_NAMES[] = {
+	{"SPACE",     KEY_SPACE},
+	{"ENTER",     KEY_ENTER},
+	{"ESC",       KEY_ESC},
+	{"TAB",       KEY_TAB},
+	{"BACKSPACE", KEY_BACKSPACE},
+	{"LEFT",      KEY_LEFT},
+	{"RIGHT",     KEY_RIGHT},
+	{"UP",        KEY_UP},
+	{"DOWN",      KEY_DOWN},
+	{"PAGEUP",    KEY_PAGEUP},
+	{"PAGEDOWN",  KEY_PAGEDOWN},
+	{"HOME",      KEY_HOME},
+	{"END",       KEY_END},
+	{"A", KEY_A}, {"B", KEY_B}, {"C", KEY_C}, {"D", KEY_D},
+	{"E", KEY_E}, {"F", KEY_F}, {"G", KEY_G}, {"H", KEY_H},
+	{"I", KEY_I}, {"J", KEY_J}, {"K", KEY_K}, {"L", KEY_L},
+	{"M", KEY_M}, {"N", KEY_N}, {"O", KEY_O}, {"P", KEY_P},
+	{"Q", KEY_Q}, {"R", KEY_R}, {"S", KEY_S}, {"T", KEY_T},
+	{"U", KEY_U}, {"V", KEY_V}, {"W", KEY_W}, {"X", KEY_X},
+	{"Y", KEY_Y}, {"Z", KEY_Z},
+	{"F1", KEY_F1}, {"F2", KEY_F2}, {"F3", KEY_F3}, {"F4", KEY_F4},
+	{"F5", KEY_F5}, {"F6", KEY_F6}, {"F7", KEY_F7}, {"F8", KEY_F8},
+	{"F9", KEY_F9}, {"F10", KEY_F10}, {"F11", KEY_F11}, {"F12", KEY_F12},
+	{NULL, 0}
+};
+
+static int lookup_key(const char *name)
+{
+	if (!name) return 0;
+	for (const struct key_name_entry *e = KEY_NAMES; e->name; e++)
+		if (strcasecmp(name, e->name) == 0)
+			return e->code;
+	return 0;
+}
 
 struct config {
 	int deadzone;
@@ -84,7 +133,10 @@ struct config {
 	int dswitch_threshold;
 	int dswitch_cooldown_ms;
 	enum axis_action axis_map[6];
+	int axis_key_neg[6];   /* keycode for negative direction (ACT_KEY_PAIR only) */
+	int axis_key_pos[6];   /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[16];
+	int btn_key[16];        /* keycode (BTNACT_KEY only) */
 	int invert_scroll_x;
 	int invert_scroll_y;
 	double sensitivity;
@@ -96,6 +148,7 @@ struct profile {
 	int wm_class_count;
 	struct config cfg;
 	int passthrough; /* 1 if all axes+buttons are none → skip event processing */
+	int browser_keys; /* 1 if smart actions should send Space/Arrow keys */
 };
 
 struct scroll_acc {
@@ -169,6 +222,10 @@ static int uinput_open(void)
 	ioctl(fd, UI_SET_KEYBIT, KEY_PLAYPAUSE);
 	ioctl(fd, UI_SET_KEYBIT, KEY_NEXTSONG);
 	ioctl(fd, UI_SET_KEYBIT, KEY_PREVIOUSSONG);
+	ioctl(fd, UI_SET_KEYBIT, KEY_FASTFORWARD);
+	ioctl(fd, UI_SET_KEYBIT, KEY_REWIND);
+	for (const struct key_name_entry *e = KEY_NAMES; e->name; e++)
+		ioctl(fd, UI_SET_KEYBIT, e->code);
 
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
@@ -508,6 +565,7 @@ static enum axis_action parse_axis_action(const char *s)
 	if (strcmp(s, "zoom") == 0) return ACT_ZOOM;
 	if (strcmp(s, "desktop_switch") == 0) return ACT_DESKTOP_SWITCH;
 	if (strcmp(s, "volume") == 0) return ACT_VOLUME;
+	if (strcmp(s, "seek_auto") == 0) return ACT_SEEK_AUTO;
 	return ACT_NONE;
 }
 
@@ -522,7 +580,58 @@ static enum btn_action parse_btn_action(const char *s)
 	if (strcmp(s, "play_pause") == 0) return BTNACT_PLAY_PAUSE;
 	if (strcmp(s, "next_track") == 0) return BTNACT_NEXT_TRACK;
 	if (strcmp(s, "prev_track") == 0) return BTNACT_PREV_TRACK;
+	if (strcmp(s, "play_pause_auto") == 0) return BTNACT_PLAY_PAUSE_AUTO;
 	return BTNACT_NONE;
+}
+
+/* Apply a full axis action string to slot idx of config c. Handles both
+ * simple action names and the parameterized "key_pair:NEG,POS" format. */
+static void apply_axis_action(struct config *c, int idx, const char *s)
+{
+	c->axis_key_neg[idx] = 0;
+	c->axis_key_pos[idx] = 0;
+	if (!s) { c->axis_map[idx] = ACT_NONE; return; }
+	if (strncmp(s, "key_pair:", 9) == 0) {
+		const char *rest = s + 9;
+		const char *comma = strchr(rest, ',');
+		if (comma) {
+			char neg_name[32] = {0};
+			size_t neg_len = (size_t)(comma - rest);
+			if (neg_len > 0 && neg_len < sizeof(neg_name)) {
+				memcpy(neg_name, rest, neg_len);
+				int neg = lookup_key(neg_name);
+				int pos = lookup_key(comma + 1);
+				if (neg && pos) {
+					c->axis_map[idx] = ACT_KEY_PAIR;
+					c->axis_key_neg[idx] = neg;
+					c->axis_key_pos[idx] = pos;
+					return;
+				}
+			}
+		}
+		c->axis_map[idx] = ACT_NONE;
+		return;
+	}
+	c->axis_map[idx] = parse_axis_action(s);
+}
+
+/* Apply a full button action string to slot idx of config c. Handles both
+ * simple action names and the parameterized "key:NAME" format. */
+static void apply_btn_action(struct config *c, int idx, const char *s)
+{
+	c->btn_key[idx] = 0;
+	if (!s) { c->btn_map[idx] = BTNACT_NONE; return; }
+	if (strncmp(s, "key:", 4) == 0) {
+		int code = lookup_key(s + 4);
+		if (code) {
+			c->btn_map[idx] = BTNACT_KEY;
+			c->btn_key[idx] = code;
+			return;
+		}
+		c->btn_map[idx] = BTNACT_NONE;
+		return;
+	}
+	c->btn_map[idx] = parse_btn_action(s);
 }
 
 static void config_defaults(struct config *cfg)
@@ -604,18 +713,11 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 	struct json_object *amap;
 	if (json_object_object_get_ex(obj, "axis_mapping", &amap)) {
 		struct json_object *ax;
-		if (json_object_object_get_ex(amap, "tx", &ax))
-			c->axis_map[0] = parse_axis_action(json_object_get_string(ax));
-		if (json_object_object_get_ex(amap, "ty", &ax))
-			c->axis_map[1] = parse_axis_action(json_object_get_string(ax));
-		if (json_object_object_get_ex(amap, "tz", &ax))
-			c->axis_map[2] = parse_axis_action(json_object_get_string(ax));
-		if (json_object_object_get_ex(amap, "rx", &ax))
-			c->axis_map[3] = parse_axis_action(json_object_get_string(ax));
-		if (json_object_object_get_ex(amap, "ry", &ax))
-			c->axis_map[4] = parse_axis_action(json_object_get_string(ax));
-		if (json_object_object_get_ex(amap, "rz", &ax))
-			c->axis_map[5] = parse_axis_action(json_object_get_string(ax));
+		const char *axis_keys[6] = {"tx", "ty", "tz", "rx", "ry", "rz"};
+		for (int i = 0; i < 6; i++) {
+			if (json_object_object_get_ex(amap, axis_keys[i], &ax))
+				apply_axis_action(c, i, json_object_get_string(ax));
+		}
 	}
 
 	struct json_object *bmap;
@@ -626,7 +728,7 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 			int bnum = atoi(json_object_iter_peek_name(&it));
 			struct json_object *bval = json_object_iter_peek_value(&it);
 			if (bnum >= 0 && bnum < 16)
-				c->btn_map[bnum] = parse_btn_action(json_object_get_string(bval));
+				apply_btn_action(c, bnum, json_object_get_string(bval));
 			json_object_iter_next(&it);
 		}
 	}
@@ -643,6 +745,12 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 				p->wm_classes[p->wm_class_count++] = strdup(s);
 		}
 	}
+
+	/* Browser-key flag: smart actions emit Space/Arrow keys when this profile is active */
+	struct json_object *bkv;
+	p->browser_keys = 0;
+	if (json_object_object_get_ex(obj, "browser_keys", &bkv))
+		p->browser_keys = json_object_get_boolean(bkv);
 
 	/* Detect passthrough profiles (all axes+buttons none) — skip event processing */
 	p->passthrough = 1;
@@ -825,6 +933,7 @@ int main(int argc, char **argv)
 	scroll_acc_reset(&sacc);
 	long long last_dswitch = 0;
 	long long last_volume = 0;
+	long long last_keypair[6] = {0};
 	int desktop_shown = 0;
 
 	while (g_running) {
@@ -958,6 +1067,37 @@ int main(int argc, char **argv)
 							}
 							break;
 						}
+						case ACT_KEY_PAIR: {
+							long long now = time_ms();
+							long long elapsed = now - last_keypair[i];
+							int val = abs(axes[i]);
+							if (val > KEY_PAIR_THRESHOLD &&
+							    elapsed > c->dswitch_cooldown_ms) {
+								int code = axes[i] > 0
+									? c->axis_key_pos[i]
+									: c->axis_key_neg[i];
+								if (code) emit_key_tap(g_uinput_fd, code);
+								last_keypair[i] = now;
+							}
+							break;
+						}
+						case ACT_SEEK_AUTO: {
+							long long now = time_ms();
+							long long elapsed = now - last_keypair[i];
+							int val = abs(axes[i]);
+							if (val > KEY_PAIR_THRESHOLD &&
+							    elapsed > c->dswitch_cooldown_ms) {
+								int forward = axes[i] > 0;
+								int code;
+								if (g_profiles[g_active_profile].browser_keys)
+									code = forward ? KEY_RIGHT : KEY_LEFT;
+								else
+									code = forward ? KEY_FASTFORWARD : KEY_REWIND;
+								emit_key_tap(g_uinput_fd, code);
+								last_keypair[i] = now;
+							}
+							break;
+						}
 						case ACT_NONE: default: break;
 						}
 					}
@@ -1016,6 +1156,15 @@ int main(int argc, char **argv)
 						break;
 					case BTNACT_PREV_TRACK:
 						emit_key_tap(g_uinput_fd, KEY_PREVIOUSSONG);
+						break;
+					case BTNACT_KEY:
+						if (c->btn_key[bnum])
+							emit_key_tap(g_uinput_fd, c->btn_key[bnum]);
+						break;
+					case BTNACT_PLAY_PAUSE_AUTO:
+						emit_key_tap(g_uinput_fd,
+							g_profiles[g_active_profile].browser_keys
+								? KEY_SPACE : KEY_PLAYPAUSE);
 						break;
 					case BTNACT_NONE: default: break;
 					}

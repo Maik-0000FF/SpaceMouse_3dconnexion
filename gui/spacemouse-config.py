@@ -47,16 +47,27 @@ SOCK_PATH = f"/run/user/{os.getuid()}/spacemouse-cmd.sock"
 BLENDER_STARTUP_DIR = Path.home() / ".config" / "blender" / "5.0" / "scripts" / "startup"
 BLENDER_SYNC_SCRIPT = "spacemouse_sync.py"
 
-AXIS_ACTIONS = ["none", "scroll_h", "scroll_v", "zoom", "desktop_switch", "volume"]
-AXIS_ACTION_LABELS = ["None", "Horizontal Scroll", "Vertical Scroll", "Zoom", "Desktop Switch", "Volume"]
+AXIS_ACTIONS = ["none", "scroll_h", "scroll_v", "zoom", "desktop_switch", "volume",
+                "seek_auto",
+                "key_pair:LEFT,RIGHT", "key_pair:DOWN,UP",
+                "key_pair:PAGEDOWN,PAGEUP", "key_pair:J,L"]
+AXIS_ACTION_LABELS = ["None", "Horizontal Scroll", "Vertical Scroll", "Zoom", "Desktop Switch", "Volume",
+                      "Seek (auto: arrows in browser, media keys else)",
+                      "Arrow Left/Right (5s Seek)", "Arrow Down/Up",
+                      "Page Down/Up", "J/L (10s Seek)"]
 
 BTN_ACTIONS = ["none", "overview", "show_desktop", "volume_up", "volume_down", "mute",
-               "play_pause", "next_track", "prev_track"]
+               "play_pause_auto",
+               "play_pause", "next_track", "prev_track",
+               "key:SPACE", "key:F", "key:M", "key:ENTER", "key:ESC"]
 BTN_ACTION_LABELS = ["None", "Overview (Expose)", "Show Desktop", "Volume Up", "Volume Down", "Mute",
-                     "Play/Pause", "Next Track", "Previous Track"]
+                     "Play/Pause (auto: Space in browser, MPRIS else)",
+                     "Play/Pause (MPRIS only)", "Next Track", "Previous Track",
+                     "Space (Play/Pause Browser)", "F (Fullscreen)", "M (Mute YouTube)",
+                     "Enter", "Escape"]
 
 AXIS_NAMES = ["TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
-              "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)"]
+              "RX (Pitch)", "RY (Roll)", "RZ (Yaw/Twist)"]
 AXIS_KEYS = ["tx", "ty", "tz", "rx", "ry", "rz"]
 
 def set_spacemouse_led(on):
@@ -1128,13 +1139,16 @@ class AxesCard(QWidget):
 # ── Desktop Page ──────────────────────────────────────────────────────
 
 class DesktopPage(QWidget):
-    """Desktop settings page (single profile)."""
+    """Daemon profile editor — switches between all daemon profiles."""
     changed = Signal()
+
+    PROTECTED_PROFILES = {"default"}  # cannot be deleted
 
     def __init__(self, config_data):
         super().__init__()
         self._building = True
         self._config = config_data
+        self._current_profile = "default"
         self._setup_ui()
         self._building = False
 
@@ -1147,6 +1161,40 @@ class DesktopPage(QWidget):
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
+
+        # ── Card 0: PROFILE selector ──
+        card, cl = make_card("PROFILE")
+        prow = QHBoxLayout()
+        prow.setSpacing(8)
+        self.profile_combo = QComboBox()
+        self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
+        prow.addWidget(self.profile_combo, 1)
+        new_btn = QPushButton("+ New")
+        new_btn.clicked.connect(self._on_new_profile)
+        prow.addWidget(new_btn)
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.clicked.connect(self._on_delete_profile)
+        prow.addWidget(self.delete_btn)
+        cl.addLayout(prow)
+        layout.addWidget(card)
+
+        # ── Card 0b: MATCH APPS ──
+        card, cl = make_card("MATCH APPS (when this profile is auto-selected)")
+        fl = QFormLayout()
+        fl.setSpacing(8)
+        self.wm_class_edit = QLineEdit()
+        self.wm_class_edit.setPlaceholderText("comma-separated WM class names, e.g. firefox, Firefox")
+        self.wm_class_edit.textChanged.connect(self._emit_changed)
+        fl.addRow("WM Classes:", self.wm_class_edit)
+        bm_row = QHBoxLayout()
+        self.browser_mode_toggle = ToggleSwitch()
+        self.browser_mode_toggle.stateChanged.connect(self._emit_changed)
+        bm_row.addWidget(self.browser_mode_toggle)
+        bm_row.addWidget(QLabel("Browser Mode (smart actions send Space/Arrows)"))
+        bm_row.addStretch()
+        fl.addRow("", bm_row)
+        cl.addLayout(fl)
+        layout.addWidget(card)
 
         # ── Card 1: SENSITIVITY & SPEED ──
         card, cl = make_card("SENSITIVITY & SPEED")
@@ -1179,7 +1227,7 @@ class DesktopPage(QWidget):
         # ── Card 3: AXES (AxesCard) ──
         desktop_axis_labels = [
             "TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
-            "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)",
+            "RX (Pitch)", "RY (Roll)", "RZ (Yaw/Twist)",
         ]
         self.axes_card = AxesCard(
             desktop_axis_labels,
@@ -1233,15 +1281,97 @@ class DesktopPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
+        self._refresh_profile_combo()
         self._load_profile()
 
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
 
+    def _refresh_profile_combo(self):
+        profiles = self._config.get("profiles", {})
+        names = list(profiles.keys())
+        if "default" not in names:
+            names.insert(0, "default")
+        self._building = True
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(names)
+        if self._current_profile in names:
+            self.profile_combo.setCurrentText(self._current_profile)
+        else:
+            self._current_profile = "default"
+            self.profile_combo.setCurrentText("default")
+        self.profile_combo.blockSignals(False)
+        self.delete_btn.setEnabled(self._current_profile not in self.PROTECTED_PROFILES)
+        self._building = False
+
+    def _on_profile_changed(self, name):
+        if self._building or not name:
+            return
+        # Save current widget state into the previously selected profile
+        self._save_current_profile()
+        self._current_profile = name
+        self.delete_btn.setEnabled(name not in self.PROTECTED_PROFILES)
+        self._building = True
+        self._load_profile()
+        self._building = False
+
+    def _on_new_profile(self):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "New Profile", "Profile name:")
+        if not ok or not name:
+            return
+        name = name.strip()
+        if not name or name.startswith("_") or name == "default":
+            QMessageBox.warning(self, "Invalid Name",
+                                "Name cannot be empty, start with '_', or be 'default'.")
+            return
+        profiles = self._config.setdefault("profiles", {})
+        if name in profiles:
+            QMessageBox.warning(self, "Exists", f"Profile '{name}' already exists.")
+            return
+        # Save current first, then create empty new profile
+        self._save_current_profile()
+        profiles[name] = {
+            "match_wm_class": [],
+            "axis_mapping": {k: "none" for k in AXIS_KEYS},
+            "button_mapping": {"0": "none", "1": "none"},
+        }
+        self._current_profile = name
+        self._refresh_profile_combo()
+        self._load_profile()
+        self._emit_changed()
+
+    def _on_delete_profile(self):
+        if self._current_profile in self.PROTECTED_PROFILES:
+            return
+        reply = QMessageBox.question(
+            self, "Delete Profile",
+            f"Delete profile '{self._current_profile}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        profiles = self._config.setdefault("profiles", {})
+        profiles.pop(self._current_profile, None)
+        self._current_profile = "default"
+        self._refresh_profile_combo()
+        self._load_profile()
+        self._emit_changed()
+
+    def _save_current_profile(self):
+        """Capture current widget state into self._config for the active profile."""
+        profiles = self._config.setdefault("profiles", {})
+        profiles[self._current_profile] = self._get_profile_data()
+
     def _load_profile(self):
         profiles = self._config.get("profiles", {})
-        data = profiles.get("default", {})
+        data = profiles.get(self._current_profile, {})
+
+        # Match Apps + Browser Mode
+        wm = data.get("match_wm_class", [])
+        self.wm_class_edit.setText(", ".join(wm) if isinstance(wm, list) else "")
+        self.browser_mode_toggle.setChecked(bool(data.get("browser_keys", False)))
 
         self.sensitivity_s.setValue(int(data.get("sensitivity", 1.0) * 10))
         self.scroll_speed_s.setValue(int(data.get("scroll_speed", 3.0) * 10))
@@ -1282,6 +1412,12 @@ class DesktopPage(QWidget):
     def _get_profile_data(self):
         """Return current UI state as profile data dict."""
         data = {}
+        # Match Apps + Browser Mode
+        wm = [s.strip() for s in self.wm_class_edit.text().split(",") if s.strip()]
+        if wm:
+            data["match_wm_class"] = wm
+        if self.browser_mode_toggle.isChecked():
+            data["browser_keys"] = True
         data["sensitivity"] = self.sensitivity_s.value() / 10.0
         data["scroll_speed"] = self.scroll_speed_s.value() / 10.0
         data["zoom_speed"] = self.zoom_speed_s.value() / 10.0
@@ -1307,15 +1443,15 @@ class DesktopPage(QWidget):
         return data
 
     def get_all_config(self):
-        """Return full daemon config dict with default profile."""
-        profiles = self._config.setdefault("profiles", {})
-        profiles["default"] = self._get_profile_data()
+        """Return full daemon config dict with the current profile saved."""
+        self._save_current_profile()
         return self._config
 
     def update_config(self, config):
         """Replace config data and refresh UI."""
         self._config = config
         self._building = True
+        self._refresh_profile_combo()
         self._load_profile()
         self._building = False
 
