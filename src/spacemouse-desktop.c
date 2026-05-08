@@ -157,9 +157,11 @@ static int uinput_open(void)
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
 	usetup.id.bustype = BUS_VIRTUAL;
-	usetup.id.vendor = 0x256f;
-	usetup.id.product = 0x0001;
-	snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "SpaceMouse Desktop Scroll");
+	usetup.id.vendor = 0x1209;   /* pid.codes assigned for testing */
+	usetup.id.product = 0x000a;
+	/* Avoid the literal string "SpaceMouse" so spacenavd's autodetect
+	 * does not bind to this virtual scroll-wheel device. */
+	snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "Desktop Scroll Emulator");
 
 	if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0) {
 		perror("spacemouse-desktop: UI_DEV_SETUP");

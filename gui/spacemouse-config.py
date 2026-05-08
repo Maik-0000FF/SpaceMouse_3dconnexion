@@ -2108,9 +2108,6 @@ class SpaceMouseApp:
         self.tray.activated.connect(self._on_tray_activated)
 
         self._paused = settings.get("disabled", False)
-        self._daemon_running = False
-        self._daemon_proc = None
-        self._daemon_stop_timer = None
         self.window_monitor = None
 
         menu = QMenu()
@@ -2118,25 +2115,27 @@ class SpaceMouseApp:
         self.tray.setContextMenu(menu)
         self.tray.show()
 
-        # SpaceMouse reader (starts suspended — only active when GUI is visible)
+        # SpaceMouse reader (starts suspended — only active when GUI is visible).
+        # Reads via libspnav→spacenavd; the C daemon reads /dev/input directly,
+        # so both can coexist without conflict.
         self.spnav_reader = SpnavReader()
         self.spnav_reader.set_suspended(True)
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
 
-        # Stop any systemctl-managed daemon (we manage the process directly now)
-        subprocess.Popen(
-            ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Daemon runs as a long-lived systemd service. We control it via
+        # PROFILE commands on its UNIX socket — never start or stop the process.
         if self._paused:
+            send_daemon_cmd("PROFILE _passthrough")
             set_spacemouse_led(False)
             self.tray.setToolTip("SpaceMouse: DISABLED")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
 
-        # SpaceMouse ownership follows mouse click focus:
-        # GUI focused → SpnavReader active (live preview)
-        # Desktop app focused → daemon running (scroll/zoom)
-        # 3D app focused → neither (3D app gets spnav directly)
+        # Profile switching follows window focus and pause state:
+        # - Disabled         → daemon stays on _passthrough regardless
+        # - Desktop app focus → daemon switches to its matching profile (default)
+        # - 3D app focus     → daemon switches to that app's passthrough profile
+        # - GUI focus        → daemon switches to _passthrough (no actions while editing)
         self._saved_profile = "default"
         self._gui_has_focus = False
         self.settings_window.window_shown.connect(self._on_gui_shown)
@@ -2174,7 +2173,6 @@ class SpaceMouseApp:
         self._cleaned_up = True
         self.spnav_reader.stop()
         self._stop_window_monitor()
-        self._force_stop_daemon()
 
     def _sigterm_handler(self, signum, frame):
         self._cleanup()
@@ -2241,53 +2239,6 @@ class SpaceMouseApp:
         self.tray.setToolTip(f"SpaceMouse: {name}")
         self.settings_window.set_profile_name(name)
 
-    def _start_daemon(self):
-        """Start daemon process directly (fast, no systemctl overhead)."""
-        # Cancel any pending stop
-        if self._daemon_stop_timer and self._daemon_stop_timer.isActive():
-            self._daemon_stop_timer.stop()
-        if self._daemon_proc and self._daemon_proc.poll() is None:
-            return  # Already running
-        # Ensure SpnavReader is disconnected (spacenavd only supports one reader)
-        self.spnav_reader.set_suspended(True)
-        def _die_with_parent():
-            # Auto-kill daemon if GUI crashes or gets kill -9'd
-            libc = ctypes.CDLL("libc.so.6", use_errno=True)
-            libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
-        self._daemon_proc = subprocess.Popen(
-            [str(Path.home() / ".local/bin/spacemouse-desktop"),
-             "-f", "-c", str(CONFIG_PATH)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-            preexec_fn=_die_with_parent)
-        self._daemon_running = True
-
-    def _stop_daemon(self):
-        """Stop daemon with delay (handles workspace transition flicker)."""
-        if not self._daemon_running:
-            return
-        if not self._daemon_stop_timer:
-            self._daemon_stop_timer = QTimer()
-            self._daemon_stop_timer.setSingleShot(True)
-            self._daemon_stop_timer.timeout.connect(self._do_stop_daemon)
-        self._daemon_stop_timer.start(2000)
-
-    def _do_stop_daemon(self):
-        """Kill daemon process unconditionally."""
-        if self._daemon_proc and self._daemon_proc.poll() is None:
-            self._daemon_proc.terminate()
-            try:
-                self._daemon_proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self._daemon_proc.kill()
-            self._daemon_proc = None
-        self._daemon_running = False
-
-    def _force_stop_daemon(self):
-        """Stop daemon immediately, cancel any pending delayed stop."""
-        if self._daemon_stop_timer and self._daemon_stop_timer.isActive():
-            self._daemon_stop_timer.stop()
-        self._do_stop_daemon()
-
     def _is_passthrough_profile(self, profile_name):
         """Check if a profile has all axes and buttons set to none (3D app passthrough)."""
         profiles = self.config.get("profiles", {})
@@ -2308,19 +2259,18 @@ class SpaceMouseApp:
 
     def _toggle_pause(self):
         if self._paused:
-            # Enable
+            # Enable: restore daemon to whatever the current focus dictates.
             self._paused = False
+            target = "_passthrough" if self._gui_has_focus else self._saved_profile
+            send_daemon_cmd(f"PROFILE {target}")
             set_spacemouse_led(True)
-            # Start daemon only if GUI doesn't have focus AND desktop app
-            if (not self._gui_has_focus and
-                    not self._is_passthrough_profile(self._saved_profile)):
-                self._start_daemon()
-            self.tray.setToolTip("SpaceMouse: default")
+            self.tray.setToolTip(f"SpaceMouse: {self._saved_profile}")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("SM")))
         else:
-            # Disable: kill daemon immediately
+            # Disable: daemon to passthrough (still drains events, but no actions).
+            # 3D apps (Blender/FreeCAD) keep working via their own libspnav path.
             self._paused = True
-            self._force_stop_daemon()
+            send_daemon_cmd("PROFILE _passthrough")
             set_spacemouse_led(False)
             self.tray.setToolTip("SpaceMouse: DISABLED")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
@@ -2345,48 +2295,43 @@ class SpaceMouseApp:
 
         is_3d_app = self._is_passthrough_profile(profile_name)
 
-        # If GUI just got focus, _on_gui_focused already handled it — skip
+        # GUI focus path is owned by _on_gui_focused — do not touch the daemon here
         if self._gui_has_focus:
             return
 
-        # Another window was clicked → SpnavReader must release spnav
+        # GUI is not focused → release the live preview
         self.spnav_reader.set_suspended(True)
 
         if self._paused:
-            # Disabled: no daemon, LED on for 3D apps only
+            # Disabled: daemon stays on _passthrough; just update LED + tooltip
             set_spacemouse_led(is_3d_app)
             self.tray.setToolTip(
                 f"SpaceMouse: DISABLED ({wm_class})" if is_3d_app
                 else "SpaceMouse: DISABLED")
         else:
-            # Enabled: start daemon for desktop apps, stop for 3D apps
-            if is_3d_app:
-                self._stop_daemon()  # delayed (workspace transition tolerance)
-            else:
-                self._start_daemon()  # cancels pending delayed stop
+            send_daemon_cmd(f"PROFILE {profile_name}")
             set_spacemouse_led(True)
             self.tray.setToolTip(f"SpaceMouse: {profile_name} ({wm_class})")
 
     def _on_gui_shown(self):
-        """GUI window shown — take spnav ownership for live preview."""
+        """GUI window shown — take spnav for live preview, daemon to passthrough."""
         self._gui_has_focus = True
-        self._force_stop_daemon()
+        send_daemon_cmd("PROFILE _passthrough")
         self.spnav_reader.set_suspended(False)
         self.settings_window._status_timer.start(3000)
 
     def _on_gui_hidden(self):
-        """GUI window hidden — release spnav, restore daemon if needed."""
+        """GUI window hidden — release spnav, restore daemon profile if enabled."""
         self._gui_has_focus = False
         self.spnav_reader.set_suspended(True)
         self.settings_window._status_timer.stop()
-        # Restore daemon if enabled and desktop app was last focused
-        if not self._paused and not self._is_passthrough_profile(self._saved_profile):
-            self._start_daemon()
+        if not self._paused:
+            send_daemon_cmd(f"PROFILE {self._saved_profile}")
 
     def _on_gui_focused(self):
-        """GUI clicked — take spnav ownership for live preview."""
+        """GUI clicked — take spnav for live preview, daemon to passthrough."""
         self._gui_has_focus = True
-        self._force_stop_daemon()
+        send_daemon_cmd("PROFILE _passthrough")
         self.spnav_reader.set_suspended(False)
 
     def _on_gui_unfocused(self):
