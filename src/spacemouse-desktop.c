@@ -29,7 +29,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
-#include <spnav.h>
+#include <dirent.h>
+#include <linux/input.h>
 #include <dbus/dbus.h>
 #include <json-c/json.h>
 
@@ -97,7 +98,7 @@ static volatile sig_atomic_t g_running = 1;
 static volatile sig_atomic_t g_reload = 0;
 
 static int g_uinput_fd = -1;
-static int g_spnav_connected = 0;
+static int g_kinput_fd = -1;
 static DBusConnection *g_dbus = NULL;
 static char g_config_path[512];
 static char g_sock_path[256];
@@ -230,36 +231,148 @@ static DBusConnection *dbus_connect(void)
 		dbus_error_free(&err);
 		return NULL;
 	}
+	dbus_connection_set_exit_on_disconnect(conn, FALSE);
 	return conn;
+}
+
+static void dbus_ensure_connected(void)
+{
+	if (g_dbus && dbus_connection_get_is_connected(g_dbus))
+		return;
+	if (g_dbus) {
+		dbus_connection_unref(g_dbus);
+		g_dbus = NULL;
+	}
+	g_dbus = dbus_connect();
+	if (g_dbus)
+		fprintf(stderr, "spacemouse-desktop: D-Bus reconnected\n");
+	else
+		fprintf(stderr, "spacemouse-desktop: D-Bus reconnect failed\n");
 }
 
 static void dbus_call_kwin(DBusConnection *conn, const char *method)
 {
-	if (!conn) return;
+	if (!conn || !dbus_connection_get_is_connected(conn)) return;
 	DBusMessage *msg = dbus_message_new_method_call(
 		"org.kde.KWin", "/KWin", "org.kde.KWin", method);
 	if (!msg) return;
 	dbus_message_set_no_reply(msg, TRUE);
-	dbus_connection_send(conn, msg, NULL);
+	if (!dbus_connection_send(conn, msg, NULL)) {
+		fprintf(stderr, "spacemouse-desktop: D-Bus send failed: %s\n", method);
+		dbus_message_unref(msg);
+		return;
+	}
 	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
-	/* Drain any pending incoming messages */
-	while (dbus_connection_dispatch(conn) == DBUS_DISPATCH_DATA_REMAINS)
-		;
 }
 
 static void dbus_call_kglobalaccel(DBusConnection *conn, const char *shortcut)
 {
-	if (!conn) return;
+	if (!conn || !dbus_connection_get_is_connected(conn)) return;
 	DBusMessage *msg = dbus_message_new_method_call(
 		"org.kde.kglobalaccel", "/component/kwin",
 		"org.kde.kglobalaccel.Component", "invokeShortcut");
 	if (!msg) return;
 	dbus_message_append_args(msg, DBUS_TYPE_STRING, &shortcut, DBUS_TYPE_INVALID);
 	dbus_message_set_no_reply(msg, TRUE);
-	dbus_connection_send(conn, msg, NULL);
+	if (!dbus_connection_send(conn, msg, NULL)) {
+		fprintf(stderr, "spacemouse-desktop: D-Bus send failed: %s\n", shortcut);
+		dbus_message_unref(msg);
+		return;
+	}
 	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
+}
+
+/* ── Kernel input device (replaces libspnav for our daemon) ─────────── */
+
+enum kinput_event_type { KIE_MOTION = 1, KIE_BUTTON = 2 };
+
+struct kinput_motion {
+	int x, y, z;
+	int rx, ry, rz;
+};
+
+struct kinput_button {
+	int bnum;
+	int press;
+};
+
+struct kinput_event {
+	int type;
+	struct kinput_motion motion;
+	struct kinput_button button;
+};
+
+static int g_kinput_state[6] = {0};
+static int g_kinput_dirty = 0;
+
+/* Locate a 3Dconnexion event-joystick node under /dev/input/by-id and open it.
+ * Returns fd or -1. */
+static int kinput_open(void)
+{
+	DIR *d = opendir("/dev/input/by-id");
+	if (!d) {
+		perror("spacemouse-desktop: opendir /dev/input/by-id");
+		return -1;
+	}
+
+	char path[512] = {0};
+	struct dirent *ent;
+	while ((ent = readdir(d))) {
+		if (strstr(ent->d_name, "3Dconnexion") &&
+		    strstr(ent->d_name, "-event-")) {
+			snprintf(path, sizeof(path), "/dev/input/by-id/%s", ent->d_name);
+			break;
+		}
+	}
+	closedir(d);
+
+	if (!path[0]) {
+		fprintf(stderr, "spacemouse-desktop: no 3Dconnexion event device under /dev/input/by-id\n");
+		return -1;
+	}
+
+	int fd = open(path, O_RDONLY | O_NONBLOCK);
+	if (fd < 0) {
+		fprintf(stderr, "spacemouse-desktop: open %s: %s\n", path, strerror(errno));
+		return -1;
+	}
+
+	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
+	return fd;
+}
+
+/* Read events from kernel device. Returns 1 if `out` was filled, 0 otherwise.
+ * ABS events accumulate into a state[6] vector, emitted as a single KIE_MOTION
+ * at SYN_REPORT. KEY events are emitted immediately as KIE_BUTTON. */
+static int kinput_poll_event(int fd, struct kinput_event *out)
+{
+	struct input_event ie;
+	while (read(fd, &ie, sizeof(ie)) == (ssize_t)sizeof(ie)) {
+		if (ie.type == EV_ABS && ie.code <= 5) {
+			g_kinput_state[ie.code] = ie.value;
+			g_kinput_dirty = 1;
+		} else if (ie.type == EV_KEY && ie.code >= BTN_0 && ie.code <= BTN_9) {
+			out->type = KIE_BUTTON;
+			out->button.bnum = ie.code - BTN_0;
+			out->button.press = ie.value;
+			return 1;
+		} else if (ie.type == EV_SYN && ie.code == SYN_REPORT) {
+			if (g_kinput_dirty) {
+				out->type = KIE_MOTION;
+				out->motion.x  = g_kinput_state[0];
+				out->motion.y  = g_kinput_state[1];
+				out->motion.z  = g_kinput_state[2];
+				out->motion.rx = g_kinput_state[3];
+				out->motion.ry = g_kinput_state[4];
+				out->motion.rz = g_kinput_state[5];
+				g_kinput_dirty = 0;
+				return 1;
+			}
+		}
+	}
+	return 0;
 }
 
 /* ── Command socket ─────────────────────────────────────────────────── */
@@ -635,12 +748,12 @@ int main(int argc, char **argv)
 	sa.sa_handler = on_sighup;
 	sigaction(SIGHUP, &sa, NULL);
 
-	/* Connect to spacenavd */
-	if (spnav_open() == -1) {
-		fprintf(stderr, "spacemouse-desktop: cannot connect to spacenavd\n");
+	/* Open kernel input device directly (bypasses spacenavd). */
+	g_kinput_fd = kinput_open();
+	if (g_kinput_fd < 0) {
+		fprintf(stderr, "spacemouse-desktop: cannot open kernel input device\n");
 		return 1;
 	}
-	fprintf(stderr, "spacemouse-desktop: connected to spacenavd\n");
 
 	/* uinput */
 	g_uinput_fd = uinput_open();
@@ -678,9 +791,6 @@ int main(int argc, char **argv)
 	scroll_acc_reset(&sacc);
 	long long last_dswitch = 0;
 	int desktop_shown = 0;
-	/* poll()-based main loop */
-	int spnav_fdesc = spnav_fd();
-	g_spnav_connected = 1;
 
 	while (g_running) {
 		if (g_reload) {
@@ -702,38 +812,17 @@ int main(int argc, char **argv)
 			scroll_acc_reset(&sacc);
 		}
 
-		/* Passthrough: disconnect from spnav so other apps get all events.
-		 * spacenavd has a multiplexing issue where an aggressive reader
-		 * starves other clients. By closing the connection, Blender/FreeCAD
-		 * get full event throughput. */
-		int need_spnav = !g_profiles[g_active_profile].passthrough;
-
-		if (!need_spnav && g_spnav_connected) {
-			spnav_close();
-			g_spnav_connected = 0;
-			spnav_fdesc = -1;
-			fprintf(stderr, "spacemouse-desktop: spnav disconnected (passthrough)\n");
-		} else if (need_spnav && !g_spnav_connected) {
-			if (spnav_open() != -1) {
-				spnav_fdesc = spnav_fd();
-				g_spnav_connected = 1;
-				fprintf(stderr, "spacemouse-desktop: spnav reconnected\n");
-				/* Drain any stale events from buffer */
-				spnav_event drain_ev;
-				while (spnav_poll_event(&drain_ev))
-					;
-				scroll_acc_reset(&sacc);
-			}
-		}
+		/* Direct kernel read — no disconnect/reconnect dance.
+		 * Other clients (Blender/FreeCAD via spacenavd) read independently
+		 * from the same kernel device, so we never starve them. */
 
 		struct pollfd fds[2];
 		int nfds = 0;
 
-		if (g_spnav_connected) {
-			fds[nfds].fd = spnav_fdesc;
-			fds[nfds].events = POLLIN;
-			nfds++;
-		}
+		fds[nfds].fd = g_kinput_fd;
+		fds[nfds].events = POLLIN;
+		int kinput_idx = nfds;
+		nfds++;
 
 		int cmd_idx = -1;
 		if (cmd_fd >= 0) {
@@ -749,8 +838,9 @@ int main(int argc, char **argv)
 			break;
 		}
 		if (ret == 0) {
-			/* Drain D-Bus incoming messages to prevent connection stall */
-			if (g_dbus)
+			/* Reconnect D-Bus if needed, drain incoming messages */
+			dbus_ensure_connected();
+			if (g_dbus && dbus_connection_get_is_connected(g_dbus))
 				while (dbus_connection_dispatch(g_dbus) == DBUS_DISPATCH_DATA_REMAINS)
 					;
 			continue;
@@ -762,15 +852,16 @@ int main(int argc, char **argv)
 			scroll_acc_reset(&sacc);
 		}
 
-		/* Handle spnav events (only when connected and active profile) */
-		int spnav_idx = g_spnav_connected ? 0 : -1;
-		if (spnav_idx >= 0 && (fds[spnav_idx].revents & POLLIN)) {
-			spnav_event ev;
+		/* Handle kernel input events. In passthrough profiles we still
+		 * drain the device (to keep its read buffer empty) but skip
+		 * action dispatch — all axis_map entries are ACT_NONE anyway. */
+		if (fds[kinput_idx].revents & POLLIN) {
+			struct kinput_event ev;
 
-			while (spnav_poll_event(&ev)) {
+			while (kinput_poll_event(g_kinput_fd, &ev)) {
 				struct config *c = &g_profiles[g_active_profile].cfg;
 
-				if (ev.type == SPNAV_EVENT_MOTION) {
+				if (ev.type == KIE_MOTION) {
 					int axes[6] = {
 						ev.motion.x, ev.motion.y, ev.motion.z,
 						ev.motion.rx, ev.motion.ry, ev.motion.rz
@@ -829,7 +920,7 @@ int main(int argc, char **argv)
 						if (sz != 0) emit_zoom(g_uinput_fd, sz);
 					}
 				}
-				else if (ev.type == SPNAV_EVENT_BUTTON) {
+				else if (ev.type == KIE_BUTTON) {
 					if (!ev.button.press) continue;
 					int bnum = ev.button.bnum;
 					if (bnum < 0 || bnum >= 16) continue;
@@ -839,6 +930,8 @@ int main(int argc, char **argv)
 						dbus_call_kglobalaccel(g_dbus, "ExposeAll");
 						break;
 					case BTNACT_SHOW_DESKTOP: {
+						if (!g_dbus || !dbus_connection_get_is_connected(g_dbus))
+							break;
 						desktop_shown = !desktop_shown;
 						DBusMessage *msg = dbus_message_new_method_call(
 							"org.kde.KWin", "/KWin",
@@ -848,8 +941,10 @@ int main(int argc, char **argv)
 							dbus_message_append_args(msg,
 								DBUS_TYPE_BOOLEAN, &v,
 								DBUS_TYPE_INVALID);
-							dbus_connection_send(g_dbus, msg, NULL);
-							dbus_connection_flush(g_dbus);
+							if (!dbus_connection_send(g_dbus, msg, NULL))
+								fprintf(stderr, "spacemouse-desktop: D-Bus send failed: showDesktop\n");
+							else
+								dbus_connection_flush(g_dbus);
 							dbus_message_unref(msg);
 						}
 						break;
@@ -859,11 +954,17 @@ int main(int argc, char **argv)
 				}
 			}
 		}
+
+		/* Drain D-Bus incoming messages after processing events
+		 * (prevents message buildup that kills the connection) */
+		if (g_dbus && dbus_connection_get_is_connected(g_dbus))
+			while (dbus_connection_dispatch(g_dbus) == DBUS_DISPATCH_DATA_REMAINS)
+				;
 	}
 
 cleanup:
 	fprintf(stderr, "spacemouse-desktop: shutting down\n");
-	if (g_spnav_connected) spnav_close();
+	if (g_kinput_fd >= 0) close(g_kinput_fd);
 	uinput_close(g_uinput_fd);
 	cmd_sock_close(cmd_fd, g_sock_path);
 	if (g_dbus) dbus_connection_unref(g_dbus);

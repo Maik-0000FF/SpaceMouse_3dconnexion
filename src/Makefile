@@ -15,7 +15,7 @@ TARGETS = spacemouse-desktop spacemouse-test spnav_example
 all: $(TARGETS)
 
 spacemouse-desktop: spacemouse-desktop.c
-	$(CC) $(CFLAGS) $(DBUS_CFLAGS) $(JSON_CFLAGS) -o $@ $< $(LDFLAGS_SPNAV) $(DBUS_LIBS) $(JSON_LIBS)
+	$(CC) $(CFLAGS) $(DBUS_CFLAGS) $(JSON_CFLAGS) -o $@ $< -lm $(DBUS_LIBS) $(JSON_LIBS)
 
 spacemouse-test: spacemouse-test.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS_SPNAV)
