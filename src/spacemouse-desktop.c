@@ -56,14 +56,21 @@ enum axis_action {
 	ACT_SCROLL_H,
 	ACT_SCROLL_V,
 	ACT_ZOOM,
-	ACT_DESKTOP_SWITCH
+	ACT_DESKTOP_SWITCH,
+	ACT_VOLUME
 };
 
 enum btn_action {
 	BTNACT_NONE = 0,
 	BTNACT_OVERVIEW,
-	BTNACT_SHOW_DESKTOP
+	BTNACT_SHOW_DESKTOP,
+	BTNACT_VOLUME_UP,
+	BTNACT_VOLUME_DOWN,
+	BTNACT_MUTE
 };
+
+#define VOLUME_COOLDOWN_MS  80
+#define VOLUME_THRESHOLD    60
 
 struct config {
 	int deadzone;
@@ -153,6 +160,9 @@ static int uinput_open(void)
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTCTRL);
+	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
+	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEDOWN);
+	ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
 
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
@@ -207,6 +217,15 @@ static void emit_scroll(int fd, int dx, int dy)
 	}
 	if (dx != 0 || dy != 0)
 		emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+static void emit_key_tap(int fd, int code)
+{
+	if (fd < 0) return;
+	emit_event(fd, EV_KEY, code, 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	emit_event(fd, EV_KEY, code, 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
 static void emit_zoom(int fd, int dz)
@@ -482,6 +501,7 @@ static enum axis_action parse_axis_action(const char *s)
 	if (strcmp(s, "scroll_v") == 0) return ACT_SCROLL_V;
 	if (strcmp(s, "zoom") == 0) return ACT_ZOOM;
 	if (strcmp(s, "desktop_switch") == 0) return ACT_DESKTOP_SWITCH;
+	if (strcmp(s, "volume") == 0) return ACT_VOLUME;
 	return ACT_NONE;
 }
 
@@ -490,6 +510,9 @@ static enum btn_action parse_btn_action(const char *s)
 	if (!s) return BTNACT_NONE;
 	if (strcmp(s, "overview") == 0) return BTNACT_OVERVIEW;
 	if (strcmp(s, "show_desktop") == 0) return BTNACT_SHOW_DESKTOP;
+	if (strcmp(s, "volume_up") == 0) return BTNACT_VOLUME_UP;
+	if (strcmp(s, "volume_down") == 0) return BTNACT_VOLUME_DOWN;
+	if (strcmp(s, "mute") == 0) return BTNACT_MUTE;
 	return BTNACT_NONE;
 }
 
@@ -792,6 +815,7 @@ int main(int argc, char **argv)
 	struct scroll_acc sacc;
 	scroll_acc_reset(&sacc);
 	long long last_dswitch = 0;
+	long long last_volume = 0;
 	int desktop_shown = 0;
 
 	while (g_running) {
@@ -910,6 +934,21 @@ int main(int argc, char **argv)
 							}
 							break;
 						}
+						case ACT_VOLUME: {
+							long long now = time_ms();
+							long long elapsed = now - last_volume;
+							int val = abs(axes[i]);
+							if (val > VOLUME_THRESHOLD &&
+							    elapsed > VOLUME_COOLDOWN_MS) {
+								int up = axes[i] > 0;
+								fprintf(stderr, "spacemouse-desktop: volume axis=%d val=%d -> %s\n",
+									i, axes[i], up ? "up" : "down");
+								emit_key_tap(g_uinput_fd,
+									up ? KEY_VOLUMEUP : KEY_VOLUMEDOWN);
+								last_volume = now;
+							}
+							break;
+						}
 						case ACT_NONE: default: break;
 						}
 					}
@@ -951,6 +990,15 @@ int main(int argc, char **argv)
 						}
 						break;
 					}
+					case BTNACT_VOLUME_UP:
+						emit_key_tap(g_uinput_fd, KEY_VOLUMEUP);
+						break;
+					case BTNACT_VOLUME_DOWN:
+						emit_key_tap(g_uinput_fd, KEY_VOLUMEDOWN);
+						break;
+					case BTNACT_MUTE:
+						emit_key_tap(g_uinput_fd, KEY_MUTE);
+						break;
 					case BTNACT_NONE: default: break;
 					}
 				}
