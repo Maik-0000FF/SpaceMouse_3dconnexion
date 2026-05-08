@@ -20,9 +20,6 @@ Stability:
 UI:
   7. Spaceball reset button fix (#19366)
 
-Init:
-  8. NavLib init fallback to legacy driver (#29003)
-
 Usage:
     python3 apply-spacemouse-fix.py /path/to/freecad-source
     python3 apply-spacemouse-fix.py --check /path/to/freecad-source
@@ -794,191 +791,6 @@ def patch_spaceball_reset(source_dir):
 
 
 # ---------------------------------------------------------------------------
-# Fix 8: NavLib init fallback (#29003)
-# ---------------------------------------------------------------------------
-def patch_navlib_fallback(source_dir):
-    """Fix 8: Fall back to legacy driver when NavLib initialization fails.
-
-    Before: enableNavigation() returns void. When it fails (e.g. macOS bundle
-            identifier check), pNavlibInterface stays non-null, blocking the
-            legacy fallback in init3DMouse(). initSpaceball() also gates on
-            LegacySpaceMouseDevices (default false), doubly blocking fallback.
-    After:  enableNavigation() returns bool. init3DMouse() cleans up on
-            failure so the legacy fallback triggers. initSpaceball() runs
-            unconditionally when called (caller handles the decision).
-    Fixes: https://github.com/FreeCAD/FreeCAD/issues/29003
-    """
-    ok = True
-
-    # --- Part A: NavlibInterface.h (void -> bool) ---
-    h_path = find_file(source_dir, "NavlibInterface.h")
-    if not h_path:
-        print("  SKIP: NavlibInterface.h not found (NavLib not in this build?)")
-        return True  # Not an error, just not applicable
-
-    with open(h_path, "r") as f:
-        h_content = f.read()
-
-    if "bool enableNavigation();" in h_content:
-        print(f"  OK:   {os.path.relpath(h_path, source_dir)} (already patched)")
-    elif "void enableNavigation();" in h_content:
-        h_content = h_content.replace(
-            "void enableNavigation();",
-            "bool enableNavigation();",
-            1
-        )
-        with open(h_path, "w") as f:
-            f.write(h_content)
-        print(f"  DONE: {os.path.relpath(h_path, source_dir)} - enableNavigation returns bool")
-    else:
-        print(f"  FAIL: Could not find enableNavigation declaration in {os.path.relpath(h_path, source_dir)}")
-        ok = False
-
-    # --- Part B: NavlibNavigation.cpp (return type + return values) ---
-    cpp_path = find_file(source_dir, "NavlibNavigation.cpp")
-    if not cpp_path:
-        print(f"  FAIL: NavlibNavigation.cpp not found")
-        return False
-
-    with open(cpp_path, "r") as f:
-        cpp = f.read()
-
-    if "bool NavlibInterface::enableNavigation()" in cpp:
-        print(f"  OK:   {os.path.relpath(cpp_path, source_dir)} (already patched)")
-    elif "void NavlibInterface::enableNavigation()" not in cpp:
-        print(f"  SKIP: {os.path.relpath(cpp_path, source_dir)} (enableNavigation not found, pre-#26100?)")
-        return True
-    else:
-        # Change return type
-        cpp = cpp.replace(
-            "void NavlibInterface::enableNavigation()",
-            "bool NavlibInterface::enableNavigation()",
-            1
-        )
-
-        # macOS bundle check: return; -> return false;
-        old_mac = (
-            'Base::Console().error("3Dconnexion Navigation Framework does not support running apart from an .app!\\n");\n'
-            '        return;'
-        )
-        new_mac = (
-            'Base::Console().error("3Dconnexion Navigation Framework does not support running apart from an .app!\\n");\n'
-            '        return false;'
-        )
-        if old_mac in cpp:
-            cpp = cpp.replace(old_mac, new_mac, 1)
-
-        # EnableNavigation error: return; -> return false;
-        old_err = (
-            'Base::Console().error("NavlibInterface::EnableNavigation error %d\\n", errorCode.value());\n'
-            '        return;'
-        )
-        new_err = (
-            'Base::Console().error("NavlibInterface::EnableNavigation error %d\\n", errorCode.value());\n'
-            '        return false;'
-        )
-        if old_err in cpp:
-            cpp = cpp.replace(old_err, new_err, 1)
-
-        # Add return true at end of function
-        cpp = cpp.replace(
-            "    initializePivot();\n    connectActiveTab();\n}",
-            "    initializePivot();\n    connectActiveTab();\n    return true;\n}",
-            1
-        )
-
-        with open(cpp_path, "w") as f:
-            f.write(cpp)
-        print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} - enableNavigation returns bool with fallback")
-
-    # --- Part C: Application.cpp (check return value, cleanup on failure) ---
-    # Application.cpp exists in both src/App/ and src/Gui/ — we need the Gui one
-    app_path = None
-    for root, dirs, files in os.walk(source_dir):
-        if "Application.cpp" in files:
-            candidate = os.path.join(root, "Application.cpp")
-            with open(candidate) as f:
-                if "init3DMouse" in f.read():
-                    app_path = candidate
-                    break
-    if not app_path:
-        print(f"  SKIP: Gui/Application.cpp with init3DMouse not found (pre-#26100?)")
-        return ok
-
-    with open(app_path, "r") as f:
-        app = f.read()
-
-    if "enableNavigation())" in app:
-        # Already checking return value
-        print(f"  OK:   {os.path.relpath(app_path, source_dir)} (already patched)")
-    elif "Instance->pNavlibInterface->enableNavigation();" not in app:
-        print(f"  SKIP: {os.path.relpath(app_path, source_dir)} (init3DMouse not found, pre-#26100?)")
-    else:
-        old_call = (
-            '            Instance->pNavlibInterface->enableNavigation();'
-        )
-        new_call = (
-            '            if (!Instance->pNavlibInterface->enableNavigation()) {\n'
-            '                Base::Console().log("Init: 3Dconnexion Navigation Framework failed, "\n'
-            '                                    "falling back to legacy support\\n");\n'
-            '                Instance->pNavlibInterface = nullptr;\n'
-            '            }'
-        )
-        app = app.replace(old_call, new_call, 1)
-        with open(app_path, "w") as f:
-            f.write(app)
-        print(f"  DONE: {os.path.relpath(app_path, source_dir)} - NavLib failure cleanup + fallback")
-
-    # --- Part D: GuiApplicationNativeEventAware.cpp (remove LegacySpaceMouseDevices gate) ---
-    nea_path = find_file(source_dir, "GuiApplicationNativeEventAware.cpp")
-    if not nea_path:
-        print(f"  FAIL: GuiApplicationNativeEventAware.cpp not found")
-        return False
-
-    with open(nea_path, "r") as f:
-        nea = f.read()
-
-    old_gate = (
-        '#if defined(_USE_3DCONNEXION_SDK) || defined(SPNAV_FOUND)\n'
-        '# if defined(USE_3DCONNEXION_NAVLIB)\n'
-        '    ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath(\n'
-        '        "User parameter:BaseApp/Preferences/View"\n'
-        '    );\n'
-        '    if (nativeEvent && hViewGrp->GetBool("LegacySpaceMouseDevices", false)) {\n'
-        '        // Even though Navlib is enabled, process native events to support legacy devices.\n'
-        '        nativeEvent->initSpaceball(window);\n'
-        '    }\n'
-        '    else {\n'
-        '        Base::Console().log("Legacy device support not enabled\\n");\n'
-        '    }\n'
-        '# else\n'
-        '    nativeEvent->initSpaceball(window);\n'
-        '# endif'
-    )
-
-    new_gate = (
-        '#if defined(_USE_3DCONNEXION_SDK) || defined(SPNAV_FOUND)\n'
-        '    if (nativeEvent) {\n'
-        '        nativeEvent->initSpaceball(window);\n'
-        '    }'
-    )
-
-    if old_gate in nea:
-        nea = nea.replace(old_gate, new_gate, 1)
-        with open(nea_path, "w") as f:
-            f.write(nea)
-        print(f"  DONE: {os.path.relpath(nea_path, source_dir)} - removed LegacySpaceMouseDevices gate")
-    elif 'LegacySpaceMouseDevices' not in nea:
-        # Gate already removed (patched) or never existed (pre-#26100) — both OK
-        print(f"  OK:   {os.path.relpath(nea_path, source_dir)} (already patched)")
-    else:
-        print(f"  FAIL: Could not find initSpaceball gate pattern in {os.path.relpath(nea_path, source_dir)}")
-        ok = False
-
-    return ok
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -995,7 +807,6 @@ def main():
         print("  Fixes 4-5: Button fixes (selection sync, checkable action invoke)")
         print("  Fix 6:     Stability (spnav disconnect detection)")
         print("  Fix 7:     UI (spaceball reset button fix)")
-        print("  Fix 8:     Init (NavLib fallback to legacy driver)")
         print()
         print("Use --check to verify if patches can be applied without modifying files.")
         sys.exit(1)
@@ -1102,20 +913,6 @@ def main():
                 print(f"  WARN: {rel} - NavLib button invoke pattern not found")
                 ok = False
 
-        # Fix 8: NavLib init fallback
-        navlib_h = find_file(source_dir, "NavlibInterface.h")
-        if navlib_h:
-            rel = os.path.relpath(navlib_h, source_dir)
-            with open(navlib_h) as f:
-                c = f.read()
-            if "bool enableNavigation();" in c:
-                print(f"  OK: {rel} NavLib init fallback already patched")
-            elif "void enableNavigation();" in c:
-                print(f"  OK: {rel} NavLib init fallback can be patched")
-            else:
-                print(f"  WARN: {rel} - enableNavigation pattern not found")
-                ok = False
-
         sys.exit(0 if ok else 1)
 
     print("Applying SpaceMouse fixes...")
@@ -1140,11 +937,7 @@ def main():
     ok7 = patch_spaceball_reset(source_dir)
 
     print()
-    print("--- Init (#29003) ---")
-    ok8 = patch_navlib_fallback(source_dir)
-
-    print()
-    results = [ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8]
+    results = [ok1, ok2, ok3, ok4, ok5, ok6, ok7]
     if all(results):
         print("All patches applied successfully.")
         sys.exit(0)
