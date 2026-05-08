@@ -50,8 +50,10 @@ BLENDER_SYNC_SCRIPT = "spacemouse_sync.py"
 AXIS_ACTIONS = ["none", "scroll_h", "scroll_v", "zoom", "desktop_switch", "volume"]
 AXIS_ACTION_LABELS = ["None", "Horizontal Scroll", "Vertical Scroll", "Zoom", "Desktop Switch", "Volume"]
 
-BTN_ACTIONS = ["none", "overview", "show_desktop", "volume_up", "volume_down", "mute"]
-BTN_ACTION_LABELS = ["None", "Overview (Expose)", "Show Desktop", "Volume Up", "Volume Down", "Mute"]
+BTN_ACTIONS = ["none", "overview", "show_desktop", "volume_up", "volume_down", "mute",
+               "play_pause", "next_track", "prev_track"]
+BTN_ACTION_LABELS = ["None", "Overview (Expose)", "Show Desktop", "Volume Up", "Volume Down", "Mute",
+                     "Play/Pause", "Next Track", "Previous Track"]
 
 AXIS_NAMES = ["TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
               "RX (Pitch)", "RY (Yaw/Twist)", "RZ (Roll)"]

@@ -66,7 +66,10 @@ enum btn_action {
 	BTNACT_SHOW_DESKTOP,
 	BTNACT_VOLUME_UP,
 	BTNACT_VOLUME_DOWN,
-	BTNACT_MUTE
+	BTNACT_MUTE,
+	BTNACT_PLAY_PAUSE,
+	BTNACT_NEXT_TRACK,
+	BTNACT_PREV_TRACK
 };
 
 #define VOLUME_COOLDOWN_MS  80
@@ -163,6 +166,9 @@ static int uinput_open(void)
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEDOWN);
 	ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
+	ioctl(fd, UI_SET_KEYBIT, KEY_PLAYPAUSE);
+	ioctl(fd, UI_SET_KEYBIT, KEY_NEXTSONG);
+	ioctl(fd, UI_SET_KEYBIT, KEY_PREVIOUSSONG);
 
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
@@ -513,6 +519,9 @@ static enum btn_action parse_btn_action(const char *s)
 	if (strcmp(s, "volume_up") == 0) return BTNACT_VOLUME_UP;
 	if (strcmp(s, "volume_down") == 0) return BTNACT_VOLUME_DOWN;
 	if (strcmp(s, "mute") == 0) return BTNACT_MUTE;
+	if (strcmp(s, "play_pause") == 0) return BTNACT_PLAY_PAUSE;
+	if (strcmp(s, "next_track") == 0) return BTNACT_NEXT_TRACK;
+	if (strcmp(s, "prev_track") == 0) return BTNACT_PREV_TRACK;
 	return BTNACT_NONE;
 }
 
@@ -998,6 +1007,15 @@ int main(int argc, char **argv)
 						break;
 					case BTNACT_MUTE:
 						emit_key_tap(g_uinput_fd, KEY_MUTE);
+						break;
+					case BTNACT_PLAY_PAUSE:
+						emit_key_tap(g_uinput_fd, KEY_PLAYPAUSE);
+						break;
+					case BTNACT_NEXT_TRACK:
+						emit_key_tap(g_uinput_fd, KEY_NEXTSONG);
+						break;
+					case BTNACT_PREV_TRACK:
+						emit_key_tap(g_uinput_fd, KEY_PREVIOUSSONG);
 						break;
 					case BTNACT_NONE: default: break;
 					}
