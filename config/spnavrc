@@ -31,8 +31,10 @@ swap-yz = 0
 # LED control (0=off, 1=on, 2=auto)
 led = 2
 
-# Exclusive device grab (prevents double-input from kernel HID)
-grab = 1
+# Device grab. MUST be 0 for this stack: spacemouse-desktop reads the
+# kernel input device directly (bypasses spacenavd), so spacenavd must
+# not hold the device exclusively. With grab=0 both can read events.
+grab = 0
 
 # Repeat interval in ms (0=disabled)
 repeat-interval = 0
