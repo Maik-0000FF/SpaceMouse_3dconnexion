@@ -159,6 +159,8 @@ GPLv3 — See [LICENSE](LICENSE) for details.
 
 ## Status
 
+Current version: **0.1.0** — see `--version` on `spacemouse-desktop` / `spacemouse-test` and `spacemouse_config.__version__` in the GUI package.
+
 This project is **actively maintained**. Current focus: desktop navigation and 3D app integration.
 
 ## Acknowledgments

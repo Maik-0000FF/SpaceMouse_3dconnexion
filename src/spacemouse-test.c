@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <spnav.h>
 
+#define SPACEMOUSE_VERSION  "0.1.0"
+
 #define COL_RESET  "\033[0m"
 #define COL_GREEN  "\033[32m"
 #define COL_RED    "\033[31m"
@@ -195,7 +197,7 @@ static int mode_check(void)
 {
 	int errors = 0;
 
-	printf(COL_BOLD "\n=== SpaceMouse Diagnostic Check ===" COL_RESET "\n\n");
+	printf(COL_BOLD "\n=== SpaceMouse Diagnostic Check (v" SPACEMOUSE_VERSION ") ===" COL_RESET "\n\n");
 
 	printf(COL_CYAN "1. USB Device Detection:" COL_RESET "\n");
 	if (!check_usb_device()) errors++;
@@ -309,11 +311,17 @@ static int mode_led(void)
 int main(int argc, char **argv)
 {
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s --check | --live | --led\n", argv[0]);
-		fprintf(stderr, "  --check  Run diagnostic checks\n");
-		fprintf(stderr, "  --live   Live event monitor\n");
-		fprintf(stderr, "  --led    LED toggle test\n");
+		fprintf(stderr, "Usage: %s --check | --live | --led | --version\n", argv[0]);
+		fprintf(stderr, "  --check    Run diagnostic checks\n");
+		fprintf(stderr, "  --live     Live event monitor\n");
+		fprintf(stderr, "  --led      LED toggle test\n");
+		fprintf(stderr, "  --version  Print version and exit\n");
 		return 1;
+	}
+
+	if (strcmp(argv[1], "--version") == 0) {
+		printf("spacemouse-test %s\n", SPACEMOUSE_VERSION);
+		return 0;
 	}
 
 	/* Need initial lines for live mode cursor movement */
