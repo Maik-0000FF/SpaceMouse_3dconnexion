@@ -1029,6 +1029,7 @@ int main(int argc, char **argv)
 
 					for (int i = 0; i < 6; i++) {
 						int dz = c->axis_deadzone[i] > 0 ? c->axis_deadzone[i] : c->deadzone;
+						if (abs(axes[i]) < dz) continue;
 						double val;
 						switch (c->axis_map[i]) {
 						case ACT_SCROLL_H:
