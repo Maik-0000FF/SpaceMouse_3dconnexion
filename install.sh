@@ -242,7 +242,17 @@ install -m755 "$SCRIPT_DIR/src/spacemouse-desktop" "$HOME/.local/bin/spacemouse-
 install -m755 "$SCRIPT_DIR/src/spacemouse-test" "$HOME/.local/bin/spacemouse-test"
 install -m755 "$SCRIPT_DIR/src/spnav_example" "$HOME/.local/bin/spnav_example"
 install -m755 "$SCRIPT_DIR/gui/spacemouse-config.py" "$HOME/.local/bin/spacemouse-config.py"
-ok "Binaries and GUI installed to ~/.local/bin/"
+
+# GUI package — the launcher imports `spacemouse_config` from here at runtime.
+# blender_spacemouse_sync.py also lives next to the package because
+# backends.BlenderConfig.install_startup_script() copies it to Blender's
+# startup dir using a path relative to the package.
+mkdir -p "$HOME/.local/share/spacemouse"
+rm -rf "$HOME/.local/share/spacemouse/spacemouse_config"
+cp -r "$SCRIPT_DIR/gui/spacemouse_config" "$HOME/.local/share/spacemouse/spacemouse_config"
+install -m644 "$SCRIPT_DIR/gui/blender_spacemouse_sync.py" \
+    "$HOME/.local/share/spacemouse/blender_spacemouse_sync.py"
+ok "Binaries and GUI installed to ~/.local/bin/ (package: ~/.local/share/spacemouse/)"
 
 # Ensure ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
