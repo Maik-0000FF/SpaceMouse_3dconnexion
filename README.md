@@ -82,7 +82,7 @@ FreeCAD on Linux has several SpaceMouse issues. We've contributed fixes upstream
 | Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** (approved) | Fixes 100% CPU when spacenavd stops |
 | Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only | Fixes Spaceball button dialog reset not updating |
 
-A single **pattern-based Python patcher** (`freecad-patches/apply-spacemouse-fix.py`) applies all seven fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
+A single **pattern-based Python patcher** (`freecad/patches/apply-spacemouse-fix.py`) applies all seven fixes to any FreeCAD version. It finds code by pattern matching — no line numbers, no version-specific patches. Already-merged fixes are automatically skipped.
 
 **Target versions:** FreeCAD **1.0.x** and **1.1.x** (including 1.1.0 stable) — these versions need all seven fixes. Starting with **weekly 2026-04-01** (and FreeCAD **1.2**), fixes 1–5 are included natively and the patcher skips them automatically. Fixes 6–7 are still applied by the patcher on all versions.
 
@@ -97,15 +97,15 @@ python3 apply-spacemouse-fix.py /path/to/freecad-source
 The patcher is a single Python file with no dependencies — it can be used standalone without installing this project:
 
 ```bash
-curl -O https://raw.githubusercontent.com/Maik-0000FF/SpaceMouse_3dconnexion/main/freecad-patches/apply-spacemouse-fix.py
+curl -O https://raw.githubusercontent.com/Maik-0000FF/SpaceMouse_3dconnexion/main/freecad/patches/apply-spacemouse-fix.py
 python3 apply-spacemouse-fix.py /path/to/freecad-source
 ```
 
-> For technical details, see [docs/FREECAD_SPACEMOUSE_FIX.md](docs/FREECAD_SPACEMOUSE_FIX.md).
+> For technical details, see [freecad/docs/SPACEMOUSE_FIX.md](freecad/docs/SPACEMOUSE_FIX.md).
 
 ### Build patched FreeCAD (Arch Linux)
 
-**Choose your version** by editing `freecad-pacman-build/PKGBUILD` — change `_build_version` at the top:
+**Choose your version** by editing `freecad/pacman-build/PKGBUILD` — change `_build_version` at the top:
 
 | Setting | Version | Description |
 |---------|---------|-------------|
@@ -113,18 +113,18 @@ python3 apply-spacemouse-fix.py /path/to/freecad-source
 | `_build_version="weekly"` | main | Latest development build (only needs patches 6–7) |
 
 ```bash
-cd freecad-pacman-build
+cd freecad/pacman-build
 makepkg -sfi
 ```
 
 This downloads the source, applies the patcher, compiles, and installs as a normal Arch package. Takes **15–45 minutes** depending on your CPU.
 
-> After a system update (`pacman -Syu`), FreeCAD gets replaced with the stock version. Just run `cd freecad-pacman-build && makepkg -sfi` again.
+> After a system update (`pacman -Syu`), FreeCAD gets replaced with the stock version. Just run `cd freecad/pacman-build && makepkg -sfi` again.
 
 ### Configure the SpaceMouse
 
 1. Start FreeCAD once and close it (creates config files)
-2. Run the setup script: `./scripts/freecad-spacemouse-patch.sh`
+2. Run the setup script: `./freecad/scripts/setup.sh`
 3. Or use **SpaceMouse Control** → **FreeCAD** page to adjust settings
 
 > **Important:** Always close FreeCAD before editing settings. FreeCAD overwrites its config on exit.
@@ -154,7 +154,7 @@ sudo systemctl enable --now spacenavd
 You're running an unpatched FreeCAD. The fix ([PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110)) is merged but may not be in your installed version yet. Rebuild with the patcher:
 
 ```bash
-cd freecad-pacman-build && makepkg -sfi
+cd freecad/pacman-build && makepkg -sfi
 ```
 
 ### FreeCAD 100% CPU after spacenavd stops

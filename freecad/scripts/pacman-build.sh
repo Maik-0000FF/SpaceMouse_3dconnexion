@@ -6,18 +6,18 @@
 # navigation patch, and builds a proper pacman package.
 #
 # Usage:
-#   ./freecad-pacman-build.sh           # Build package
-#   ./freecad-pacman-build.sh --install # Build + install with pacman
+#   ./pacman-build.sh           # Build package
+#   ./pacman-build.sh --install # Build + install with pacman
 #
 # The resulting package can be reinstalled anytime with:
-#   sudo pacman -U freecad-build/pkg/freecad-*.pkg.tar.zst
+#   sudo pacman -U freecad/pacman-build/freecad-*.pkg.tar.zst
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PATCH_SCRIPT="$REPO_DIR/freecad-patches/apply-spacemouse-fix.py"
-WORK_DIR="$REPO_DIR/freecad-pacman-build"
+FC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PATCH_SCRIPT="$FC_DIR/patches/apply-spacemouse-fix.py"
+WORK_DIR="$FC_DIR/pacman-build"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -16,10 +16,9 @@ __pycache__/
 *.swo
 *~
 
-# Claude Code
+# Local notes
 CLAUDE.md
-
-# Private notes
+.claude/
 private/
 
 # Dev tools
@@ -27,12 +26,11 @@ docs/take_screenshots.py
 
 # FreeCAD build artifacts (source trees, compiled objects)
 freecad-build/
-freecad-src/
-freecad-pacman-build/src/
-freecad-pacman-build/pkg/
-freecad-pacman-build/freecad/
-freecad-pacman-build/*.pkg.tar.zst
-freecad-pacman-build/*.log
+freecad/pacman-build/src/
+freecad/pacman-build/pkg/
+freecad/pacman-build/freecad/
+freecad/pacman-build/*.pkg.tar.zst
+freecad/pacman-build/*.log
 
 # OS
 .DS_Store

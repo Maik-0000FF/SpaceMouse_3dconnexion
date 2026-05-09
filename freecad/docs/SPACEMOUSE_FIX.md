@@ -1,6 +1,6 @@
 # FreeCAD SpaceMouse Fixes — Technical Reference
 
-This document covers the technical details of all FreeCAD SpaceMouse patches. For the step-by-step installation guide, see the [README](../README.md#freecad).
+This document covers the technical details of all FreeCAD SpaceMouse patches. For the step-by-step installation guide, see the [README](../../README.md#freecad).
 
 ---
 
@@ -16,7 +16,7 @@ This document covers the technical details of all FreeCAD SpaceMouse patches. Fo
 | Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** (approved) | `GuiNativeEventLinux.cpp/.h` |
 | Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only | `DlgCustomizeSpaceball.cpp` |
 
-All seven fixes are applied by a single patcher: `freecad-patches/apply-spacemouse-fix.py`
+All seven fixes are applied by a single patcher: `freecad/patches/apply-spacemouse-fix.py`
 
 ---
 
@@ -246,11 +246,11 @@ void ButtonModel::loadConfig(const char* RequiredDeviceName)
 
 ## The Patcher
 
-`freecad-patches/apply-spacemouse-fix.py` applies all seven fixes to any FreeCAD source tree. It uses pattern matching — no line numbers, no version-specific code. Already-applied fixes are detected and skipped.
+`freecad/patches/apply-spacemouse-fix.py` applies all seven fixes to any FreeCAD source tree. It uses pattern matching — no line numbers, no version-specific code. Already-applied fixes are detected and skipped.
 
 ```bash
 # Standalone download (no dependencies, just Python 3)
-curl -O https://raw.githubusercontent.com/Maik-0000FF/SpaceMouse_3dconnexion/main/freecad-patches/apply-spacemouse-fix.py
+curl -O https://raw.githubusercontent.com/Maik-0000FF/SpaceMouse_3dconnexion/main/freecad/patches/apply-spacemouse-fix.py
 
 # Check what can be patched (dry-run)
 python3 apply-spacemouse-fix.py --check /path/to/freecad-source
@@ -265,7 +265,7 @@ python3 apply-spacemouse-fix.py /path/to/freecad-source
 
 ### Method A: Arch Linux Package (Recommended)
 
-See the [README installation guide](../README.md#build-patched-freecad-arch-linux).
+See the [README installation guide](../../README.md#build-patched-freecad-arch-linux).
 
 ### Method B: Build from Source
 
@@ -273,10 +273,10 @@ If you're not on Arch, or want to keep the patched version separate from your sy
 
 ```bash
 # Clone + patch + build
-./scripts/freecad-build-patched.sh --clone 1.0.2
+./freecad/scripts/build-patched.sh --clone 1.0.2
 
 # Rebuild existing source
-./scripts/freecad-build-patched.sh
+./freecad/scripts/build-patched.sh
 
 # Run the patched version
 ./freecad-build/build/bin/FreeCAD
@@ -287,7 +287,7 @@ The system FreeCAD (`/usr/bin/freecad`) remains untouched with this method.
 ### Method C: Manual Patching (Any Version)
 
 ```bash
-python3 freecad-patches/apply-spacemouse-fix.py /path/to/freecad-source
+python3 freecad/patches/apply-spacemouse-fix.py /path/to/freecad-source
 ```
 
 Then build FreeCAD as you normally would.
@@ -306,7 +306,7 @@ spacemouse-test --check           # Run diagnostic tool
 
 ### Navigation works but axes are wrong
 
-Run `./scripts/freecad-spacemouse-patch.sh` to set FlipYZ and axis enables correctly.
+Run `./freecad/scripts/setup.sh` to set FlipYZ and axis enables correctly.
 You can also adjust per-axis settings in FreeCAD: **Edit > Preferences > Spaceball > Motion**.
 
 ### FreeCAD crashes on startup after patching
@@ -314,7 +314,7 @@ You can also adjust per-axis settings in FreeCAD: **Edit > Preferences > Spaceba
 The patches only change event handling, not core functionality. If FreeCAD crashes, it's likely a build configuration issue:
 
 ```bash
-cd freecad-pacman-build
+cd freecad/pacman-build
 makepkg -sfCi      # -C cleans build dir first
 ```
 

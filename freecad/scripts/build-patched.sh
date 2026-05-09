@@ -21,8 +21,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PATCH_SCRIPT="$SCRIPT_DIR/../freecad-patches/apply-spacemouse-fix.py"
-BUILD_BASE="$SCRIPT_DIR/../freecad-build"
+PATCH_SCRIPT="$SCRIPT_DIR/../patches/apply-spacemouse-fix.py"
+BUILD_BASE="$SCRIPT_DIR/../../freecad-build"
 INSTALL_PREFIX="$HOME/.local"
 
 RED='\033[0;31m'

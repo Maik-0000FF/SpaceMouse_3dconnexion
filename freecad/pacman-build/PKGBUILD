@@ -104,12 +104,9 @@ optdepends=(
   'python-ladybug-core: Solar/Wind diagram support'
 )
 options=(!lto)
-source=("git+https://github.com/$pkgname/$pkgname${_git_fragment}"
-        apply-spacemouse-fix.py)
-sha512sums=('SKIP'
-            'SKIP')
-b2sums=('SKIP'
-        'SKIP')
+source=("git+https://github.com/$pkgname/$pkgname${_git_fragment}")
+sha512sums=('SKIP')
+b2sums=('SKIP')
 
 pkgver() {
   cd freecad
@@ -127,7 +124,7 @@ prepare() {
   git submodule update --init --recursive
 
   # SpaceMouse patch (auto-skips already merged fixes)
-  python3 ../apply-spacemouse-fix.py .
+  python3 "$startdir/../patches/apply-spacemouse-fix.py" .
 
   # Arch HDF5 2.0: pkg-config module is "hdf5", not "hdf5-serial"
   # Also remove NO_DEFAULT_PATH from find_file (cmake strips /usr/include as system dir)
