@@ -1,14 +1,14 @@
 """SettingsWindow — main settings UI with sidebar + apply/save dialog."""
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QStackedWidget, QVBoxLayout,
                                QWidget)
 
 from .backends import FreeCADConfig
 from .constants import DARK_THEME
-from .helpers import send_daemon_cmd
+from .helpers import create_tray_icon_pixmap, send_daemon_cmd
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 

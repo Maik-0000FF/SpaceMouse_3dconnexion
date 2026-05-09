@@ -2,15 +2,17 @@
 
 import atexit
 import json
+import os
 import signal
 import subprocess
 import sys
+import tempfile
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction, QGuiApplication, QIcon
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from .constants import CONFIG_DIR, CONFIG_PATH
+from .constants import CONFIG_DIR, CONFIG_PATH, DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd, set_spacemouse_led
 from .monitors import SpnavReader, WindowMonitor
 from .settings_window import SettingsWindow

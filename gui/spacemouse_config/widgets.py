@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLab
 
 from .constants import (AXIS_ACTIONS, AXIS_ACTION_LABELS, AXIS_KEYS, AXIS_NAMES,
                         BTN_ACTIONS, BTN_ACTION_LABELS)
+from .helpers import make_card
 
 
 # ── ToggleSwitch (Apple-style pill) ───────────────────────────────────

@@ -2,14 +2,16 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel,
-                               QMessageBox, QPushButton, QSizePolicy, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (QComboBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog,
+                               QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from .backends import BlenderConfig, FreeCADConfig
-from .constants import (AXIS_ACTIONS, AXIS_KEYS, BTN_ACTIONS, FREECAD_BTN_COMMANDS,
-                        FREECAD_BTN_LABELS, FREECAD_NAV_LABELS, FREECAD_NAV_STYLES)
+from .constants import (AXIS_ACTION_LABELS, AXIS_ACTIONS, AXIS_KEYS, BLENDER_STARTUP_DIR,
+                        BLENDER_SYNC_SCRIPT, BTN_ACTION_LABELS, BTN_ACTIONS,
+                        FREECAD_BTN_COMMANDS, FREECAD_BTN_LABELS, FREECAD_NAV_LABELS,
+                        FREECAD_NAV_STYLES, FREECAD_ORBIT_STYLES)
 from .helpers import make_card, make_slider
 from .widgets import AxesCard, ToggleSwitch, make_toggle
 
