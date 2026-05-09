@@ -474,7 +474,13 @@ static int cmd_sock_open(const char *path)
 	struct sockaddr_un addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
+	size_t plen = strlen(path);
+	if (plen >= sizeof(addr.sun_path)) {
+		fprintf(stderr, "spacemouse-desktop: socket path too long: %s\n", path);
+		close(fd);
+		return -1;
+	}
+	memcpy(addr.sun_path, path, plen + 1);
 
 	if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		perror("spacemouse-desktop: bind");
@@ -529,7 +535,7 @@ static void cmd_handle_client(int listen_fd)
 			fprintf(stderr, "spacemouse-desktop: switched to profile '%s'\n",
 				g_profiles[found].name);
 		} else {
-			snprintf(response, sizeof(response), "ERR unknown profile '%s'\n", name);
+			snprintf(response, sizeof(response), "ERR unknown profile '%.200s'\n", name);
 		}
 	}
 	else if (strcmp(buf, "RELOAD") == 0) {
