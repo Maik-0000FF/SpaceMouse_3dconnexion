@@ -1,8 +1,19 @@
-# Compiled binaries
+# Compiled binaries (Linux ELFs have no extension, so the daemon
+# targets must be listed explicitly; the CI no-binaries job catches
+# anything else that slips past these patterns)
 src/spacemouse-desktop
 src/spacemouse-test
 src/spnav_example
+
+# Generic compiled artefacts (mostly defensive — none of these should
+# ever be produced by this project, but a stray one shouldn't slip in)
 *.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
 
 # Python
 __pycache__/

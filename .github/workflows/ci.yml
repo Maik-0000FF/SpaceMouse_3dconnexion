@@ -50,6 +50,26 @@ jobs:
             python3 -m py_compile "$f"
           done
 
+  no-binaries:
+    name: lint / no binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          # Refuse ELF binaries / shared libs / object files in the repo.
+          # Images (PNG etc.) report as image/* and are kept.
+          mapfile -t bad < <(
+            git ls-files -z | xargs -0 file --mime-type 2>/dev/null \
+              | grep -E ': application/x-(executable|pie-executable|sharedlib|object)$' \
+              || true
+          )
+          if (( ${#bad[@]} > 0 )); then
+            printf 'Tracked binary files (compiled artefacts do not belong in git):\n'
+            printf '  %s\n' "${bad[@]}"
+            exit 1
+          fi
+          echo 'No binary artefacts tracked.'
+
   # ─── C build matrix ─────────────────────────────────────────────────
 
   build:
