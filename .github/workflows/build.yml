@@ -12,6 +12,10 @@ on:
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
+env:
+  # Run JavaScript actions (checkout etc.) on Node 24; Node 20 is being deprecated.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: ${{ matrix.name }}

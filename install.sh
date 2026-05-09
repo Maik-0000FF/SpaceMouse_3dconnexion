@@ -63,6 +63,14 @@ if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
     warn "The driver, GUI, Blender and FreeCAD integration will still work."
 fi
 
+# /run/systemd/system exists only when systemd is PID 1 — service and udev
+# management is skipped on hosts that aren't running systemd (containers,
+# custom inits) so install.sh can complete without spurious failures.
+HAVE_SYSTEMD=false
+if [[ -d /run/systemd/system ]]; then
+    HAVE_SYSTEMD=true
+fi
+
 # ── Distro-specific package definitions ───────────────────────────
 
 # Helpers route through DISTRO_FAMILY so the rest of the script is generic.
@@ -179,12 +187,12 @@ step "Installing udev rules"
 
 sudo mkdir -p /etc/udev/rules.d
 sudo cp "$SCRIPT_DIR/config/99-spacemouse.rules" /etc/udev/rules.d/99-spacemouse.rules
-if command -v udevadm &>/dev/null; then
+if $HAVE_SYSTEMD && command -v udevadm &>/dev/null; then
     sudo udevadm control --reload-rules
     sudo udevadm trigger
     ok "udev rules installed and reloaded"
 else
-    warn "udevadm not available — rules placed but not reloaded (will take effect on next boot)"
+    warn "udev not active — rules placed but not reloaded (will take effect on next boot)"
 fi
 
 # ── spacenavd configuration ───────────────────────────────────────
@@ -202,14 +210,18 @@ ok "spnavrc installed"
 
 step "Enabling spacenavd"
 
-sudo systemctl enable spacenavd.service
-sudo systemctl restart spacenavd.service
-sleep 1
+if $HAVE_SYSTEMD; then
+    sudo systemctl enable spacenavd.service
+    sudo systemctl restart spacenavd.service
+    sleep 1
 
-if systemctl is-active --quiet spacenavd.service; then
-    ok "spacenavd is running"
+    if systemctl is-active --quiet spacenavd.service; then
+        ok "spacenavd is running"
+    else
+        warn "spacenavd failed to start (device may not be connected)"
+    fi
 else
-    warn "spacenavd failed to start (device may not be connected)"
+    warn "systemd not running as PID 1 — skipping spacenavd service enable"
 fi
 
 # ── Build C programs ──────────────────────────────────────────────
@@ -267,28 +279,33 @@ else
     cp "$SCRIPT_DIR/systemd/spacemouse-config.service" "$HOME/.config/systemd/user/"
 fi
 
-systemctl --user daemon-reload
-systemctl --user enable spacemouse-desktop.service
-systemctl --user enable spacemouse-config.service
-
-# Check if uinput is accessible
-if [[ -w /dev/uinput ]]; then
-    systemctl --user restart spacemouse-desktop.service
-    sleep 1
-    if systemctl --user is-active --quiet spacemouse-desktop.service; then
-        ok "spacemouse-desktop daemon is running"
-    else
-        warn "spacemouse-desktop failed to start. Check: journalctl --user -u spacemouse-desktop"
-    fi
+if $HAVE_SYSTEMD; then
+    systemctl --user daemon-reload
+    systemctl --user enable spacemouse-desktop.service
+    systemctl --user enable spacemouse-config.service
 else
-    warn "/dev/uinput not writable. Adding udev rule..."
-    echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null
-    if command -v udevadm &>/dev/null; then
+    warn "systemd not running as PID 1 — service files placed but not enabled"
+fi
+
+# Start the daemon if systemd is running. /dev/uinput must also be writable;
+# if not, drop a udev rule and ask the user to relogin.
+if $HAVE_SYSTEMD; then
+    if [[ -w /dev/uinput ]]; then
+        systemctl --user restart spacemouse-desktop.service
+        sleep 1
+        if systemctl --user is-active --quiet spacemouse-desktop.service; then
+            ok "spacemouse-desktop daemon is running"
+        else
+            warn "spacemouse-desktop failed to start. Check: journalctl --user -u spacemouse-desktop"
+        fi
+    else
+        warn "/dev/uinput not writable. Adding udev rule..."
+        echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null
         sudo udevadm control --reload-rules
         sudo udevadm trigger
+        warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
+        warn "Then run: systemctl --user restart spacemouse-desktop.service"
     fi
-    warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
-    warn "Then run: systemctl --user restart spacemouse-desktop.service"
 fi
 
 ok "systemd user service installed"

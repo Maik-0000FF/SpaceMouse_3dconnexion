@@ -24,6 +24,10 @@ on:
 # and no AUR build environment. Everything else — distro detection, package
 # installation from official repos, the C build, the PySide6 pip-venv fallback
 # on Debian 12 / Ubuntu 24.04 — runs for real.
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   install:
     name: ${{ matrix.name }}
@@ -72,31 +76,9 @@ jobs:
           chmod 0440 /etc/sudoers.d/tester
           chown -R tester:tester .
 
-      - name: Install systemctl/udevadm/yay stubs
-        run: |
-          # Place stubs in /usr/bin so sudo finds them via its secure_path
-          # (which excludes /usr/local/bin on some distros).
-          # No systemd in container — stub all systemctl invocations
-          cat > /usr/bin/systemctl <<'STUB'
-          #!/bin/sh
-          echo "[stub] systemctl $*" >&2
-          # is-active queries: 0 = active. We report inactive (1) so that
-          # install.sh's soft-warn branch fires rather than treating the
-          # not-yet-started service as already running.
-          case "$1" in
-            is-active) exit 1 ;;
-            *) exit 0 ;;
-          esac
-          STUB
-
-          # No udev in container — stub udevadm
-          cat > /usr/bin/udevadm <<'STUB'
-          #!/bin/sh
-          echo "[stub] udevadm $*" >&2
-          exit 0
-          STUB
-
-          chmod +x /usr/bin/systemctl /usr/bin/udevadm
+      # install.sh detects no-systemd environments via /run/systemd/system
+      # and skips service/udev management cleanly, so no stubs needed for
+      # systemctl or udevadm.
 
       - name: Stub AUR helper for Arch
         if: matrix.name == 'arch'
