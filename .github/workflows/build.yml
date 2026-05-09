@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest' }
+          - { name: fedora, image: 'fedora:latest' }
+          - { name: debian-12, image: 'debian:bookworm' }
+          - { name: debian-13, image: 'debian:trixie' }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04' }
+          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest' }
+
+    steps:
+      - name: Bootstrap (git for checkout)
+        run: |
+          case "${{ matrix.name }}" in
+            arch)
+              pacman -Sy --noconfirm git
+              ;;
+            fedora)
+              dnf install -y git
+              ;;
+            debian-*|ubuntu-*)
+              apt-get update
+              apt-get install -y git
+              ;;
+            opensuse-*)
+              zypper install -y git
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          case "${{ matrix.name }}" in
+            arch)
+              pacman -S --noconfirm libspnav json-c dbus gcc make pkgconf
+              ;;
+            fedora)
+              dnf install -y libspnav-devel json-c-devel dbus-devel gcc make pkgconf-pkg-config
+              ;;
+            debian-*|ubuntu-*)
+              apt-get update
+              apt-get install -y libspnav-dev libjson-c-dev libdbus-1-dev gcc make pkg-config
+              ;;
+            opensuse-*)
+              zypper install -y libspnav-devel libjson-c-devel dbus-1-devel gcc make pkg-config
+              ;;
+          esac
+
+      - name: Build
+        run: make -C src/
+
+      - name: Verify binaries are produced
+        run: |
+          test -x src/spacemouse-desktop
+          test -x src/spacemouse-test
+          test -x src/spnav_example
+          file src/spacemouse-desktop src/spacemouse-test src/spnav_example

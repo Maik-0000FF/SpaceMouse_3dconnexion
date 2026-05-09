@@ -99,7 +99,7 @@ if [[ "$ans" == [yY] ]]; then
             sudo apt-get remove -y spacenavd 2>/dev/null || true
             ;;
         *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*)
-            sudo zypper remove -y spacenavd 2>/dev/null || true
+            sudo zypper --non-interactive remove spacenavd 2>/dev/null || true
             ;;
     esac
     ok "spacenavd removed"

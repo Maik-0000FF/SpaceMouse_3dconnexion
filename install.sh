@@ -65,61 +65,69 @@ fi
 
 # ── Distro-specific package definitions ───────────────────────────
 
-OFFICIAL_PKGS=""
-AUR_PKGS=""
-PKG_INSTALL=""
-PKG_QUERY_INSTALLED=""
+# Helpers route through DISTRO_FAMILY so the rest of the script is generic.
+pkg_installed() {
+    case "$DISTRO_FAMILY" in
+        arch)              pacman -Q "$1" &>/dev/null ;;
+        fedora|opensuse)   rpm -q "$1" &>/dev/null ;;
+        debian)            dpkg -s "$1" &>/dev/null ;;
+    esac
+}
+
+pkg_install() {
+    case "$DISTRO_FAMILY" in
+        arch)     sudo pacman -S --needed --noconfirm "$@" ;;
+        fedora)   sudo dnf install -y "$@" ;;
+        debian)   sudo apt-get install -y "$@" ;;
+        opensuse) sudo zypper --non-interactive install "$@" ;;
+    esac
+}
+
+OFFICIAL_PKGS=()
+AUR_PKGS=()
+AUR_HELPER=""
 PYSIDE_PIP_FALLBACK=false
 
 case "$DISTRO_FAMILY" in
     arch)
-        PKG_INSTALL="sudo pacman -S --needed --noconfirm"
-        PKG_QUERY_INSTALLED() { pacman -Q "$1" &>/dev/null; }
-        OFFICIAL_PKGS="libspnav json-c dbus pyside6 gcc make pkgconf"
-        AUR_PKGS="spacenavd"
+        OFFICIAL_PKGS=(libspnav json-c dbus pyside6 gcc make pkgconf)
+        AUR_PKGS=(spacenavd)
 
-        if ! command -v yay &>/dev/null && ! command -v paru &>/dev/null; then
+        if command -v yay &>/dev/null; then
+            AUR_HELPER="yay"
+        elif command -v paru &>/dev/null; then
+            AUR_HELPER="paru"
+        else
             fail "No AUR helper found. Install yay or paru first."
             exit 1
-        fi
-        AUR_HELPER="yay"
-        if ! command -v yay &>/dev/null; then
-            AUR_HELPER="paru"
         fi
         ok "AUR helper: $AUR_HELPER"
         ;;
 
     fedora)
-        PKG_INSTALL="sudo dnf install -y"
-        PKG_QUERY_INSTALLED() { rpm -q "$1" &>/dev/null; }
-        OFFICIAL_PKGS="libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config"
+        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config)
         ;;
 
     debian)
-        PKG_INSTALL="sudo apt-get install -y"
-        PKG_QUERY_INSTALLED() { dpkg -s "$1" &>/dev/null; }
-        OFFICIAL_PKGS="libspnav-dev spacenavd libjson-c-dev libdbus-1-dev gcc make pkg-config"
+        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev gcc make pkg-config)
+        sudo apt-get update
 
         # PySide6 availability:
         #   Debian 12 (bookworm)        — not in apt (added in Debian 13)
         #   Ubuntu 24.04 LTS (noble)    — not in apt (added in 24.10)
         #   Newer releases              — apt package: python3-pyside6.qtwidgets
         if apt-cache show python3-pyside6.qtwidgets &>/dev/null; then
-            OFFICIAL_PKGS="$OFFICIAL_PKGS python3-pyside6.qtwidgets"
+            OFFICIAL_PKGS+=(python3-pyside6.qtwidgets)
         else
             warn "PySide6 is not in your apt repositories (Debian 12 / Ubuntu 24.04 or older)."
             warn "Will set up a Python venv with pip-installed PySide6 instead."
             PYSIDE_PIP_FALLBACK=true
-            OFFICIAL_PKGS="$OFFICIAL_PKGS python3-venv python3-pip"
+            OFFICIAL_PKGS+=(python3-venv python3-pip)
         fi
-
-        sudo apt-get update
         ;;
 
     opensuse)
-        PKG_INSTALL="sudo zypper install -y"
-        PKG_QUERY_INSTALLED() { rpm -q "$1" &>/dev/null; }
-        OFFICIAL_PKGS="libspnav-devel spacenavd libjson-c-devel dbus-1-devel python3-pyside6 gcc make pkg-config"
+        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel python3-pyside6 gcc make pkg-config)
         ;;
 esac
 
@@ -127,23 +135,23 @@ esac
 
 step "Installing packages"
 
-for pkg in $OFFICIAL_PKGS; do
-    if PKG_QUERY_INSTALLED "$pkg"; then
+for pkg in "${OFFICIAL_PKGS[@]}"; do
+    if pkg_installed "$pkg"; then
         ok "$pkg already installed"
     else
         info "Installing $pkg..."
-        $PKG_INSTALL "$pkg"
+        pkg_install "$pkg"
         ok "$pkg installed"
     fi
 done
 
 # Arch: spacenavd from AUR (other distros pull it from official repos above)
-for pkg in $AUR_PKGS; do
-    if PKG_QUERY_INSTALLED "$pkg"; then
+for pkg in "${AUR_PKGS[@]}"; do
+    if pkg_installed "$pkg"; then
         ok "$pkg already installed"
     else
         info "Installing $pkg from AUR..."
-        $AUR_HELPER -S --needed --noconfirm "$pkg"
+        "$AUR_HELPER" -S --needed --noconfirm "$pkg"
         ok "$pkg installed"
     fi
 done

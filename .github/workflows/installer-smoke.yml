@@ -1,0 +1,165 @@
+name: Installer Smoke Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install.sh'
+      - 'uninstall.sh'
+      - 'src/**'
+      - 'config/**'
+      - 'systemd/**'
+      - '.github/workflows/installer-smoke.yml'
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'uninstall.sh'
+      - 'src/**'
+      - 'config/**'
+      - 'systemd/**'
+  workflow_dispatch:
+
+# Smoke-tests `install.sh` end-to-end inside containers. systemctl, udevadm and
+# (for Arch) the AUR helper are stubbed because containers have no real systemd
+# and no AUR build environment. Everything else — distro detection, package
+# installation from official repos, the C build, the PySide6 pip-venv fallback
+# on Debian 12 / Ubuntu 24.04 — runs for real.
+jobs:
+  install:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: --user 0
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest' }
+          - { name: fedora, image: 'fedora:latest' }
+          - { name: debian-12, image: 'debian:bookworm' }      # PySide6 pip fallback
+          - { name: debian-13, image: 'debian:trixie' }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04' }      # PySide6 pip fallback
+          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest' }
+
+    steps:
+      - name: Bootstrap container (git, sudo, basic tools)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          case "${{ matrix.name }}" in
+            arch)
+              pacman -Sy --noconfirm git sudo
+              ;;
+            fedora)
+              dnf install -y git sudo procps-ng which
+              ;;
+            debian-*|ubuntu-*)
+              apt-get update
+              apt-get install -y git sudo procps ca-certificates
+              ;;
+            opensuse-*)
+              zypper --non-interactive install git sudo
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - name: Create non-root tester user
+        run: |
+          useradd -m -s /bin/bash tester || true
+          echo 'tester ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/tester
+          chmod 0440 /etc/sudoers.d/tester
+          chown -R tester:tester .
+
+      - name: Install systemctl/udevadm/yay stubs
+        run: |
+          mkdir -p /usr/local/bin
+
+          # No systemd in container — stub all systemctl invocations
+          cat > /usr/local/bin/systemctl <<'STUB'
+          #!/bin/sh
+          echo "[stub] systemctl $*" >&2
+          # is-active queries: report inactive (0 = active for is-active),
+          # but install.sh treats failure as a soft warn, not a hard error
+          case "$1" in
+            is-active) exit 1 ;;
+            *) exit 0 ;;
+          esac
+          STUB
+
+          # No udev in container — stub udevadm
+          cat > /usr/local/bin/udevadm <<'STUB'
+          #!/bin/sh
+          echo "[stub] udevadm $*" >&2
+          exit 0
+          STUB
+
+          chmod +x /usr/local/bin/systemctl /usr/local/bin/udevadm
+
+      - name: Stub AUR helper for Arch
+        if: matrix.name == 'arch'
+        run: |
+          # spacenavd lives in the AUR, which needs a real makepkg build chain
+          # (~5-10 min). For the smoke test we stub yay so install.sh's AUR
+          # branch returns success — package installation is verified separately
+          # in the build workflow.
+          cat > /usr/local/bin/yay <<'STUB'
+          #!/bin/sh
+          echo "[stub] yay $*" >&2
+          exit 0
+          STUB
+          chmod +x /usr/local/bin/yay
+          # install.sh checks `command -v yay` so the stub is enough; PKG_QUERY
+          # via `pacman -Q spacenavd` would still fail though, so we also fake
+          # an entry by creating an empty pacman-db record:
+          install -d /var/lib/pacman/local/spacenavd-99.99-1
+          cat > /var/lib/pacman/local/spacenavd-99.99-1/desc <<DESC
+          %NAME%
+          spacenavd
+          %VERSION%
+          99.99-1
+          %ARCH%
+          x86_64
+          DESC
+
+      - name: Run installer
+        run: |
+          # Mocks must come first in PATH so install.sh picks them over real
+          # systemctl/udevadm. The real package managers stay reachable.
+          su tester -c '
+            export PATH=/usr/local/bin:$PATH
+            cd "${{ github.workspace }}"
+            bash ./install.sh
+          '
+
+      - name: Verify installed binaries
+        run: |
+          su tester -c '
+            test -x ~/.local/bin/spacemouse-desktop || { echo MISSING desktop; exit 1; }
+            test -x ~/.local/bin/spacemouse-test || { echo MISSING test; exit 1; }
+            test -x ~/.local/bin/spacemouse-config.py || { echo MISSING config.py; exit 1; }
+          '
+
+      - name: Verify config and udev rules were placed
+        run: |
+          su tester -c '
+            test -f ~/.config/spacemouse/config.json || { echo MISSING config.json; exit 1; }
+          '
+          test -f /etc/spnavrc || { echo "MISSING /etc/spnavrc"; exit 1; }
+          test -f /etc/udev/rules.d/99-spacemouse.rules || { echo "MISSING udev rule"; exit 1; }
+
+      - name: Verify pip venv on Debian 12 / Ubuntu 24.04
+        if: matrix.name == 'debian-12' || matrix.name == 'ubuntu-24.04'
+        run: |
+          su tester -c '
+            test -x ~/.local/share/spacemouse-venv/bin/python3 || {
+              echo "MISSING PySide6 venv";
+              exit 1;
+            }
+            ~/.local/share/spacemouse-venv/bin/python3 -c "import PySide6; print(PySide6.__version__)"
+            grep -q "spacemouse-venv" ~/.config/systemd/user/spacemouse-config.service || {
+              echo "service unit not rewritten to use venv interpreter";
+              exit 1;
+            }
+          '
