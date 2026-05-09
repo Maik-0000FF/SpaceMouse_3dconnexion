@@ -58,6 +58,9 @@ rm -f "$HOME/.local/bin/spacemouse-desktop"
 rm -f "$HOME/.local/bin/spacemouse-test"
 rm -f "$HOME/.local/bin/spnav_example"
 rm -f "$HOME/.local/bin/spacemouse-config.py"
+rm -rf "$HOME/.local/share/spacemouse/spacemouse_config"
+rm -f "$HOME/.local/share/spacemouse/blender_spacemouse_sync.py"
+rmdir "$HOME/.local/share/spacemouse" 2>/dev/null || true
 ok "Binaries and GUI removed"
 
 read -rp "Remove config directory ~/.config/spacemouse/? [y/N] " ans
