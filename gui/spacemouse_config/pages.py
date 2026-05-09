@@ -97,7 +97,7 @@ class DesktopPage(QWidget):
         self.scroll_exp_s.valueChanged.connect(self._emit_changed)
         fl.addRow("Scroll Curve:", self.scroll_exp_w)
 
-        self.deadzone_w, self.deadzone_s, _ = make_slider(0, 100, 15, 0)
+        self.deadzone_w, self.deadzone_s, _ = make_slider(0, 200, 0, 0)
         self.deadzone_s.valueChanged.connect(self._emit_changed)
         fl.addRow("Global Deadzone:", self.deadzone_w)
 
@@ -116,7 +116,7 @@ class DesktopPage(QWidget):
             show_invert=True,
             show_deadzone=True,
             deadzone_enabled=True,
-            deadzone_max=100,
+            deadzone_max=200,
             extra_toggles=[
                 ("Invert Horizontal Scroll", False),
                 ("Invert Vertical Scroll", False),
@@ -257,7 +257,7 @@ class DesktopPage(QWidget):
         self.scroll_speed_s.setValue(int(data.get("scroll_speed", 3.0) * 10))
         self.zoom_speed_s.setValue(int(data.get("zoom_speed", 2.0) * 10))
         self.scroll_exp_s.setValue(int(data.get("scroll_exponent", 2.0) * 10))
-        self.deadzone_s.setValue(data.get("deadzone", 15))
+        self.deadzone_s.setValue(data.get("deadzone", 0))
 
         # Axes card
         amap = data.get("axis_mapping", {})
@@ -405,7 +405,7 @@ class FreeCADPage(QWidget):
             show_invert=True,
             show_deadzone=True,
             deadzone_enabled=True,
-            deadzone_max=100,
+            deadzone_max=200,
             extra_toggles=[
                 ("Flip Y/Z", True),
                 ("Dominant Mode", False),

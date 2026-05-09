@@ -55,8 +55,6 @@ class SpnavReader(QThread):
         self._suspended = suspended
 
     def run(self):
-        import select
-
         try:
             self._lib = ctypes.CDLL("libspnav.so")
         except OSError:
@@ -93,9 +91,15 @@ class SpnavReader(QThread):
 
             if self._lib.spnav_poll_event(ctypes.byref(ev)):
                 if ev.type == 1:  # SPNAV_EVENT_MOTION
+                    # spacenavd swaps Ry/Rz vs the kernel's evdev mapping for
+                    # the SpaceNavigator: physical twist arrives on motion.ry,
+                    # tilt left/right on motion.rz. The daemon reads the kernel
+                    # device directly, so to keep the "rz = Yaw/Twist" semantics
+                    # consistent across config keys and live preview, swap them
+                    # back here.
                     self.axes_updated.emit([
                         ev.motion.x, ev.motion.y, ev.motion.z,
-                        ev.motion.rx, ev.motion.ry, ev.motion.rz
+                        ev.motion.rx, ev.motion.rz, ev.motion.ry
                     ])
                 elif ev.type == 2:  # SPNAV_EVENT_BUTTON
                     self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))

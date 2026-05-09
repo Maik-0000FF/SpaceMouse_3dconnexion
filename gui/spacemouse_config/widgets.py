@@ -313,12 +313,14 @@ class AxisBar(QWidget):
         self.setFixedHeight(12)
         self.setMinimumWidth(40)
 
+    _AXIS_RANGE = 400
+
     def setValue(self, val):
-        self._value = max(-350, min(350, val))
+        self._value = max(-self._AXIS_RANGE, min(self._AXIS_RANGE, val))
         self.update()
 
     def setDeadzone(self, dz):
-        self._deadzone = max(0, min(350, dz))
+        self._deadzone = max(0, min(self._AXIS_RANGE, dz))
         self.update()
 
     def paintEvent(self, event):
@@ -334,7 +336,7 @@ class AxisBar(QWidget):
 
         # Deadzone region (centered, visible red-tinted area)
         if self._deadzone > 0:
-            dz_half = (self._deadzone / 350.0) * (w / 2.0)
+            dz_half = (self._deadzone / self._AXIS_RANGE) * (w / 2.0)
             p.setBrush(QColor(0xf3, 0x8b, 0xa8, 50))
             p.drawRoundedRect(int(center - dz_half), 0, int(dz_half * 2), h, 3, 3)
             # Deadzone edge lines
@@ -353,7 +355,7 @@ class AxisBar(QWidget):
             else:
                 color = QColor(0x52, 0x94, 0xe2)        # bright blue outside
             p.setBrush(color)
-            val_x = center + (self._value / 350.0) * (w / 2.0)
+            val_x = center + (self._value / self._AXIS_RANGE) * (w / 2.0)
             if val_x > center:
                 p.drawRoundedRect(int(center), 0, int(val_x - center), h, 2, 2)
             else:
