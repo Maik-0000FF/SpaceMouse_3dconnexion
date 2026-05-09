@@ -62,8 +62,10 @@ jobs:
               dnf install -y libspnav-devel json-c-devel dbus-devel gcc make pkgconf-pkg-config
               ;;
             debian-*|ubuntu-*)
+              # spnav.h on Debian/Ubuntu pulls in <X11/Xlib.h>; bookworm
+              # doesn't auto-install libx11-dev as a dependency of libspnav-dev
               apt-get update
-              apt-get install -y libspnav-dev libjson-c-dev libdbus-1-dev gcc make pkg-config
+              apt-get install -y libspnav-dev libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config
               ;;
             opensuse-*)
               # openSUSE's libspnav-devel pulls in X11 headers via spnav.h

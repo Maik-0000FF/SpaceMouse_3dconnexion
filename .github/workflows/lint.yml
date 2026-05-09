@@ -18,9 +18,9 @@ jobs:
           sudo apt-get install -y shellcheck
       - name: Lint shell scripts
         run: |
-          # Treat warnings as errors but allow style/info issues to flow as warnings
-          shellcheck install.sh uninstall.sh
-          shellcheck freecad/scripts/*.sh
+          # warnings fail the job, info/style issues just print
+          shellcheck --severity=warning install.sh uninstall.sh
+          shellcheck --severity=warning freecad/scripts/*.sh
 
   bash-syntax:
     name: bash -n

@@ -74,14 +74,15 @@ jobs:
 
       - name: Install systemctl/udevadm/yay stubs
         run: |
-          mkdir -p /usr/local/bin
-
+          # Place stubs in /usr/bin so sudo finds them via its secure_path
+          # (which excludes /usr/local/bin on some distros).
           # No systemd in container — stub all systemctl invocations
-          cat > /usr/local/bin/systemctl <<'STUB'
+          cat > /usr/bin/systemctl <<'STUB'
           #!/bin/sh
           echo "[stub] systemctl $*" >&2
-          # is-active queries: report inactive (0 = active for is-active),
-          # but install.sh treats failure as a soft warn, not a hard error
+          # is-active queries: 0 = active. We report inactive (1) so that
+          # install.sh's soft-warn branch fires rather than treating the
+          # not-yet-started service as already running.
           case "$1" in
             is-active) exit 1 ;;
             *) exit 0 ;;
@@ -89,13 +90,13 @@ jobs:
           STUB
 
           # No udev in container — stub udevadm
-          cat > /usr/local/bin/udevadm <<'STUB'
+          cat > /usr/bin/udevadm <<'STUB'
           #!/bin/sh
           echo "[stub] udevadm $*" >&2
           exit 0
           STUB
 
-          chmod +x /usr/local/bin/systemctl /usr/local/bin/udevadm
+          chmod +x /usr/bin/systemctl /usr/bin/udevadm
 
       - name: Stub AUR helper for Arch
         if: matrix.name == 'arch'

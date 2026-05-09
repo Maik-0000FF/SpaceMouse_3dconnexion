@@ -109,7 +109,9 @@ case "$DISTRO_FAMILY" in
         ;;
 
     debian)
-        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev gcc make pkg-config)
+        # libx11-dev needed because spnav.h pulls in <X11/Xlib.h> and
+        # bookworm doesn't auto-install it as a dependency of libspnav-dev
+        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config)
         sudo apt-get update
 
         # PySide6 availability:
@@ -177,9 +179,13 @@ step "Installing udev rules"
 
 sudo mkdir -p /etc/udev/rules.d
 sudo cp "$SCRIPT_DIR/config/99-spacemouse.rules" /etc/udev/rules.d/99-spacemouse.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-ok "udev rules installed and reloaded"
+if command -v udevadm &>/dev/null; then
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
+    ok "udev rules installed and reloaded"
+else
+    warn "udevadm not available — rules placed but not reloaded (will take effect on next boot)"
+fi
 
 # ── spacenavd configuration ───────────────────────────────────────
 
@@ -277,8 +283,10 @@ if [[ -w /dev/uinput ]]; then
 else
     warn "/dev/uinput not writable. Adding udev rule..."
     echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger
+    if command -v udevadm &>/dev/null; then
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger
+    fi
     warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
     warn "Then run: systemctl --user restart spacemouse-desktop.service"
 fi
