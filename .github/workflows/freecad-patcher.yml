@@ -14,9 +14,6 @@ on:
     # Mondays 06:00 UTC — catch upstream refactors that break the patcher
     - cron: '0 6 * * 1'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   patcher:
     name: ${{ matrix.ref }}
@@ -29,9 +26,9 @@ jobs:
           - 'main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 

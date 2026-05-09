@@ -19,14 +19,13 @@ on:
       - 'systemd/**'
   workflow_dispatch:
 
-# Smoke-tests `install.sh` end-to-end inside containers. systemctl, udevadm and
-# (for Arch) the AUR helper are stubbed because containers have no real systemd
-# and no AUR build environment. Everything else — distro detection, package
-# installation from official repos, the C build, the PySide6 pip-venv fallback
-# on Debian 12 / Ubuntu 24.04 — runs for real.
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# Smoke-tests `install.sh` end-to-end inside containers. install.sh detects the
+# absence of systemd PID 1 itself and skips service/udev management cleanly,
+# so only the AUR helper is stubbed (Arch needs spacenavd from the AUR, which
+# requires a full makepkg build chain that isn't worth running here).
+# Everything else — distro detection, package installation from official repos,
+# the C build, the PySide6 pip-venv fallback on Debian 12 / Ubuntu 24.04 —
+# runs for real.
 
 jobs:
   install:
@@ -67,7 +66,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create non-root tester user
         run: |
