@@ -4,19 +4,19 @@ Self-contained collection of patches and build scripts for fixing FreeCAD's Spac
 
 ## Why this exists
 
-FreeCAD on Linux has several SpaceMouse bugs. Some have been merged upstream and ship in weekly builds (and FreeCAD 1.2), others are still pending. None of the fixes are in FreeCAD 1.0.x or 1.1.x. This directory provides a patcher and an Arch build that apply the fixes locally.
+FreeCAD on Linux has several SpaceMouse bugs. Most have been merged upstream by now, but the released versions only carry a subset:
 
-| Fix | Issue/PR | Status |
-|-----|----------|--------|
-| Event coalescing (jerky navigation) | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged (weekly 2026-03-11) |
-| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged (weekly 2026-03-11) |
-| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged (weekly 2026-03-11) |
-| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | Merged (weekly 2026-04-01) |
-| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | Merged (weekly 2026-04-01) |
-| Disconnect detection (100% CPU) | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | Open (approved) |
-| Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only |
+| Fix | Issue/PR | Status on main | In 1.0.x | In 1.1.0 | In 1.1.1 |
+|-----|----------|----------------|----------|----------|----------|
+| Event coalescing (jerky navigation) | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged 2026-03-07 | ✗ | ✗ | ✗ |
+| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged 2026-03-07 | ✗ | ✗ | ✗ |
+| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | Merged 2026-03-07 | ✗ | ✗ | ✗ |
+| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | Merged 2026-03-28 | ✗ | ✗ | ✓ |
+| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | Merged 2026-03-28 | ✗ | ✗ | ✓ |
+| Disconnect detection (100% CPU) | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | Merged 2026-04-02 | ✗ | ✗ | ✓ |
+| Reset button fix | [PR #28956](https://github.com/FreeCAD/FreeCAD/pull/28956) ([#19366](https://github.com/FreeCAD/FreeCAD/issues/19366)) | Open | ✗ | ✗ | ✗ |
 
-The patcher detects already-merged fixes and skips them automatically, so it works on any version.
+Weekly builds and the upcoming 1.2 release contain everything except the reset-button fix. The patcher detects already-merged fixes and skips them automatically, so it works on any version.
 
 ## Layout
 

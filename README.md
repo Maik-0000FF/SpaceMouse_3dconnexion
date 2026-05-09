@@ -68,7 +68,7 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 To configure SpaceMouse inside FreeCAD, use the **FreeCAD** page in **SpaceMouse Control** (tray icon → Settings).
 
-FreeCAD on Linux has a few SpaceMouse-related bugs that aren't in any released version yet (jerky navigation, broken buttons, 100% CPU on disconnect). If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the upstream fixes locally — completely separate from the driver here.
+FreeCAD on Linux has had several SpaceMouse-related bugs. Most fixes are now in 1.1.1 and the 1.2 development branch, but jerky navigation (PR #28110) is still missing from the 1.1 series, and the reset-button bug (PR #28956) is open. If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the fixes locally — completely separate from the driver here.
 
 ## Uninstall
 

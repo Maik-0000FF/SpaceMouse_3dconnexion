@@ -8,13 +8,13 @@ This document covers the technical details of all FreeCAD SpaceMouse patches. Fo
 
 | Fix | Issue/PR | Status | Files |
 |-----|----------|--------|-------|
-| Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `GuiNativeEventLinux.cpp` |
-| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `NavigationStyle.cpp` |
-| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** | `GuiNativeEventLinux.cpp/.h` |
-| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | `DlgCustomizeSpaceball.cpp` |
-| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** | `MainWindow.cpp`, `NavlibCmds.cpp` |
-| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Open** (approved) | `GuiNativeEventLinux.cpp/.h` |
-| Reset button fix | [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | Patcher only | `DlgCustomizeSpaceball.cpp` |
+| Event coalescing | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** 2026-03-07 | `GuiNativeEventLinux.cpp` |
+| Batched camera updates | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** 2026-03-07 | `NavigationStyle.cpp` |
+| Per-axis deadzone | [PR #28110](https://github.com/FreeCAD/FreeCAD/pull/28110) | **Merged** 2026-03-07 | `GuiNativeEventLinux.cpp/.h` |
+| Button selection sync | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** 2026-03-28 | `DlgCustomizeSpaceball.cpp` |
+| Checkable action invoke | [PR #28181](https://github.com/FreeCAD/FreeCAD/pull/28181) | **Merged** 2026-03-28 | `MainWindow.cpp`, `NavlibCmds.cpp` |
+| Disconnect detection | [PR #28915](https://github.com/FreeCAD/FreeCAD/pull/28915) | **Merged** 2026-04-02 | `GuiNativeEventLinux.cpp/.h` |
+| Reset button fix | [PR #28956](https://github.com/FreeCAD/FreeCAD/pull/28956) ([#19366](https://github.com/FreeCAD/FreeCAD/issues/19366)) | **Open** | `DlgCustomizeSpaceball.cpp` |
 
 All seven fixes are applied by a single patcher: `freecad/patches/apply-spacemouse-fix.py`
 
@@ -22,16 +22,19 @@ All seven fixes are applied by a single patcher: `freecad/patches/apply-spacemou
 
 ## Availability
 
-| Version | Performance (PR #28110) | Button fixes (PR #28181) | Disconnect fix (PR #28915) | Reset fix (#19366) |
-|---------|------------------------|--------------------------|---------------------------|-------------------|
+| Version | Performance (PR #28110) | Button fixes (PR #28181) | Disconnect fix (PR #28915) | Reset fix (PR #28956) |
+|---------|------------------------|--------------------------|---------------------------|----------------------|
 | FreeCAD 1.0.x | Not included | Not included | Not included | Not included |
-| FreeCAD 1.1.x (incl. 1.1.0) | Not included | Not included | Not included | Not included |
-| Weekly 2026-03-11 – 2026-03-25 | **Included** | Not yet | Not yet | Not yet |
-| Weekly 2026-04-01+ | **Included** | **Included** | Not yet | Not yet |
-| FreeCAD 1.2 | **Included** | **Included** | Pending merge | No PR yet |
+| FreeCAD 1.1.0 | Not included | Not included | Not included | Not included |
+| FreeCAD 1.1.1 (released 2026-04-14) | Not included | **Included** | **Included** | Not included |
+| Weekly 2026-03-11 – 2026-03-27 | **Included** | Not yet | Not yet | Not yet |
+| Weekly 2026-03-28 – 2026-04-01 | **Included** | **Included** | Not yet | Not yet |
+| Weekly 2026-04-02+ | **Included** | **Included** | **Included** | Not yet |
+| FreeCAD 1.2 (upcoming) | **Included** | **Included** | **Included** | Pending PR #28956 |
 
-For FreeCAD 1.0.x and 1.1.x: use the patcher to get all seven fixes.
-For weekly builds: the patcher detects natively included fixes and only applies what's missing (currently fixes 6–7).
+For FreeCAD 1.0.x and 1.1.0: use the patcher to get all seven fixes.
+For 1.1.1: the patcher only applies the performance fixes (1–3) and the reset fix (7).
+For weekly builds: the patcher detects natively included fixes and only applies what's missing (currently fix 7 only).
 
 ---
 
@@ -170,7 +173,7 @@ Both fixes are cross-platform (Linux, Windows, macOS).
 
 **Files:** `src/Gui/3Dconnexion/GuiNativeEventLinux.cpp` + `GuiNativeEventLinux.h`
 
-**Fixes:** [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | **Status:** Open (approved by chennes, `Approved: Code Quality` + `Approved: Tested` labels)
+**Fixes:** [#17809](https://github.com/FreeCAD/FreeCAD/issues/17809) | **Status:** Merged 2026-04-02, included in FreeCAD 1.1.1 and main
 
 ### Problem
 
@@ -220,7 +223,7 @@ This fix is Linux-only (Windows/macOS use NavLib SDK).
 
 **File:** `src/Gui/Dialogs/DlgCustomizeSpaceball.cpp`
 
-**Fixes:** [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | **Status:** Patcher only (no PR yet)
+**Fixes:** [#19366](https://github.com/FreeCAD/FreeCAD/issues/19366) | **Status:** [PR #28956](https://github.com/FreeCAD/FreeCAD/pull/28956) open, awaiting review
 
 ### Problem
 

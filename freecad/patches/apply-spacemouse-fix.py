@@ -3,7 +3,7 @@
 Apply SpaceMouse fixes to FreeCAD source.
 
 Works across FreeCAD versions regardless of directory structure or line numbers.
-Finds exact code patterns and applies eight fixes:
+Finds exact code patterns and applies seven fixes:
 
 Performance (PR #28110):
   1. Event coalescing in pollSpacenav()
