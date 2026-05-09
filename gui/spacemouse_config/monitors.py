@@ -3,7 +3,6 @@
 import ctypes
 import os
 import select
-import struct
 import subprocess
 
 from PySide6.QtCore import QThread, Signal
@@ -237,83 +236,3 @@ class WindowMonitor(QThread):
         self.wait(2000)
 
 
-# ── Mouse Click Monitor ───────────────────────────────────────────────
-
-class MouseClickMonitor(QThread):
-    """Detects global mouse button presses via /dev/input/event* devices.
-
-    Wayland blocks userspace global click capture, so we read evdev
-    directly. Used as the focus signal for the GUI: the compositor's
-    notion of "active window" doesn't change on a desktop click, but
-    a real mouse press still happens — we catch it here and let the
-    app decide focus by comparing cursor position to GUI geometry.
-    """
-    clicked = Signal()
-
-    _EVENT_FORMAT = "@qqHHi"
-    _EVENT_SIZE = struct.calcsize(_EVENT_FORMAT)
-    _EV_KEY = 0x01
-    _BTN_MOUSE = (0x110, 0x111, 0x112)  # LEFT, RIGHT, MIDDLE
-
-    def __init__(self):
-        super().__init__()
-        self._running = True
-        self._fds = []
-
-    @staticmethod
-    def _find_mouse_event_devices():
-        paths = []
-        try:
-            with open("/proc/bus/input/devices") as f:
-                blocks = f.read().split("\n\n")
-        except (IOError, OSError):
-            return paths
-        for block in blocks:
-            if "mouse" not in block:
-                continue
-            for line in block.splitlines():
-                if not line.startswith("H: Handlers="):
-                    continue
-                for h in line[len("H: Handlers="):].split():
-                    if h.startswith("event"):
-                        paths.append(f"/dev/input/{h}")
-                break
-        return paths
-
-    def run(self):
-        for path in self._find_mouse_event_devices():
-            try:
-                self._fds.append(os.open(path, os.O_RDONLY | os.O_NONBLOCK))
-            except OSError:
-                pass
-        if not self._fds:
-            return
-        while self._running:
-            try:
-                ready, _, _ = select.select(self._fds, [], [], 0.5)
-            except (OSError, ValueError):
-                break
-            for fd in ready:
-                try:
-                    data = os.read(fd, self._EVENT_SIZE * 32)
-                except (OSError, BlockingIOError):
-                    continue
-                emitted = False
-                for i in range(0, len(data) - self._EVENT_SIZE + 1, self._EVENT_SIZE):
-                    _, _, evtype, code, value = struct.unpack(
-                        self._EVENT_FORMAT, data[i:i + self._EVENT_SIZE])
-                    if (evtype == self._EV_KEY and value == 1
-                            and code in self._BTN_MOUSE):
-                        if not emitted:
-                            self.clicked.emit()
-                            emitted = True
-        for fd in self._fds:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        self._fds = []
-
-    def stop(self):
-        self._running = False
-        self.wait(2000)

@@ -14,8 +14,18 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _INSTALL = Path.home() / ".local" / "share" / "spacemouse"
+_INSTALLED_LAUNCHER = Path.home() / ".local" / "bin"
 
-for _cand in (_HERE, _INSTALL):
+# When invoked as the installed launcher, ignore any spacemouse_config/ sitting
+# next to it — older install layouts placed the package there, and Python would
+# otherwise import the stale copy via the auto-prepended script directory.
+if _HERE == _INSTALLED_LAUNCHER:
+    sys.path[:] = [p for p in sys.path if p != str(_HERE)]
+    _candidates = (_INSTALL,)
+else:
+    _candidates = (_HERE, _INSTALL)
+
+for _cand in _candidates:
     if (_cand / "spacemouse_config" / "__init__.py").is_file():
         if str(_cand) not in sys.path:
             sys.path.insert(0, str(_cand))

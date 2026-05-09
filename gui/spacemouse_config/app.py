@@ -7,34 +7,14 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 
-from PySide6.QtCore import QEvent, QObject, QTimer
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from .constants import CONFIG_DIR, CONFIG_PATH, DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd, set_spacemouse_led
-from .monitors import MouseClickMonitor, SpnavReader, WindowMonitor
+from .monitors import SpnavReader, WindowMonitor
 from .settings_window import SettingsWindow
-
-
-class _QtClickFilter(QObject):
-    """Records the timestamp of every Qt MouseButtonPress in our process.
-
-    Used to distinguish clicks inside our GUI from clicks anywhere else
-    on the desktop: Wayland blocks global QCursor.pos(), so we can't ask
-    where the cursor is — but if a /dev/input click coincides with a Qt
-    mouse event, the click landed on one of our widgets.
-    """
-    def __init__(self):
-        super().__init__()
-        self.last_press_time = 0.0
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
-            self.last_press_time = time.monotonic()
-        return False
 
 
 class SpaceMouseApp:
@@ -113,19 +93,6 @@ class SpaceMouseApp:
         self.settings_window.window_focused.connect(self._on_gui_focused)
         self.settings_window.window_unfocused.connect(self._on_gui_unfocused)
 
-        # Global mouse-click detector. Wayland + KDE keeps the GUI marked as
-        # active when the user clicks on the empty desktop, so Qt's focus
-        # signals miss that case. We read /dev/input mouse devices directly
-        # and cross-reference with a Qt event filter: if a /dev/input click
-        # coincides with a Qt MouseButtonPress, it landed inside our GUI;
-        # otherwise it landed somewhere else (Wayland forbids QCursor.pos()
-        # globally, so we can't ask the position directly).
-        self._qt_click_filter = _QtClickFilter()
-        self.app.installEventFilter(self._qt_click_filter)
-        self.click_monitor = MouseClickMonitor()
-        self.click_monitor.clicked.connect(self._on_global_click)
-        self.click_monitor.start()
-
         # Window monitor (also needed when disabled for LED control)
         self._start_window_monitor()
 
@@ -155,8 +122,6 @@ class SpaceMouseApp:
             return
         self._cleaned_up = True
         self.spnav_reader.stop()
-        if hasattr(self, "click_monitor"):
-            self.click_monitor.stop()
         self._stop_window_monitor()
 
     def _sigterm_handler(self, signum, frame):
@@ -315,34 +280,19 @@ class SpaceMouseApp:
             send_daemon_cmd(f"PROFILE {self._saved_profile}")
 
     def _on_gui_focused(self):
-        """GUI clicked — take spnav for live preview, daemon to passthrough."""
+        """GUI got activation — take spnav for live preview, daemon to passthrough."""
         self._gui_has_focus = True
         send_daemon_cmd("PROFILE _passthrough")
         self.spnav_reader.set_suspended(False)
 
     def _on_gui_unfocused(self):
-        """GUI lost focus — _on_window_changed handles the transition."""
+        """GUI lost activation — restore the saved profile so the daemon resumes
+        normal behavior. Required even when _on_window_changed also fires: that
+        callback skips the daemon switch when the new window resolves to the
+        same profile name as before, leaving the daemon stuck on _passthrough."""
         self._gui_has_focus = False
-
-    def _on_global_click(self):
-        """Global mouse click detected by /dev/input. Defer ~80ms then resolve
-        whether Qt also saw a corresponding MouseButtonPress (= click was
-        inside our GUI) or not (= click landed elsewhere)."""
-        if not self.settings_window.isVisible():
-            return
-        QTimer.singleShot(80, self._resolve_click_target)
-
-    def _resolve_click_target(self):
-        if not self.settings_window.isVisible():
-            return
-        inside = (time.monotonic() - self._qt_click_filter.last_press_time) < 0.2
-        if inside and not self._gui_has_focus:
-            self._gui_has_focus = True
-            send_daemon_cmd("PROFILE _passthrough")
-        elif not inside and self._gui_has_focus:
-            self._gui_has_focus = False
-            if not self._paused:
-                send_daemon_cmd(f"PROFILE {self._saved_profile}")
+        if not self._paused:
+            send_daemon_cmd(f"PROFILE {self._saved_profile}")
 
     def _quit(self):
         self._cleanup()
