@@ -127,7 +127,8 @@ case "$DISTRO_FAMILY" in
         ;;
 
     opensuse)
-        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel python3-pyside6 gcc make pkg-config)
+        # libspnav-devel on openSUSE pulls in X11 headers via spnav.h
+        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel libX11-devel python3-pyside6 gcc make pkg-config)
         ;;
 esac
 
@@ -174,6 +175,7 @@ fi
 
 step "Installing udev rules"
 
+sudo mkdir -p /etc/udev/rules.d
 sudo cp "$SCRIPT_DIR/config/99-spacemouse.rules" /etc/udev/rules.d/99-spacemouse.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
@@ -226,6 +228,7 @@ ok "Binaries and GUI installed to ~/.local/bin/"
 
 # Ensure ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    # shellcheck disable=SC2088  # tilde shown to user, not expanded
     warn "~/.local/bin is not in PATH. Add to your shell profile:"
     echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi

@@ -73,16 +73,17 @@ def patch_poll_spacenav(source_dir):
         1
     )
 
-    # Add the if(hasMotion) block after the while loop closes, before the function ends.
-    # Use a specific pattern anchored to the button handler to avoid matching
-    # the wrong function (e.g. initSpaceball which also ends with "}\n}").
+    # Add the if(hasMotion) block immediately after the while loop closes.
+    # Pattern anchors on the button handler so it can't match other functions,
+    # but stops at the while-end so it works whether or not the disconnect-
+    # detection block (PR #28915) follows. On versions with PR #28915 merged
+    # (FreeCAD 1.1.1+, main), the disconnect block ends up below our insertion.
     old_end = (
         "mainApp->postButtonEvent(ev.button.bnum, ev.button.press);\n"
         "                break;\n"
         "            }\n"
         "        }\n"
         "    }\n"
-        "}"
     )
     new_end = (
         "mainApp->postButtonEvent(ev.button.bnum, ev.button.press);\n"
@@ -93,7 +94,6 @@ def patch_poll_spacenav(source_dir):
         "    if (hasMotion) {\n"
         "        mainApp->postMotionEvent(motionDataArray);\n"
         "    }\n"
-        "}"
     )
 
     if old_end not in content:
@@ -330,14 +330,21 @@ def patch_per_axis_deadzone(source_dir):
         1
     )
 
-    # Add dzCache initialization in initSpaceball() after the connect() call
-    connect_pattern = 'connect(SpacenavNotifier, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));'
-    if connect_pattern not in cpp:
+    # Add dzCache initialization in initSpaceball() after the connect() call.
+    # The notifier variable is "SpacenavNotifier" before PR #28915 and
+    # "spnavNotifier" after — match either.
+    notifier_name = None
+    for candidate in ("spnavNotifier", "SpacenavNotifier"):
+        if f"connect({candidate}, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));" in cpp:
+            notifier_name = candidate
+            break
+    if notifier_name is None:
         print(f"  FAIL: Could not find connect() pattern in initSpaceball()")
         return False
 
+    connect_pattern = f'connect({notifier_name}, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));'
     dzCache_init = (
-        'connect(SpacenavNotifier, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));\n'
+        f'{connect_pattern}\n'
         '        dzCache = std::make_unique<DeadzoneCache>(\n'
         '            App::GetApplication().GetParameterGroupByPath(\n'
         '                "User parameter:BaseApp/Spaceball/Motion"\n'

@@ -44,7 +44,7 @@ jobs:
               apt-get install -y git
               ;;
             opensuse-*)
-              zypper install -y git
+              zypper --non-interactive install git
               ;;
           esac
 
@@ -66,7 +66,8 @@ jobs:
               apt-get install -y libspnav-dev libjson-c-dev libdbus-1-dev gcc make pkg-config
               ;;
             opensuse-*)
-              zypper install -y libspnav-devel libjson-c-devel dbus-1-devel gcc make pkg-config
+              # openSUSE's libspnav-devel pulls in X11 headers via spnav.h
+              zypper --non-interactive install libspnav-devel libjson-c-devel dbus-1-devel libX11-devel gcc make pkg-config
               ;;
           esac
 
@@ -78,4 +79,4 @@ jobs:
           test -x src/spacemouse-desktop
           test -x src/spacemouse-test
           test -x src/spnav_example
-          file src/spacemouse-desktop src/spacemouse-test src/spnav_example
+          ls -la src/spacemouse-desktop src/spacemouse-test src/spnav_example
