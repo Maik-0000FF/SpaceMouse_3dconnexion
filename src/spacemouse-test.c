@@ -14,8 +14,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <spnav.h>
 
 #define SPACEMOUSE_VERSION  "0.1.0"
@@ -28,8 +30,18 @@
 #define COL_CYAN   "\033[36m"
 
 static volatile sig_atomic_t g_running = 1;
+static int g_cursor_hidden = 0;
 
 static void on_signal(int sig) { (void)sig; g_running = 0; }
+
+static void show_cursor(void)
+{
+	if (g_cursor_hidden) {
+		printf("\033[?25h");
+		fflush(stdout);
+		g_cursor_hidden = 0;
+	}
+}
 
 /* ── USB device detection via sysfs ─────────────────────────────────── */
 
@@ -219,10 +231,39 @@ static int mode_check(void)
 
 /* ── Live mode ──────────────────────────────────────────────────────── */
 
+static void redraw_live(int tx, int ty, int tz, int rx, int ry, int rz,
+                        int btn0, int btn1, unsigned int period)
+{
+	/* Move cursor up 3 lines and redraw each */
+	printf("\033[3A\033[K");
+	printf(COL_CYAN "TX:" COL_RESET " %+6d  "
+	       COL_CYAN "TY:" COL_RESET " %+6d  "
+	       COL_CYAN "TZ:" COL_RESET " %+6d\n",
+		tx, ty, tz);
+	printf("\033[K");
+	printf(COL_CYAN "RX:" COL_RESET " %+6d  "
+	       COL_CYAN "RY:" COL_RESET " %+6d  "
+	       COL_CYAN "RZ:" COL_RESET " %+6d\n",
+		rx, ry, rz);
+	printf("\033[K");
+	printf("Btn0: %s  Btn1: %s  Period: %ums\n",
+		btn0 ? COL_GREEN "[X]" COL_RESET : "[ ]",
+		btn1 ? COL_GREEN "[X]" COL_RESET : "[ ]",
+		period);
+	fflush(stdout);
+}
+
 static int mode_live(void)
 {
 	if (spnav_open() == -1) {
 		fprintf(stderr, "Cannot connect to spacenavd. Is it running?\n");
+		return 1;
+	}
+
+	int fd = spnav_fd();
+	if (fd < 0) {
+		fprintf(stderr, "Cannot get spacenavd file descriptor\n");
+		spnav_close();
 		return 1;
 	}
 
@@ -233,47 +274,68 @@ static int mode_live(void)
 	signal(SIGTERM, on_signal);
 
 	printf(COL_BOLD "\n=== %s - Live Event Monitor ===" COL_RESET "\n", devname);
+	printf("Axes: TX/TY = Pan, TZ = Zoom, "
+	       "RX = Pitch, RY = Roll, RZ = Yaw/Twist\n");
 	printf("Press Ctrl+C to exit\n\n");
 
-	/* Hide cursor */
+	/* Hide cursor and ensure restoration on exit */
 	printf("\033[?25l");
+	g_cursor_hidden = 1;
+	atexit(show_cursor);
 
+	/* Reserve 3 lines for the live panel and render initial state */
+	printf("\n\n\n");
+	int tx=0, ty=0, tz=0, rx=0, ry=0, rz=0;
+	unsigned int period = 0;
 	int btn0 = 0, btn1 = 0;
+	redraw_live(tx, ty, tz, rx, ry, rz, btn0, btn1, period);
+
 	spnav_event ev;
+	int dirty = 0;
 
 	while (g_running) {
-		int evtype = spnav_wait_event(&ev);
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		struct timeval tv = { 0, 200000 }; /* 200 ms */
+
+		int sel = select(fd + 1, &rfds, NULL, NULL, &tv);
 		if (!g_running) break;
-
-		if (evtype == SPNAV_EVENT_MOTION) {
-			/* Move cursor up 3 lines and redraw */
-			printf("\033[3A\033[K");
-			printf(COL_CYAN "TX:" COL_RESET " %+6d  "
-			       COL_CYAN "TY:" COL_RESET " %+6d  "
-			       COL_CYAN "TZ:" COL_RESET " %+6d\n",
-				ev.motion.x, ev.motion.y, ev.motion.z);
-			printf("\033[K");
-			printf(COL_CYAN "RX:" COL_RESET " %+6d  "
-			       COL_CYAN "RY:" COL_RESET " %+6d  "
-			       COL_CYAN "RZ:" COL_RESET " %+6d\n",
-				ev.motion.rx, ev.motion.ry, ev.motion.rz);
-			printf("\033[K");
-
-			/* Visual bar indicators */
-			printf("Btn0: %s  Btn1: %s  Period: %ums\n",
-				btn0 ? COL_GREEN "[X]" COL_RESET : "[ ]",
-				btn1 ? COL_GREEN "[X]" COL_RESET : "[ ]",
-				ev.motion.period);
-			fflush(stdout);
+		if (sel < 0) {
+			if (errno == EINTR) continue;
+			break;
 		}
-		else if (evtype == SPNAV_EVENT_BUTTON) {
-			if (ev.button.bnum == 0) btn0 = ev.button.press;
-			else if (ev.button.bnum == 1) btn1 = ev.button.press;
+		if (sel == 0) continue; /* timeout, re-check g_running */
+
+		/* Drain all queued events, redraw once afterwards */
+		while (spnav_poll_event(&ev)) {
+			if (ev.type == SPNAV_EVENT_MOTION) {
+				tx = ev.motion.x;
+				ty = ev.motion.y;
+				tz = ev.motion.z;
+				rx = ev.motion.rx;
+				/* spacenavd swaps Ry/Rz vs evdev for the SpaceNavigator:
+				 * physical twist arrives on motion.ry, tilt on motion.rz.
+				 * Swap back so RZ = Yaw/Twist, matching the GUI. */
+				ry = ev.motion.rz;
+				rz = ev.motion.ry;
+				period = ev.motion.period;
+				dirty = 1;
+			} else if (ev.type == SPNAV_EVENT_BUTTON) {
+				if (ev.button.bnum == 0) btn0 = ev.button.press;
+				else if (ev.button.bnum == 1) btn1 = ev.button.press;
+				dirty = 1;
+			}
+		}
+
+		if (dirty) {
+			redraw_live(tx, ty, tz, rx, ry, rz, btn0, btn1, period);
+			dirty = 0;
 		}
 	}
 
-	/* Show cursor again */
-	printf("\033[?25h\n");
+	show_cursor();
+	printf("\n");
 
 	spnav_close();
 	return 0;
@@ -324,12 +386,8 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	/* Need initial lines for live mode cursor movement */
-	if (strcmp(argv[1], "--live") == 0) {
-		printf("\n\n\n");
+	if (strcmp(argv[1], "--live") == 0)
 		return mode_live();
-	}
-
 	if (strcmp(argv[1], "--check") == 0)
 		return mode_check();
 	if (strcmp(argv[1], "--led") == 0)
