@@ -36,6 +36,8 @@
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
+#define SPACEMOUSE_VERSION  "0.1.0"
+
 #define MAX_PROFILES    32
 #define MAX_WM_CLASSES  8
 #define CMD_BUF_SIZE    256
@@ -858,13 +860,19 @@ static int scroll_acc_consume(double *acc)
 
 static void usage(const char *prog)
 {
-	fprintf(stderr, "Usage: %s [-f] [-c config.json]\n", prog);
-	fprintf(stderr, "  -f  run in foreground\n");
-	fprintf(stderr, "  -c  config file (default: ~/.config/spacemouse/config.json)\n");
+	fprintf(stderr, "Usage: %s [-f] [-c config.json] [--version]\n", prog);
+	fprintf(stderr, "  -f         run in foreground\n");
+	fprintf(stderr, "  -c FILE    config file (default: ~/.config/spacemouse/config.json)\n");
+	fprintf(stderr, "  --version  print version and exit\n");
 }
 
 int main(int argc, char **argv)
 {
+	if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+		printf("spacemouse-desktop %s\n", SPACEMOUSE_VERSION);
+		return 0;
+	}
+
 	int foreground = 0;
 	const char *home = getenv("HOME");
 
@@ -883,6 +891,8 @@ int main(int argc, char **argv)
 		case 'h': default: usage(argv[0]); return opt == 'h' ? 0 : 1;
 		}
 	}
+
+	fprintf(stderr, "spacemouse-desktop %s starting\n", SPACEMOUSE_VERSION);
 
 	/* Load profiles */
 	config_load_all(g_config_path);
