@@ -249,6 +249,9 @@ install -m755 "$SCRIPT_DIR/gui/spacemouse-config.py" "$HOME/.local/bin/spacemous
 # startup dir using a path relative to the package.
 mkdir -p "$HOME/.local/share/spacemouse"
 rm -rf "$HOME/.local/share/spacemouse/spacemouse_config"
+# Clean up package directory from older install layouts that placed it next
+# to the launcher in ~/.local/bin/.
+rm -rf "$HOME/.local/bin/spacemouse_config"
 cp -r "$SCRIPT_DIR/gui/spacemouse_config" "$HOME/.local/share/spacemouse/spacemouse_config"
 install -m644 "$SCRIPT_DIR/gui/blender_spacemouse_sync.py" \
     "$HOME/.local/share/spacemouse/blender_spacemouse_sync.py"

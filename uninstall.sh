@@ -61,6 +61,14 @@ rm -f "$HOME/.local/bin/spacemouse-config.py"
 rm -rf "$HOME/.local/share/spacemouse/spacemouse_config"
 rm -f "$HOME/.local/share/spacemouse/blender_spacemouse_sync.py"
 rmdir "$HOME/.local/share/spacemouse" 2>/dev/null || true
+# Legacy package directory from older install layouts.
+rm -rf "$HOME/.local/bin/spacemouse_config"
+# Blender startup script — the GUI's "Install startup script" button copies
+# blender_spacemouse_sync.py here, possibly across multiple Blender versions.
+for d in "$HOME"/.config/blender/*/scripts/startup; do
+    [[ -d "$d" ]] || continue
+    rm -f "$d/spacemouse_sync.py"
+done
 ok "Binaries and GUI removed"
 
 read -rp "Remove config directory ~/.config/spacemouse/? [y/N] " ans
