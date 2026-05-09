@@ -442,6 +442,13 @@ class WindowMonitor(QThread):
 
     def update_profiles(self, profiles):
         self._profiles = profiles
+        # Force re-evaluation: the next event must fire even if the resolved
+        # profile name is identical, and reloading the KWin script re-emits
+        # the initial workspace.activeWindow print so the currently focused
+        # window gets re-classified against the new profile list right away.
+        self._last_profile = ""
+        if self._proc is not None:
+            self._install_kwin_script()
 
     def _install_kwin_script(self):
         with open(self._script_path, "w") as f:
@@ -495,7 +502,11 @@ class WindowMonitor(QThread):
         return "default"
 
     def run(self):
-        self._install_kwin_script()
+        # Start the journal tail BEFORE loading the KWin script. The script
+        # prints the currently active window the moment it starts, and we
+        # need that line to land in the stream we're reading — otherwise the
+        # daemon stays on whatever profile it booted with until the user
+        # alt-tabs to another window.
         try:
             self._proc = subprocess.Popen(
                 ["journalctl", "--user", "-t", "kwin_wayland",
@@ -503,6 +514,7 @@ class WindowMonitor(QThread):
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         except FileNotFoundError:
             return
+        self._install_kwin_script()
         stdout = self._proc.stdout
         if not stdout:
             return
