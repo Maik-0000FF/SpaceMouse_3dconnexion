@@ -1,5 +1,7 @@
 # SpaceMouse Linux Driver
 
+[![CI](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml/badge.svg)](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml)
+
 > **This project is under active development.** Contributions and feedback are welcome.
 
 Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
@@ -7,14 +9,34 @@ Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it w
 
 ## What You Need
 
-- **Linux with KDE Plasma** (Wayland recommended). The driver runs on any desktop, but window detection and desktop switching are KWin-specific.
 - **3Dconnexion SpaceMouse** connected via USB
-- **A supported distribution:**
-  - **Arch Linux** (and derivatives like EndeavourOS, Manjaro) — needs `yay` or `paru` for the AUR; [install yay](https://github.com/Jguer/yay#installation)
-  - **Fedora** (40+) — everything from official repos
-  - **Debian 13+ / Ubuntu 24.10+** — everything from apt (universe on Ubuntu)
-  - **Debian 12 / Ubuntu 24.04 LTS** — works, but PySide6 isn't in apt; the installer falls back to a pip venv automatically
-  - **openSUSE Tumbleweed / Leap** — everything from official repos
+- **A supported distribution.** Build, packaging and the install script are continuously verified in CI on:
+
+  | Distribution | Notes |
+  |---|---|
+  | **Arch Linux** (incl. EndeavourOS, Manjaro) | `libspnav` and `pyside6` from `extra`; `spacenavd` from the AUR — needs `yay` or `paru` ([install yay](https://github.com/Jguer/yay#installation)) |
+  | **Fedora** (latest) | everything from the official repos (no RPM Fusion needed) |
+  | **Debian 13 (trixie)** | everything from apt `main` |
+  | **Debian 12 (bookworm)** / **Ubuntu 24.04 LTS** / **Ubuntu 24.10** | works, but PySide6 isn't in apt — the installer falls back to a pip venv automatically. (`python3-pyside6.qtwidgets` first lands in Ubuntu 25.10.) |
+  | **openSUSE Tumbleweed / Leap** | everything from the official repos |
+
+- **A desktop environment.** **KDE Plasma (Wayland)** is the primary target and the only one where the full feature set works. The driver itself is desktop-agnostic — see the table below.
+
+### Feature support per desktop
+
+The C daemon falls back gracefully when KWin's D-Bus services aren't there, and the GUI's window-detection code does the same with `gdbus` timeouts and a guarded `journalctl` subprocess. So nothing crashes on other desktops; the KWin-bound features just become no-ops.
+
+| Feature | KDE Plasma | GNOME | XFCE 4.18+ | Sway | Hyprland | COSMIC |
+|---|---|---|---|---|---|---|
+| Scroll, zoom (tilt + push/pull) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GUI with system-tray icon | ✓ | ⚠ via [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/) extension | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
+| Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Auto profile switch when Blender / FreeCAD is focused | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Twist → virtual desktop switch | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Left btn → Overview / Right btn → Show Desktop | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+**Why the `✗`s:** the auto-switch hooks into `workspace.windowActivated` (KWin Scripting), the desktop switch and the buttons go through `org.kde.KWin` and `org.kde.kglobalaccel` D-Bus interfaces — none of which exist outside KWin. Scroll/zoom work everywhere because `uinput` events are forwarded to the focused application by `libinput` / Xorg / the Wayland compositor regardless of desktop.
 
 ## Installation
 
