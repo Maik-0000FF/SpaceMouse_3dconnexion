@@ -1,0 +1,270 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Mondays 06:00 UTC — surface upstream FreeCAD refactors that break the patcher
+    - cron: '0 6 * * 1'
+
+jobs:
+
+  # ─── Lint ───────────────────────────────────────────────────────────
+
+  shellcheck:
+    name: lint / shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - run: |
+          shellcheck --severity=warning install.sh uninstall.sh
+          shellcheck --severity=warning freecad/scripts/*.sh
+
+  bash-syntax:
+    name: lint / bash -n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          for f in install.sh uninstall.sh freecad/scripts/*.sh; do
+            echo "checking $f"
+            bash -n "$f"
+          done
+
+  python-syntax:
+    name: lint / python compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: |
+          for f in $(find . -name '*.py' -not -path './.git/*' -not -path '*/__pycache__/*'); do
+            echo "compiling $f"
+            python3 -m py_compile "$f"
+          done
+
+  # ─── C build matrix ─────────────────────────────────────────────────
+
+  build:
+    name: build / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest' }
+          - { name: fedora, image: 'fedora:latest' }
+          - { name: debian-12, image: 'debian:bookworm' }
+          - { name: debian-13, image: 'debian:trixie' }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04' }
+          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest' }
+
+    steps:
+      - name: Bootstrap (git for checkout)
+        run: |
+          case "${{ matrix.name }}" in
+            arch)        pacman -Sy --noconfirm git ;;
+            fedora)      dnf install -y git ;;
+            debian-*|ubuntu-*) apt-get update && apt-get install -y git ;;
+            opensuse-*)  zypper --non-interactive install git ;;
+          esac
+
+      - uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          case "${{ matrix.name }}" in
+            arch)
+              pacman -S --noconfirm libspnav json-c dbus gcc make pkgconf
+              ;;
+            fedora)
+              dnf install -y libspnav-devel json-c-devel dbus-devel gcc make pkgconf-pkg-config
+              ;;
+            debian-*|ubuntu-*)
+              # libx11-dev needed because spnav.h pulls in <X11/Xlib.h> and
+              # bookworm doesn't auto-install it as a dependency of libspnav-dev
+              apt-get update
+              apt-get install -y libspnav-dev libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config
+              ;;
+            opensuse-*)
+              # openSUSE's libspnav-devel pulls in X11 headers via spnav.h
+              zypper --non-interactive install libspnav-devel libjson-c-devel dbus-1-devel libX11-devel gcc make pkg-config
+              ;;
+          esac
+
+      - run: make -C src/
+
+      - name: Verify binaries
+        run: |
+          test -x src/spacemouse-desktop
+          test -x src/spacemouse-test
+          test -x src/spnav_example
+          ls -la src/spacemouse-desktop src/spacemouse-test src/spnav_example
+
+  # ─── FreeCAD patcher ────────────────────────────────────────────────
+
+  freecad-patcher:
+    name: patcher / ${{ matrix.ref }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ['1.1.1', 'main']
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Clone FreeCAD ${{ matrix.ref }}
+        run: |
+          git clone --depth=1 --branch '${{ matrix.ref }}' \
+            https://github.com/FreeCAD/FreeCAD.git /tmp/freecad-source
+
+      - name: Patcher dry-run (--check)
+        run: python3 freecad/patches/apply-spacemouse-fix.py --check /tmp/freecad-source
+
+      - name: Apply patches
+        run: python3 freecad/patches/apply-spacemouse-fix.py /tmp/freecad-source
+
+      - name: No merge markers in patched files
+        run: |
+          for f in $(cd /tmp/freecad-source && git diff --name-only); do
+            full="/tmp/freecad-source/$f"
+            if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$full"; then
+              echo "FAIL: merge markers in $f"
+              exit 1
+            fi
+          done
+          echo "No merge markers found in patched files."
+
+  # ─── Installer smoke test ──────────────────────────────────────────
+  # install.sh detects the absence of systemd PID 1 itself and skips
+  # service/udev management cleanly, so only the AUR helper is stubbed
+  # (Arch needs spacenavd from the AUR, which would require a full makepkg
+  # build chain). Everything else — distro detection, package installation
+  # from official repos, the C build, the PySide6 pip-venv fallback on
+  # Debian 12 / Ubuntu 24.04 — runs for real.
+
+  installer-smoke:
+    name: installer / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: --user 0
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch, image: 'archlinux:latest' }
+          - { name: fedora, image: 'fedora:latest' }
+          - { name: debian-12, image: 'debian:bookworm' }      # PySide6 pip fallback
+          - { name: debian-13, image: 'debian:trixie' }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04' }      # PySide6 pip fallback
+          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest' }
+
+    steps:
+      - name: Bootstrap container (git, sudo, basic tools)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          case "${{ matrix.name }}" in
+            arch)
+              pacman -Sy --noconfirm git sudo
+              ;;
+            fedora)
+              dnf install -y git sudo procps-ng which
+              ;;
+            debian-*|ubuntu-*)
+              apt-get update
+              apt-get install -y git sudo procps ca-certificates
+              ;;
+            opensuse-*)
+              zypper --non-interactive install git sudo
+              ;;
+          esac
+
+      - uses: actions/checkout@v6
+
+      - name: Create non-root tester user
+        run: |
+          useradd -m -s /bin/bash tester || true
+          echo 'tester ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/tester
+          chmod 0440 /etc/sudoers.d/tester
+          chown -R tester:tester .
+
+      - name: Stub AUR helper for Arch
+        if: matrix.name == 'arch'
+        run: |
+          # spacenavd lives in the AUR; for the smoke test we stub yay so
+          # install.sh's AUR branch returns success — package installation
+          # is verified separately in the build job.
+          cat > /usr/local/bin/yay <<'STUB'
+          #!/bin/sh
+          echo "[stub] yay $*" >&2
+          exit 0
+          STUB
+          chmod +x /usr/local/bin/yay
+          # install.sh checks `command -v yay` so the stub is enough; PKG_QUERY
+          # via `pacman -Q spacenavd` would still fail though, so fake an entry
+          # by creating an empty pacman-db record:
+          install -d /var/lib/pacman/local/spacenavd-99.99-1
+          cat > /var/lib/pacman/local/spacenavd-99.99-1/desc <<DESC
+          %NAME%
+          spacenavd
+          %VERSION%
+          99.99-1
+          %ARCH%
+          x86_64
+          DESC
+
+      - name: Run installer
+        run: |
+          su tester -c '
+            export PATH=/usr/local/bin:$PATH
+            cd "${{ github.workspace }}"
+            bash ./install.sh
+          '
+
+      - name: Verify installed binaries
+        run: |
+          su tester -c '
+            test -x ~/.local/bin/spacemouse-desktop || { echo MISSING desktop; exit 1; }
+            test -x ~/.local/bin/spacemouse-test || { echo MISSING test; exit 1; }
+            test -x ~/.local/bin/spacemouse-config.py || { echo MISSING config.py; exit 1; }
+          '
+
+      - name: Verify config and udev rules were placed
+        run: |
+          su tester -c '
+            test -f ~/.config/spacemouse/config.json || { echo MISSING config.json; exit 1; }
+          '
+          test -f /etc/spnavrc || { echo "MISSING /etc/spnavrc"; exit 1; }
+          test -f /etc/udev/rules.d/99-spacemouse.rules || { echo "MISSING udev rule"; exit 1; }
+
+      - name: Verify pip venv on Debian 12 / Ubuntu 24.04
+        if: matrix.name == 'debian-12' || matrix.name == 'ubuntu-24.04'
+        run: |
+          su tester -c '
+            test -x ~/.local/share/spacemouse-venv/bin/python3 || {
+              echo "MISSING PySide6 venv";
+              exit 1;
+            }
+            ~/.local/share/spacemouse-venv/bin/python3 -c "import PySide6; print(PySide6.__version__)"
+            grep -q "spacemouse-venv" ~/.config/systemd/user/spacemouse-config.service || {
+              echo "service unit not rewritten to use venv interpreter";
+              exit 1;
+            }
+          '
