@@ -7,9 +7,14 @@ Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it w
 
 ## What You Need
 
-- **Arch Linux** (or Arch-based like EndeavourOS, Manjaro)
+- **Linux with KDE Plasma** (Wayland recommended). The driver runs on any desktop, but window detection and desktop switching are KWin-specific.
 - **3Dconnexion SpaceMouse** connected via USB
-- **yay** or **paru** (AUR helper) — if you don't have one, [install yay](https://github.com/Jguer/yay#installation)
+- **A supported distribution:**
+  - **Arch Linux** (and derivatives like EndeavourOS, Manjaro) — needs `yay` or `paru` for the AUR; [install yay](https://github.com/Jguer/yay#installation)
+  - **Fedora** (40+) — everything from official repos
+  - **Debian 13+ / Ubuntu 24.10+** — everything from apt (universe on Ubuntu)
+  - **Debian 12 / Ubuntu 24.04 LTS** — works, but PySide6 isn't in apt; the installer falls back to a pip venv automatically
+  - **openSUSE Tumbleweed / Leap** — everything from official repos
 
 ## Installation
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# SpaceMouse Driver Installation Script for Arch Linux
+# SpaceMouse Driver Installation Script
+# Supports Arch (+ derivatives), Fedora, Debian/Ubuntu, openSUSE
 # Installs spacenavd, configures udev, builds tools, sets up systemd services
 #
 set -euo pipefail
@@ -28,46 +29,137 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
-if [[ ! -f /etc/arch-release ]]; then
-    fail "This script is designed for Arch Linux."
+if [[ ! -r /etc/os-release ]]; then
+    fail "Cannot read /etc/os-release — unsupported system."
     exit 1
 fi
 
-if ! command -v yay &>/dev/null && ! command -v paru &>/dev/null; then
-    fail "No AUR helper found. Install yay or paru first."
+# shellcheck disable=SC1091
+. /etc/os-release
+
+# Resolve distribution family. Check ID first, then ID_LIKE for derivatives
+# (Manjaro/EndeavourOS → arch, Linux Mint/Pop_OS → debian, etc.).
+DISTRO_FAMILY=""
+case " $ID ${ID_LIKE:-} " in
+    *" arch "*)        DISTRO_FAMILY="arch" ;;
+    *" fedora "*|*" rhel "*|*" centos "*) DISTRO_FAMILY="fedora" ;;
+    *" debian "*|*" ubuntu "*) DISTRO_FAMILY="debian" ;;
+    *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*) DISTRO_FAMILY="opensuse" ;;
+esac
+
+if [[ -z "$DISTRO_FAMILY" ]]; then
+    fail "Unsupported distribution: $ID (ID_LIKE=${ID_LIKE:-})"
+    fail "Supported: Arch, Fedora, Debian/Ubuntu, openSUSE — and their derivatives."
     exit 1
 fi
 
-AUR_HELPER="yay"
-if ! command -v yay &>/dev/null; then
-    AUR_HELPER="paru"
+ok "Distribution: $PRETTY_NAME (family: $DISTRO_FAMILY)"
+
+# KDE Plasma detection — driver and 3D-app integration work on any desktop,
+# but window detection and desktop switching are KWin-specific.
+if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
+    warn "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
+    warn "Window detection and desktop switching are Plasma-specific and will be inactive."
+    warn "The driver, GUI, Blender and FreeCAD integration will still work."
 fi
 
-ok "Arch Linux detected, AUR helper: $AUR_HELPER"
+# ── Distro-specific package definitions ───────────────────────────
+
+OFFICIAL_PKGS=""
+AUR_PKGS=""
+PKG_INSTALL=""
+PKG_QUERY_INSTALLED=""
+PYSIDE_PIP_FALLBACK=false
+
+case "$DISTRO_FAMILY" in
+    arch)
+        PKG_INSTALL="sudo pacman -S --needed --noconfirm"
+        PKG_QUERY_INSTALLED() { pacman -Q "$1" &>/dev/null; }
+        OFFICIAL_PKGS="libspnav json-c dbus pyside6 gcc make pkgconf"
+        AUR_PKGS="spacenavd"
+
+        if ! command -v yay &>/dev/null && ! command -v paru &>/dev/null; then
+            fail "No AUR helper found. Install yay or paru first."
+            exit 1
+        fi
+        AUR_HELPER="yay"
+        if ! command -v yay &>/dev/null; then
+            AUR_HELPER="paru"
+        fi
+        ok "AUR helper: $AUR_HELPER"
+        ;;
+
+    fedora)
+        PKG_INSTALL="sudo dnf install -y"
+        PKG_QUERY_INSTALLED() { rpm -q "$1" &>/dev/null; }
+        OFFICIAL_PKGS="libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config"
+        ;;
+
+    debian)
+        PKG_INSTALL="sudo apt-get install -y"
+        PKG_QUERY_INSTALLED() { dpkg -s "$1" &>/dev/null; }
+        OFFICIAL_PKGS="libspnav-dev spacenavd libjson-c-dev libdbus-1-dev gcc make pkg-config"
+
+        # PySide6 availability:
+        #   Debian 12 (bookworm)        — not in apt (added in Debian 13)
+        #   Ubuntu 24.04 LTS (noble)    — not in apt (added in 24.10)
+        #   Newer releases              — apt package: python3-pyside6.qtwidgets
+        if apt-cache show python3-pyside6.qtwidgets &>/dev/null; then
+            OFFICIAL_PKGS="$OFFICIAL_PKGS python3-pyside6.qtwidgets"
+        else
+            warn "PySide6 is not in your apt repositories (Debian 12 / Ubuntu 24.04 or older)."
+            warn "Will set up a Python venv with pip-installed PySide6 instead."
+            PYSIDE_PIP_FALLBACK=true
+            OFFICIAL_PKGS="$OFFICIAL_PKGS python3-venv python3-pip"
+        fi
+
+        sudo apt-get update
+        ;;
+
+    opensuse)
+        PKG_INSTALL="sudo zypper install -y"
+        PKG_QUERY_INSTALLED() { rpm -q "$1" &>/dev/null; }
+        OFFICIAL_PKGS="libspnav-devel spacenavd libjson-c-devel dbus-1-devel python3-pyside6 gcc make pkg-config"
+        ;;
+esac
 
 # ── Package installation ───────────────────────────────────────────
 
 step "Installing packages"
 
-# Official repos
-OFFICIAL_PKGS="libspnav json-c dbus pyside6"
 for pkg in $OFFICIAL_PKGS; do
-    if pacman -Q "$pkg" &>/dev/null; then
+    if PKG_QUERY_INSTALLED "$pkg"; then
         ok "$pkg already installed"
     else
         info "Installing $pkg..."
-        sudo pacman -S --needed --noconfirm "$pkg"
+        $PKG_INSTALL "$pkg"
         ok "$pkg installed"
     fi
 done
 
-# AUR: spacenavd
-if pacman -Q spacenavd &>/dev/null; then
-    ok "spacenavd already installed"
-else
-    info "Installing spacenavd from AUR..."
-    $AUR_HELPER -S --needed --noconfirm spacenavd
-    ok "spacenavd installed"
+# Arch: spacenavd from AUR (other distros pull it from official repos above)
+for pkg in $AUR_PKGS; do
+    if PKG_QUERY_INSTALLED "$pkg"; then
+        ok "$pkg already installed"
+    else
+        info "Installing $pkg from AUR..."
+        $AUR_HELPER -S --needed --noconfirm "$pkg"
+        ok "$pkg installed"
+    fi
+done
+
+# Optional pip venv for PySide6 on older Debian/Ubuntu
+if $PYSIDE_PIP_FALLBACK; then
+    step "Setting up PySide6 in a Python venv"
+    VENV_DIR="$HOME/.local/share/spacemouse-venv"
+    if [[ ! -d "$VENV_DIR" ]]; then
+        python3 -m venv "$VENV_DIR"
+        ok "venv created at $VENV_DIR"
+    fi
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install PySide6
+    ok "PySide6 installed in venv"
+    info "GUI will run with: $VENV_DIR/bin/python3 ~/.local/bin/spacemouse-config.py"
 fi
 
 # ── udev rules ─────────────────────────────────────────────────────
@@ -148,7 +240,16 @@ step "Installing systemd user service"
 
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SCRIPT_DIR/systemd/spacemouse-desktop.service" "$HOME/.config/systemd/user/"
-cp "$SCRIPT_DIR/systemd/spacemouse-config.service" "$HOME/.config/systemd/user/"
+
+# When PySide6 lives in a venv, the GUI service must use that interpreter
+if $PYSIDE_PIP_FALLBACK; then
+    sed "s|^ExecStart=.*|ExecStart=$HOME/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
+        "$SCRIPT_DIR/systemd/spacemouse-config.service" \
+        > "$HOME/.config/systemd/user/spacemouse-config.service"
+else
+    cp "$SCRIPT_DIR/systemd/spacemouse-config.service" "$HOME/.config/systemd/user/"
+fi
+
 systemctl --user daemon-reload
 systemctl --user enable spacemouse-desktop.service
 systemctl --user enable spacemouse-config.service

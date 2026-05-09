@@ -67,15 +67,41 @@ if [[ "$ans" == [yY] ]]; then
     ok "Config directory removed"
 fi
 
+# Remove pip venv created on Debian 12 / Ubuntu 24.04 (PySide6 fallback)
+if [[ -d "$HOME/.local/share/spacemouse-venv" ]]; then
+    read -rp "Remove PySide6 venv at ~/.local/share/spacemouse-venv? [y/N] " ans
+    if [[ "$ans" == [yY] ]]; then
+        rm -rf "$HOME/.local/share/spacemouse-venv"
+        ok "PySide6 venv removed"
+    fi
+fi
+
 # ── Optionally remove packages ──────────────────────────────────
 
 read -rp "Remove spacenavd package? [y/N] " ans
 if [[ "$ans" == [yY] ]]; then
-    if command -v yay &>/dev/null; then
-        yay -R --noconfirm spacenavd 2>/dev/null || true
-    elif command -v paru &>/dev/null; then
-        paru -R --noconfirm spacenavd 2>/dev/null || true
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
     fi
+    case " ${ID:-} ${ID_LIKE:-} " in
+        *" arch "*)
+            if command -v yay &>/dev/null; then
+                yay -R --noconfirm spacenavd 2>/dev/null || true
+            elif command -v paru &>/dev/null; then
+                paru -R --noconfirm spacenavd 2>/dev/null || true
+            fi
+            ;;
+        *" fedora "*|*" rhel "*|*" centos "*)
+            sudo dnf remove -y spacenavd 2>/dev/null || true
+            ;;
+        *" debian "*|*" ubuntu "*)
+            sudo apt-get remove -y spacenavd 2>/dev/null || true
+            ;;
+        *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*)
+            sudo zypper remove -y spacenavd 2>/dev/null || true
+            ;;
+    esac
     ok "spacenavd removed"
 fi
 
