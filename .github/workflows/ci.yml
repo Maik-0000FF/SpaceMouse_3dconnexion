@@ -6,8 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # Mondays 06:00 UTC — surface upstream FreeCAD refactors that break the patcher
-    - cron: '0 6 * * 1'
+    # Mondays 08:00 UTC — surface upstream FreeCAD refactors that break the patcher.
+    # 08:00 UTC == 10:00 Europe/Berlin in CEST (Apr–Oct), 09:00 in CET (Nov–Mar).
+    - cron: '0 8 * * 1'
 
 jobs:
 
