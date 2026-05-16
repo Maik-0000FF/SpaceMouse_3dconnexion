@@ -61,7 +61,7 @@ def test_read_recovers_from_corrupt_json(cfg, tmp_path):
 
 
 def test_defaults_has_all_documented_keys():
-    """Every key listed in the CLAUDE.md NDOF table is present in DEFAULTS."""
+    """Every documented Blender NDOF preference key is present in DEFAULTS."""
     documented = {
         "ndof_sensitivity",
         "ndof_orbit_sensitivity",
