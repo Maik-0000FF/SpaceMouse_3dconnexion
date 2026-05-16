@@ -130,6 +130,19 @@ These are upstream FreeCAD issues, not driver bugs. See [`freecad/`](freecad/) f
 systemctl --user restart spacemouse-config
 ```
 
+On GNOME the tray icon will not appear at all unless the `AppIndicator and KStatusNotifierItem Support` extension is installed — GNOME has no built-in StatusNotifierWatcher. Install it and log out and back in:
+
+```bash
+sudo dnf install gnome-shell-extension-appindicator        # Fedora
+sudo apt install gnome-shell-extension-appindicator3       # Debian/Ubuntu
+yay -S gnome-shell-extension-appindicator                  # Arch (AUR)
+sudo zypper install gnome-shell-extension-appindicator     # openSUSE
+```
+
+Manual install: https://extensions.gnome.org/extension/615/appindicator-support/
+
+Until the extension is in place, the GUI auto-opens the settings window on every launch so the app stays reachable. The background daemon (profile switching, scroll/zoom) works regardless of whether the tray is visible.
+
 ### Buttons don't respond
 
 Open the tray icon settings and check that button actions are set (default: Left = Overview, Right = Show Desktop).

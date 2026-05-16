@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from .constants import CONFIG_DIR, CONFIG_PATH, DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd, set_spacemouse_led
@@ -99,6 +99,39 @@ class SpaceMouseApp:
         signal.signal(signal.SIGTERM, self._sigterm_handler)
         signal.signal(signal.SIGINT, self._sigterm_handler)
         atexit.register(self._cleanup)
+
+        # Tray may be invisible on GNOME (no StatusNotifierWatcher unless the
+        # AppIndicator extension is installed). If so, show a one-shot install
+        # hint and open the settings window so the app stays reachable.
+        self._check_tray_available()
+
+    def _check_tray_available(self):
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        settings = self.config.setdefault("settings", {})
+        if not settings.get("tray_warning_shown", False):
+            QMessageBox.warning(
+                None,
+                "SpaceMouse Control — system tray not available",
+                "Your desktop does not expose a system tray, so the "
+                "SpaceMouse Control icon will not be visible.\n\n"
+                "On GNOME, install the 'AppIndicator and KStatusNotifierItem "
+                "Support' extension, then log out and back in:\n"
+                "  • Fedora:  sudo dnf install gnome-shell-extension-appindicator\n"
+                "  • Debian/Ubuntu:  sudo apt install gnome-shell-extension-appindicator3\n"
+                "  • Arch (AUR):  yay -S gnome-shell-extension-appindicator\n"
+                "  • Manual:  https://extensions.gnome.org/extension/615/appindicator-support/\n\n"
+                "Until then the settings window will open on every launch so "
+                "the app stays reachable. The background daemon works "
+                "regardless."
+            )
+            settings["tray_warning_shown"] = True
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(self.config, f, indent=2)
+
+        self._show_settings()
 
     def _load_config(self):
         if CONFIG_PATH.exists():

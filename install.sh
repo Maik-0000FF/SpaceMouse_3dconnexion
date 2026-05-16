@@ -329,6 +329,23 @@ step "Running diagnostics"
 
 "$HOME/.local/bin/spacemouse-test" --check || true
 
+# ── GNOME tray hint ──────────────────────────────────────────────
+#
+# GNOME ships without a StatusNotifierWatcher, so QSystemTrayIcon-based
+# apps are invisible by default. The GUI will surface this at runtime as
+# well, but flagging it here saves a surprise on first launch.
+
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
+    warn "GNOME detected — system tray icons are not visible by default."
+    case "$DISTRO_FAMILY" in
+        fedora)   info "Install:  sudo dnf install gnome-shell-extension-appindicator" ;;
+        debian)   info "Install:  sudo apt install gnome-shell-extension-appindicator3" ;;
+        arch)     info "Install:  yay -S gnome-shell-extension-appindicator" ;;
+        opensuse) info "Install:  sudo zypper install gnome-shell-extension-appindicator" ;;
+    esac
+    info "Then log out and back in. Manual install: https://extensions.gnome.org/extension/615/appindicator-support/"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""
