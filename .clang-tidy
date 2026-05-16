@@ -26,6 +26,7 @@ Checks: >
   -clang-analyzer-security.insecureAPI.strcpy,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   performance-*,
+  -performance-enum-size,
   portability-*,
   readability-non-const-parameter
 

@@ -24,12 +24,34 @@ TEST_BINS = \
 
 all: $(TARGETS)
 
+DAEMON_OBJS = spacemouse-core.o config.o command_socket.o kernel_input.o uinput.o \
+              dbus_actions.o desktop_actions.o
+
 spacemouse-core.o: spacemouse-core.c spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
-spacemouse-desktop: spacemouse-desktop.c spacemouse-core.o spacemouse-core.h
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DBUS_CFLAGS) $(JSON_CFLAGS) \
-		-o $@ spacemouse-desktop.c spacemouse-core.o \
+config.o: config.c config.h spacemouse-core.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) -c -o $@ $<
+
+command_socket.o: command_socket.c command_socket.h config.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
+
+kernel_input.o: kernel_input.c kernel_input.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
+
+uinput.o: uinput.c uinput.h spacemouse-core.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
+
+dbus_actions.o: dbus_actions.c dbus_actions.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DBUS_CFLAGS) -c -o $@ $<
+
+desktop_actions.o: desktop_actions.c desktop_actions.h dbus_actions.h uinput.h spacemouse-core.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
+
+spacemouse-desktop: spacemouse-desktop.c $(DAEMON_OBJS) spacemouse-core.h config.h \
+                    command_socket.h kernel_input.h uinput.h dbus_actions.h desktop_actions.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) \
+		-o $@ spacemouse-desktop.c $(DAEMON_OBJS) \
 		-lm $(DBUS_LIBS) $(JSON_LIBS) $(EXTRA_LDFLAGS)
 
 spacemouse-test: spacemouse-test.c
@@ -65,19 +87,26 @@ test: $(TEST_BINS)
 # is a single file and clang-tidy is fine with command-line -I args.
 lint-c:
 	@CFLAGS_TIDY="$$(pkg-config --cflags dbus-1) $$(pkg-config --cflags json-c) -I. -std=gnu11"; \
-	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c -- $$CFLAGS_TIDY; \
+	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c config.c command_socket.c kernel_input.c uinput.c dbus_actions.c desktop_actions.c -- $$CFLAGS_TIDY; \
 	clang-tidy --quiet tests/test_*.c -- -I. -std=gnu11
 
 # clang-format check: fail if any source needs reformatting. Counterpart
 # to `make format` at the repo root which actually applies the changes.
+C_SOURCES = spacemouse-desktop.c spacemouse-core.c spacemouse-core.h config.c config.h \
+            command_socket.c command_socket.h kernel_input.c kernel_input.h \
+            uinput.c uinput.h dbus_actions.c dbus_actions.h \
+            desktop_actions.c desktop_actions.h \
+            tests/test_curve.c tests/test_key_lookup.c tests/test_de_detect.c \
+            tests/test_scroll_acc.c
+
 format-check:
-	clang-format --dry-run --Werror spacemouse-desktop.c spacemouse-core.c spacemouse-core.h tests/test_*.c
+	clang-format --dry-run --Werror $(C_SOURCES)
 
 format:
-	clang-format -i spacemouse-desktop.c spacemouse-core.c spacemouse-core.h tests/test_*.c
+	clang-format -i $(C_SOURCES)
 
 clean:
-	rm -f $(TARGETS) spacemouse-core.o $(TEST_BINS)
+	rm -f $(TARGETS) $(DAEMON_OBJS) $(TEST_BINS)
 
 install: all
 	install -Dm755 spacemouse-desktop $(DESTDIR)$(HOME)/.local/bin/spacemouse-desktop
