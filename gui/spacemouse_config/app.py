@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
@@ -66,9 +67,33 @@ class SpaceMouseApp:
         self._paused = settings.get("disabled", False)
         self.window_monitor = None
 
-        menu = QMenu()
-        self._rebuild_tray_menu(menu)
-        self.tray.setContextMenu(menu)
+        # Build the tray menu ONCE and keep references alive on self. Two
+        # reasons this can't be a local:
+        #   * QSystemTrayIcon.setContextMenu does not take Qt ownership, so
+        #     the menu would be garbage-collected the moment __init__ returns.
+        #     KDE survives this by caching the DBusMenu, GNOME/AppIndicator
+        #     does not — first action fires, every later one silently fails.
+        #   * Recreating the menu on every state change re-exports the
+        #     DBusMenu path; AppIndicator does not re-attach to the new path,
+        #     so menu interactions stop working entirely on GNOME.
+        # Instead, build once and flip action text in _update_tray_menu().
+        self._tray_menu = QMenu()
+        self._toggle_action = QAction("Disable", self._tray_menu)
+        self._toggle_action.triggered.connect(self._toggle_pause)
+        self._tray_menu.addAction(self._toggle_action)
+
+        self._settings_action = QAction("Settings...", self._tray_menu)
+        self._settings_action.triggered.connect(self._show_settings)
+        self._tray_menu.addAction(self._settings_action)
+
+        self._tray_menu.addSeparator()
+
+        self._quit_action = QAction("Quit", self._tray_menu)
+        self._quit_action.triggered.connect(self._quit)
+        self._tray_menu.addAction(self._quit_action)
+
+        self._update_tray_menu()
+        self.tray.setContextMenu(self._tray_menu)
         self.tray.show()
 
         # SpaceMouse reader (starts suspended — only active when GUI is visible).
@@ -226,24 +251,12 @@ class SpaceMouseApp:
             profiles = config.get("profiles", {})
             self.window_monitor.update_profiles(profiles)
 
-        menu = QMenu()
-        self._rebuild_tray_menu(menu)
-        self.tray.setContextMenu(menu)
+        self._update_tray_menu()
 
-    def _rebuild_tray_menu(self, menu):
-        toggle_action = QAction("Enable" if self._paused else "Disable", menu)
-        toggle_action.triggered.connect(self._toggle_pause)
-        menu.addAction(toggle_action)
-
-        settings_action = QAction("Settings...", menu)
-        settings_action.triggered.connect(self._show_settings)
-        menu.addAction(settings_action)
-
-        menu.addSeparator()
-
-        quit_action = QAction("Quit", menu)
-        quit_action.triggered.connect(self._quit)
-        menu.addAction(quit_action)
+    def _update_tray_menu(self):
+        """Refresh tray-action labels in place. Never recreate the QMenu — see
+        the comment in __init__ on why that breaks AppIndicator on GNOME."""
+        self._toggle_action.setText("Enable" if self._paused else "Disable")
 
     def _start_window_monitor(self):
         profiles = self.config.get("profiles", {"default": self.config})
@@ -301,9 +314,7 @@ class SpaceMouseApp:
             self.tray.setToolTip("SpaceMouse: DISABLED")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
         self._save_disabled_state()
-        menu = QMenu()
-        self._rebuild_tray_menu(menu)
-        self.tray.setContextMenu(menu)
+        self._update_tray_menu()
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -311,9 +322,20 @@ class SpaceMouseApp:
 
     def _show_settings(self):
         self.settings_window.sync_settings({"autostart": self._autostart})
+        # Clear any minimised state — on Wayland the window can come back
+        # invisible after a previous close+show cycle if WindowMinimized was
+        # left set, since the compositor decides where to put it.
+        state = self.settings_window.windowState()
+        if state & Qt.WindowState.WindowMinimized:
+            self.settings_window.setWindowState(state & ~Qt.WindowState.WindowMinimized)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
+        # Wayland blocks programmatic focus; request activation via the
+        # window handle so xdg-activation kicks in where supported.
+        handle = self.settings_window.windowHandle()
+        if handle is not None:
+            handle.requestActivate()
 
     def _on_window_changed(self, wm_class, profile_name):
         self._saved_profile = profile_name

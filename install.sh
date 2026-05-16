@@ -329,6 +329,18 @@ if $HAVE_SYSTEMD; then
         warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
         warn "Then run: systemctl --user restart spacemouse-desktop.service"
     fi
+
+    # Restart the GUI so an already-running instance picks up the freshly
+    # installed code. `restart` also starts a stopped unit, so this works on
+    # first install too. The GUI does not need /dev/uinput, so it runs
+    # independently of the daemon branch above. Without this, users on a
+    # repeat install keep talking to the old Python process and wonder why
+    # their fix didn't take effect.
+    if systemctl --user restart spacemouse-config.service 2> /dev/null; then
+        ok "spacemouse-config GUI restarted"
+    else
+        warn "spacemouse-config restart failed (no graphical session? safe to ignore on headless installs)"
+    fi
 fi
 
 ok "systemd user service installed"
