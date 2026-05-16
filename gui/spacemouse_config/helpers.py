@@ -2,6 +2,7 @@
 
 import os
 import socket
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -48,6 +49,28 @@ def send_daemon_cmd(cmd):
         return response
     except (ConnectionRefusedError, FileNotFoundError, OSError):
         return None
+
+
+def wait_for_daemon_socket(timeout=2.0):
+    """Block until the daemon command socket is reachable, or timeout.
+
+    systemctl start returns as soon as the unit is forked (Type=simple),
+    but the daemon needs a moment to load config and bind the socket.
+    Callers that send commands right after starting the service must wait
+    for the socket, otherwise the first PROFILE command is dropped and
+    the daemon stays on its initial profile.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(0.2)
+            sock.connect(SOCK_PATH)
+            sock.close()
+            return True
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            time.sleep(0.05)
+    return False
 
 
 # ── UI helpers ────────────────────────────────────────────────────────

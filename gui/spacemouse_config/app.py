@@ -12,7 +12,12 @@ from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from .constants import CONFIG_DIR, CONFIG_PATH, DARK_THEME
-from .helpers import create_tray_icon_pixmap, send_daemon_cmd, set_spacemouse_led
+from .helpers import (
+    create_tray_icon_pixmap,
+    send_daemon_cmd,
+    set_spacemouse_led,
+    wait_for_daemon_socket,
+)
 from .monitors import SpnavReader, make_window_monitor
 from .settings_window import SettingsWindow
 
@@ -77,13 +82,17 @@ class SpaceMouseApp:
         # Ensure the daemon is running. Quit from the tray stops the service,
         # so a fresh GUI launch needs to bring it back — otherwise PROFILE
         # commands below would hit an empty socket. `systemctl start` is a
-        # no-op if the unit is already active.
+        # no-op if the unit is already active. Wait for the daemon to bind
+        # its command socket before sending PROFILE — without this the
+        # disabled-state restore races the daemon's startup and silently
+        # falls back to the daemon's default profile.
         subprocess.run(
             ["systemctl", "--user", "start", "spacemouse-desktop.service"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=5,
         )
+        wait_for_daemon_socket()
 
         if self._paused:
             send_daemon_cmd("PROFILE _passthrough")
