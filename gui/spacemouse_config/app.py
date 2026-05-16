@@ -74,8 +74,17 @@ class SpaceMouseApp:
         self.settings_window.set_spnav_reader(self.spnav_reader)
         self.spnav_reader.start()
 
-        # Daemon runs as a long-lived systemd service. We control it via
-        # PROFILE commands on its UNIX socket — never start or stop the process.
+        # Ensure the daemon is running. Quit from the tray stops the service,
+        # so a fresh GUI launch needs to bring it back — otherwise PROFILE
+        # commands below would hit an empty socket. `systemctl start` is a
+        # no-op if the unit is already active.
+        subprocess.run(
+            ["systemctl", "--user", "start", "spacemouse-desktop.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+
         if self._paused:
             send_daemon_cmd("PROFILE _passthrough")
             set_spacemouse_led(False)
