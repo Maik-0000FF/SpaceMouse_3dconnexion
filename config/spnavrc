@@ -17,13 +17,13 @@ sensitivity-rotation-z = 1.0
 # Dead zone (0-100, percentage of axis range)
 dead-zone = 10
 
-# Axis inversion (0=normal, 1=inverted)
-invert-rot-x = 0
-invert-rot-y = 0
-invert-rot-z = 0
-invert-trans-x = 0
-invert-trans-y = 0
-invert-trans-z = 0
+# Axis inversion. spacenavd takes a single string per group naming the
+# axes to invert (any combination of x, y, z). Default is no inversion,
+# which is what we want — uncomment + adjust if your hardware orientation
+# needs flipping. The older per-axis 'invert-rot-x = 0/1' syntax is not
+# recognized by spacenavd 1.3.1 and silently ignored.
+#invert-rot = yz
+#invert-trans = yz
 
 # Swap Y/Z axes (0=no, 1=yes)
 swap-yz = 0
