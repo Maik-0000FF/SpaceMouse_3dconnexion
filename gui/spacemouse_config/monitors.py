@@ -1,5 +1,6 @@
 """Background threads: live SpaceMouse event reader and KWin window monitor."""
 
+import ast
 import ctypes
 import json
 import os
@@ -11,12 +12,14 @@ from PySide6.QtCore import QThread, Signal
 
 from .profile_match import find_matching_profile
 from .window_backend import (
+    GNOME_WAYLAND,
     HYPRLAND,
     KWIN,
     SWAY,
     X11,
     parse_hyprland_event,
     parse_sway_focus_event,
+    parse_window_calls_list,
     parse_xprop_active_window,
     parse_xprop_wm_class,
     select_backend,
@@ -526,6 +529,114 @@ class HyprlandWindowMonitor(QThread):
         self.wait(2000)
 
 
+# ── GNOME-Wayland Window Monitor Thread ───────────────────────────────
+
+
+class GnomeWaylandWindowMonitor(QThread):
+    """Monitors active window on GNOME-Wayland via the Window Calls extension.
+
+    GNOME-Wayland exposes no portable window-listing protocol, so this
+    backend depends on the user-installed `Window Calls` Shell extension
+    (extensions.gnome.org/extension/4974). It publishes
+    `org.gnome.Shell.Extensions.Windows.List` on the session bus,
+    returning a JSON string with every window's wm_class and focus
+    flag. There is no focus-change signal, so we poll on a fixed
+    interval — 400 ms is a good trade-off between latency and CPU.
+    """
+
+    window_changed = Signal(str, str)
+
+    _DBUS_DEST = "org.gnome.Shell"
+    _DBUS_PATH = "/org/gnome/Shell/Extensions/Windows"
+    _DBUS_METHOD = "org.gnome.Shell.Extensions.Windows.List"
+    _POLL_INTERVAL_MS = 400
+
+    def __init__(self, profiles):
+        super().__init__()
+        self._running = True
+        self._profiles = profiles
+        self._last_profile = ""
+        self._last_class = None
+
+    def update_profiles(self, profiles):
+        self._profiles = profiles
+        self._last_profile = ""
+        self._last_class = None
+
+    @classmethod
+    def probe(cls):
+        """Return True if the Window Calls extension is reachable on D-Bus."""
+        try:
+            result = subprocess.run(
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    cls._DBUS_DEST,
+                    "--object-path",
+                    cls._DBUS_PATH,
+                    "--method",
+                    cls._DBUS_METHOD,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+        return result.returncode == 0
+
+    def _query(self):
+        try:
+            result = subprocess.run(
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    self._DBUS_DEST,
+                    "--object-path",
+                    self._DBUS_PATH,
+                    "--method",
+                    self._DBUS_METHOD,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+        if result.returncode != 0:
+            return None
+        # gdbus wraps the returned string in Python-tuple syntax:
+        # ('[{"wm_class": "firefox", ...}]',)
+        try:
+            value = ast.literal_eval(result.stdout.strip())
+        except (SyntaxError, ValueError):
+            return None
+        if isinstance(value, tuple) and value and isinstance(value[0], str):
+            return value[0]
+        return None
+
+    def run(self):
+        while self._running:
+            payload = self._query()
+            if payload is not None:
+                wm_class = parse_window_calls_list(payload)
+                if wm_class and wm_class != self._last_class:
+                    self._last_class = wm_class
+                    profile_name = find_matching_profile(wm_class, self._profiles)
+                    if profile_name != self._last_profile:
+                        self._last_profile = profile_name
+                        self.window_changed.emit(wm_class, profile_name)
+            self.msleep(self._POLL_INTERVAL_MS)
+
+    def stop(self):
+        self._running = False
+        self.wait(2000)
+
+
 # ── Factory ───────────────────────────────────────────────────────────
 
 
@@ -533,8 +644,9 @@ def make_window_monitor(profiles):
     """Return the right monitor for the current session, or None.
 
     None means no portable backend is available — the daemon stays on
-    its default profile. GNOME-Wayland is the main case that falls
-    here; manual profile switching via the tray still works.
+    its default profile. On GNOME-Wayland that happens when the Window
+    Calls extension is not installed; manual profile switching via the
+    tray still works.
     """
     backend = select_backend()
     if backend == KWIN:
@@ -545,4 +657,6 @@ def make_window_monitor(profiles):
         return SwayWindowMonitor(profiles)
     if backend == HYPRLAND:
         return HyprlandWindowMonitor(profiles)
+    if backend == GNOME_WAYLAND and GnomeWaylandWindowMonitor.probe():
+        return GnomeWaylandWindowMonitor(profiles)
     return None

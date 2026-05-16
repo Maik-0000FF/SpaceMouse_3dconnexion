@@ -4,6 +4,7 @@ Pure logic kept out of monitors.py so it stays importable without
 PySide6 — the choice is driven by a few env vars and unit-testable.
 """
 
+import json
 import os
 import re
 
@@ -12,6 +13,7 @@ KWIN = "kwin"
 X11 = "x11"
 SWAY = "sway"
 HYPRLAND = "hyprland"
+GNOME_WAYLAND = "gnome_wayland"
 NONE = "none"
 
 
@@ -21,9 +23,10 @@ def select_backend(env=None):
     `env` is a mapping (defaults to os.environ). KWin scripting wins
     when the session is KDE Plasma. Sway and Hyprland speak their own
     IPC and are detected via SWAYSOCK / HYPRLAND_INSTANCE_SIGNATURE.
-    Every other X11 session uses xprop. GNOME-Wayland and any other
-    unrecognized Wayland compositor return NONE — they have no
-    portable window-listing API today.
+    GNOME-Wayland uses the Window Calls extension's D-Bus API; the
+    monitor probes for it at runtime and falls back to no-op if the
+    extension is missing. Every other X11 session uses xprop. Any
+    unrecognized Wayland compositor returns NONE.
     """
     if env is None:
         env = os.environ
@@ -38,6 +41,8 @@ def select_backend(env=None):
         return HYPRLAND
     if env.get("SWAYSOCK"):
         return SWAY
+    if "gnome" in desktop and env.get("WAYLAND_DISPLAY"):
+        return GNOME_WAYLAND
 
     # Any X11 session (XFCE, Cinnamon, MATE, LXQt, X11-mode KDE/GNOME):
     # DISPLAY is set and WAYLAND_DISPLAY is not.
@@ -122,3 +127,34 @@ def parse_hyprland_event(line):
     cls, _, _ = rest.partition(",")
     cls = cls.strip()
     return cls or None
+
+
+# Window Calls (GNOME Shell extension) returns a JSON-encoded array of
+# window dicts. Each entry has at least: wm_class, wm_class_instance,
+# focus (bool), pid, id, in_current_workspace. We poll List() and pick
+# the focused entry's class.
+
+
+def parse_window_calls_list(text):
+    """Extract the focused window's wm_class from Window Calls List() JSON.
+
+    Returns the class string of the entry with focus=True, or None if
+    no window is focused, the payload is malformed, or the array is
+    empty. Falls back to wm_class_instance only if wm_class is missing.
+    """
+    try:
+        items = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("focus"):
+            continue
+        cls = item.get("wm_class") or item.get("wm_class_instance")
+        if cls:
+            return cls
+        return None
+    return None

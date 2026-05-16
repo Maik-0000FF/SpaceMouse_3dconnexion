@@ -56,13 +56,15 @@ fi
 
 ok "Distribution: $PRETTY_NAME (family: $DISTRO_FAMILY)"
 
-# KDE Plasma detection — the daemon and 3D-app integration work on
-# any desktop; window detection and desktop switching have native
-# backends per DE, with KWin getting the richest support.
+# Desktop-environment detection — the daemon and 3D-app integration
+# work on any desktop. Window detection and desktop switching have
+# native backends per DE; KDE Plasma gets the richest support, GNOME,
+# XFCE, Sway and Hyprland have working backends, others fall back to
+# no-op. Hints for missing pieces (extensions, etc.) print further
+# down per DE.
 if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
-    warn "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
-    warn "Window detection and desktop switching are Plasma-specific and will be inactive."
-    warn "The control daemon, GUI, Blender and FreeCAD integration will still work."
+    info "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
+    info "Auto profile switching uses the per-DE backend; see README for the feature matrix."
 fi
 
 # /run/systemd/system exists only when systemd is PID 1 — service and udev
@@ -337,11 +339,16 @@ step "Running diagnostics"
 
 "$HOME/.local/bin/spacemouse-test" --check || true
 
-# ── GNOME tray hint ──────────────────────────────────────────────
+# ── GNOME extension hints ────────────────────────────────────────
 #
-# GNOME ships without a StatusNotifierWatcher, so QSystemTrayIcon-based
-# apps are invisible by default. The GUI will surface this at runtime as
-# well, but flagging it here saves a surprise on first launch.
+# GNOME needs two extensions to reach feature parity with KDE:
+#   * AppIndicator — without it, QSystemTrayIcon apps are invisible
+#     because GNOME ships no StatusNotifierWatcher.
+#   * Window Calls (Wayland only) — exposes the active-window list on
+#     D-Bus, which the GUI polls to auto-switch profiles when Blender
+#     or FreeCAD gains focus. GNOME-X11 doesn't need it (xprop works).
+# Both extensions are optional: the daemon and manual switching keep
+# working without them.
 
 if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
     warn "GNOME detected — system tray icons are not visible by default."
@@ -352,6 +359,13 @@ if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
         opensuse) info "Install:  sudo zypper install gnome-shell-extension-appindicator" ;;
     esac
     info "Then log out and back in. Manual install: https://extensions.gnome.org/extension/615/appindicator-support/"
+
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+        echo ""
+        warn "GNOME-Wayland: auto profile switching for Blender / FreeCAD needs the Window Calls extension."
+        info "Install from: https://extensions.gnome.org/extension/4974/window-calls/"
+        info "Without it, the daemon stays on its default profile — manual switching via the tray still works."
+    fi
 fi
 
 # ── Summary ──────────────────────────────────────────────────────

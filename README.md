@@ -35,11 +35,11 @@ The daemon and GUI both fall back gracefully when a backend isn't available, so 
 | Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | GUI with system-tray icon | ✓ | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
 | Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✗ no portable API | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
+| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✓ via [Window Calls extension](https://extensions.gnome.org/extension/4974/window-calls/) | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
 | Twist → virtual desktop switch | ✓ KWin D-Bus | ✓ key combo | ✓ key combo | ✓ key combo | ✓ swaymsg | ✓ hyprctl | ✓ key combo |
 | Left btn → Overview / Right btn → Show Desktop | ✓ KGlobalAccel | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo |
 
-**GNOME-Wayland note:** the only feature that doesn't work there is automatic profile switching, because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. Manual switching from the tray still works. If you really need auto-switching on GNOME-Wayland, the [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension exposes the necessary D-Bus interface and a backend for it can be added on request.
+**GNOME-Wayland note:** auto profile switching needs the [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension, because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The extension publishes the active window list on the session bus; the GUI polls it every 400 ms and switches profiles when Blender or FreeCAD gains focus. Without the extension, manual switching from the tray still works — everything else is unaffected.
 
 ## Installation
 

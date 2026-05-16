@@ -1,6 +1,7 @@
 """Tests for the window-monitor backend selector and xprop parsers."""
 
 from spacemouse_config.window_backend import (
+    GNOME_WAYLAND,
     HYPRLAND,
     KWIN,
     NONE,
@@ -8,6 +9,7 @@ from spacemouse_config.window_backend import (
     X11,
     parse_hyprland_event,
     parse_sway_focus_event,
+    parse_window_calls_list,
     parse_xprop_active_window,
     parse_xprop_wm_class,
     select_backend,
@@ -47,16 +49,22 @@ def test_mate_x11_selects_x11():
     assert select_backend(env) == X11
 
 
-def test_gnome_wayland_returns_none():
-    # GNOME-Wayland has no portable backend yet — we'd need a Mutter
-    # extension. Don't false-trigger X11 just because DISPLAY is set
-    # via Xwayland fallback; WAYLAND_DISPLAY being set rules X11 out.
+def test_gnome_wayland_selects_gnome_wayland():
+    # GNOME-Wayland routes through the Window Calls extension. Even
+    # when DISPLAY is set via Xwayland fallback, WAYLAND_DISPLAY
+    # presence pins the selection to the Wayland backend.
     env = {
         "XDG_CURRENT_DESKTOP": "GNOME",
         "WAYLAND_DISPLAY": "wayland-0",
         "DISPLAY": ":0",
     }
-    assert select_backend(env) == NONE
+    assert select_backend(env) == GNOME_WAYLAND
+
+
+def test_gnome_wayland_compound_xdg_string():
+    # ubuntu:GNOME etc.
+    env = {"XDG_CURRENT_DESKTOP": "ubuntu:GNOME", "WAYLAND_DISPLAY": "wayland-0"}
+    assert select_backend(env) == GNOME_WAYLAND
 
 
 def test_gnome_x11_selects_x11():
@@ -193,3 +201,43 @@ def test_hyprland_empty_class_returns_none():
     # When Hyprland reports an empty focus event the class is blank;
     # we must not propagate '' as a profile match key.
     assert parse_hyprland_event("activewindow>>,\n") is None
+
+
+# ── Window Calls (GNOME Shell extension) parser ───────────────────────
+
+
+def test_window_calls_focused_entry():
+    payload = (
+        '[{"wm_class": "firefox", "focus": false},'
+        ' {"wm_class": "blender", "focus": true},'
+        ' {"wm_class": "Code", "focus": false}]'
+    )
+    assert parse_window_calls_list(payload) == "blender"
+
+
+def test_window_calls_no_focus():
+    # All windows unfocused (e.g. overview shown): no class to report.
+    payload = '[{"wm_class": "firefox", "focus": false}]'
+    assert parse_window_calls_list(payload) is None
+
+
+def test_window_calls_empty_array():
+    assert parse_window_calls_list("[]") is None
+
+
+def test_window_calls_instance_fallback():
+    # Older Window Calls builds sometimes only populate wm_class_instance
+    # for Xwayland clients; we fall back to it rather than emit nothing.
+    payload = '[{"wm_class_instance": "Inkscape", "focus": true}]'
+    assert parse_window_calls_list(payload) == "Inkscape"
+
+
+def test_window_calls_malformed_json():
+    assert parse_window_calls_list("not json") is None
+    assert parse_window_calls_list("") is None
+    assert parse_window_calls_list(None) is None
+
+
+def test_window_calls_unexpected_shape():
+    # Defensive: an object instead of an array should not raise.
+    assert parse_window_calls_list('{"focus": true}') is None
