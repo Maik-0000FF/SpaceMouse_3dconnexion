@@ -1,16 +1,22 @@
 """Background threads: live SpaceMouse event reader and KWin window monitor."""
 
 import ctypes
+import json
 import os
 import select
+import socket
 import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
 from .profile_match import find_matching_profile
 from .window_backend import (
+    HYPRLAND,
     KWIN,
+    SWAY,
     X11,
+    parse_hyprland_event,
+    parse_sway_focus_event,
     parse_xprop_active_window,
     parse_xprop_wm_class,
     select_backend,
@@ -381,6 +387,145 @@ class X11WindowMonitor(QThread):
         self.wait(2000)
 
 
+# ── Sway Window Monitor Thread ────────────────────────────────────────
+
+
+class SwayWindowMonitor(QThread):
+    """Monitors active window on Sway via swaymsg event subscription.
+
+    `swaymsg -t subscribe -m '["window"]'` streams one JSON object per
+    event. We pick out focus changes and read the focused container's
+    app_id (native Wayland) or window_properties.class (Xwayland).
+    """
+
+    window_changed = Signal(str, str)
+
+    def __init__(self, profiles):
+        super().__init__()
+        self._running = True
+        self._profiles = profiles
+        self._last_profile = ""
+        self._proc = None
+
+    def update_profiles(self, profiles):
+        self._profiles = profiles
+        self._last_profile = ""
+
+    def run(self):
+        try:
+            self._proc = subprocess.Popen(
+                ["swaymsg", "-t", "subscribe", "-m", '["window"]'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except FileNotFoundError:
+            return
+        stdout = self._proc.stdout
+        if not stdout:
+            return
+        while self._running:
+            line = stdout.readline()
+            if not line:
+                break
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            wm_class = parse_sway_focus_event(obj)
+            if not wm_class:
+                continue
+            profile_name = find_matching_profile(wm_class, self._profiles)
+            if profile_name != self._last_profile:
+                self._last_profile = profile_name
+                self.window_changed.emit(wm_class, profile_name)
+        if self._proc:
+            self._proc.terminate()
+
+    def stop(self):
+        self._running = False
+        if self._proc:
+            self._proc.terminate()
+        self.wait(2000)
+
+
+# ── Hyprland Window Monitor Thread ────────────────────────────────────
+
+
+class HyprlandWindowMonitor(QThread):
+    """Monitors active window on Hyprland via the event socket.
+
+    Hyprland exposes $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock
+    which streams events of the form 'EVENT>>DATA\\n'. We listen for
+    activewindow events and pull the class out of 'CLASS,TITLE'. No
+    external CLI needed — Python's UNIX socket support is enough.
+    """
+
+    window_changed = Signal(str, str)
+
+    def __init__(self, profiles):
+        super().__init__()
+        self._running = True
+        self._profiles = profiles
+        self._last_profile = ""
+        self._sock = None
+
+    def update_profiles(self, profiles):
+        self._profiles = profiles
+        self._last_profile = ""
+
+    def _socket_path(self):
+        sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+        runtime = os.environ.get("XDG_RUNTIME_DIR")
+        if not sig or not runtime:
+            return None
+        return f"{runtime}/hypr/{sig}/.socket2.sock"
+
+    def run(self):
+        path = self._socket_path()
+        if not path:
+            return
+        try:
+            self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._sock.connect(path)
+        except OSError:
+            self._sock = None
+            return
+
+        buf = b""
+        while self._running:
+            try:
+                chunk = self._sock.recv(4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                wm_class = parse_hyprland_event(line.decode("utf-8", errors="replace"))
+                if not wm_class:
+                    continue
+                profile_name = find_matching_profile(wm_class, self._profiles)
+                if profile_name != self._last_profile:
+                    self._last_profile = profile_name
+                    self.window_changed.emit(wm_class, profile_name)
+        if self._sock:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+
+    def stop(self):
+        self._running = False
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self.wait(2000)
+
+
 # ── Factory ───────────────────────────────────────────────────────────
 
 
@@ -388,12 +533,16 @@ def make_window_monitor(profiles):
     """Return the right monitor for the current session, or None.
 
     None means no portable backend is available — the daemon stays on
-    its default profile. GNOME-Wayland, Sway and Hyprland fall in this
-    bucket today; their backends will land in a follow-up phase.
+    its default profile. GNOME-Wayland is the main case that falls
+    here; manual profile switching via the tray still works.
     """
     backend = select_backend()
     if backend == KWIN:
         return KWinWindowMonitor(profiles)
     if backend == X11:
         return X11WindowMonitor(profiles)
+    if backend == SWAY:
+        return SwayWindowMonitor(profiles)
+    if backend == HYPRLAND:
+        return HyprlandWindowMonitor(profiles)
     return None

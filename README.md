@@ -27,19 +27,19 @@ The current version (`0.1.0`) is reported by `spacemouse-desktop --version`, `sp
 
 ### Feature support per desktop
 
-The C daemon falls back gracefully when KWin's D-Bus services aren't there, and the GUI's window-detection code does the same with `gdbus` timeouts and a guarded `journalctl` subprocess. So nothing crashes on other desktops; the KWin-bound features just become no-ops.
+The daemon and GUI both fall back gracefully when a backend isn't available, so nothing crashes on other desktops; the affected features just become no-ops.
 
-| Feature | KDE Plasma | GNOME | XFCE 4.18+ | Sway | Hyprland | COSMIC |
-|---|---|---|---|---|---|---|
-| Scroll, zoom (tilt + push/pull) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GUI with system-tray icon | ✓ | ⚠ via [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/) extension | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
-| Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Auto profile switch when Blender / FreeCAD is focused | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Twist → virtual desktop switch | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Left btn → Overview / Right btn → Show Desktop | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Feature | KDE Plasma | GNOME (X11) | GNOME (Wayland) | XFCE 4.18+ | Sway | Hyprland | COSMIC |
+|---|---|---|---|---|---|---|---|
+| Scroll, zoom (tilt + push/pull) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GUI with system-tray icon | ✓ | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
+| Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✗ no portable API | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
+| Twist → virtual desktop switch | ✓ KWin D-Bus | ✓ key combo | ✓ key combo | ✓ key combo | ✓ swaymsg | ✓ hyprctl | ✓ key combo |
+| Left btn → Overview / Right btn → Show Desktop | ✓ KGlobalAccel | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo |
 
-**Why the `✗`s:** the auto-switch hooks into `workspace.windowActivated` (KWin Scripting), the desktop switch and the buttons go through `org.kde.KWin` and `org.kde.kglobalaccel` D-Bus interfaces — none of which exist outside KWin. Scroll/zoom work everywhere because `uinput` events are forwarded to the focused application by `libinput` / Xorg / the Wayland compositor regardless of desktop.
+**GNOME-Wayland note:** the only feature that doesn't work there is automatic profile switching, because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. Manual switching from the tray still works. If you really need auto-switching on GNOME-Wayland, the [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension exposes the necessary D-Bus interface and a backend for it can be added on request.
 
 ## Installation
 

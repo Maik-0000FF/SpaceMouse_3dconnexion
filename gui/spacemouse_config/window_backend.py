@@ -10,18 +10,20 @@ import re
 # Backend identifiers.
 KWIN = "kwin"
 X11 = "x11"
+SWAY = "sway"
+HYPRLAND = "hyprland"
 NONE = "none"
 
 
 def select_backend(env=None):
     """Return the window-monitor backend best matching `env`.
 
-    `env` is a mapping (defaults to os.environ). The selector prefers
-    KWin scripting when the session is KDE Plasma — Wayland or X11 —
-    because it gives focus events natively. For every other X11
-    session it falls back to xprop polling. Wayland sessions outside
-    KWin (Mutter, wlroots) have no portable backend yet, so we return
-    NONE and let the daemon stay on its default profile.
+    `env` is a mapping (defaults to os.environ). KWin scripting wins
+    when the session is KDE Plasma. Sway and Hyprland speak their own
+    IPC and are detected via SWAYSOCK / HYPRLAND_INSTANCE_SIGNATURE.
+    Every other X11 session uses xprop. GNOME-Wayland and any other
+    unrecognized Wayland compositor return NONE — they have no
+    portable window-listing API today.
     """
     if env is None:
         env = os.environ
@@ -30,10 +32,12 @@ def select_backend(env=None):
     if "kde" in desktop:
         return KWIN
 
-    # Sway / Hyprland will get IPC-native backends in a follow-up phase.
-    # Their compositor signals are present, so don't false-trigger X11.
-    if env.get("SWAYSOCK") or env.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        return NONE
+    # Wayland tilers have native IPC. Detect them before X11 so an
+    # Xwayland-set DISPLAY does not steer us to xprop.
+    if env.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return HYPRLAND
+    if env.get("SWAYSOCK"):
+        return SWAY
 
     # Any X11 session (XFCE, Cinnamon, MATE, LXQt, X11-mode KDE/GNOME):
     # DISPLAY is set and WAYLAND_DISPLAY is not.
@@ -70,3 +74,51 @@ def parse_xprop_wm_class(text):
     """
     m = _XPROP_WM_CLASS_RE.search(text)
     return m.group(2) if m else None
+
+
+# Sway window-event parser. swaymsg subscribe yields one JSON object per
+# event; the parser is pure JSON, no shell quoting concerns.
+
+
+def parse_sway_focus_event(obj):
+    """Extract wm_class from a Sway 'window' event dict.
+
+    Returns the class string when the event is a focus change, else None.
+    Prefers container.app_id (native Wayland clients), falls back to
+    container.window_properties.class for Xwayland clients.
+    """
+    if not isinstance(obj, dict):
+        return None
+    if obj.get("change") != "focus":
+        return None
+    container = obj.get("container")
+    if not isinstance(container, dict):
+        return None
+    app_id = container.get("app_id")
+    if app_id:
+        return app_id
+    props = container.get("window_properties")
+    if isinstance(props, dict):
+        return props.get("class")
+    return None
+
+
+# Hyprland event-socket lines have the form "EVENT>>DATA\n". For
+# activewindow the DATA is "CLASS,TITLE".
+
+
+def parse_hyprland_event(line):
+    """Extract wm_class from a Hyprland socket2 'activewindow' line.
+
+    Returns the class string when the line is an activewindow event,
+    else None. Format: "activewindow>>CLASS,TITLE".
+    """
+    if not line:
+        return None
+    line = line.rstrip("\r\n")
+    head, sep, rest = line.partition(">>")
+    if not sep or head != "activewindow":
+        return None
+    cls, _, _ = rest.partition(",")
+    cls = cls.strip()
+    return cls or None
