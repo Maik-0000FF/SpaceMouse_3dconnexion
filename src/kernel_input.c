@@ -17,11 +17,12 @@
 static int g_kinput_state[6] = {0};
 static int g_kinput_dirty = 0;
 
-int kinput_open(void)
+int kinput_open(int verbose)
 {
 	DIR *d = opendir("/dev/input/by-id");
 	if (!d) {
-		perror("spacemouse-desktop: opendir /dev/input/by-id");
+		if (verbose)
+			perror("spacemouse-desktop: opendir /dev/input/by-id");
 		return -1;
 	}
 
@@ -36,16 +37,24 @@ int kinput_open(void)
 	closedir(d);
 
 	if (!path[0]) {
-		fprintf(stderr,
-			"spacemouse-desktop: no 3Dconnexion event device under /dev/input/by-id\n");
+		if (verbose)
+			fprintf(stderr,
+				"spacemouse-desktop: no 3Dconnexion event device under "
+				"/dev/input/by-id\n");
 		return -1;
 	}
 
 	int fd = open(path, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
-		fprintf(stderr, "spacemouse-desktop: open %s: %s\n", path, strerror(errno));
+		if (verbose)
+			fprintf(stderr, "spacemouse-desktop: open %s: %s\n", path, strerror(errno));
 		return -1;
 	}
+
+	/* Reset cached state — after a reconnect the device starts fresh. */
+	for (int i = 0; i < 6; i++)
+		g_kinput_state[i] = 0;
+	g_kinput_dirty = 0;
 
 	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
 	return fd;

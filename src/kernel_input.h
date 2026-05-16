@@ -29,8 +29,12 @@ struct kinput_event {
 };
 
 /* Discover the first 3Dconnexion event device under /dev/input/by-id
- * and open it O_NONBLOCK. Returns fd or -1 on error. */
-int kinput_open(void);
+ * and open it O_NONBLOCK. Returns fd or -1 on error.
+ *
+ * verbose=1 prints diagnostic messages (use at startup). verbose=0
+ * suppresses the "no device found" message so reconnect retries don't
+ * spam the journal while the device is unplugged. */
+int kinput_open(int verbose);
 
 /* Drain pending events from `fd`. On the first SYN_REPORT or BTN event
  * fills *out and returns 1. Returns 0 if the input buffer drained
