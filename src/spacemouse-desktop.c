@@ -163,8 +163,7 @@ int main(int argc, char **argv)
 	 * the daemon survives "device unplugged before service start". */
 	g_kinput_fd = kinput_open(1);
 	if (g_kinput_fd < 0)
-		fprintf(stderr,
-			"spacemouse-desktop: kernel input not available yet, will retry\n");
+		fprintf(stderr, "spacemouse-desktop: kernel input not available yet, will retry\n");
 
 	/* uinput */
 	g_uinput_fd = uinput_open();
@@ -290,8 +289,7 @@ int main(int argc, char **argv)
 		/* Detect device unplug: poll() flags the fd with POLLERR/POLLHUP
 		 * once /dev/input/eventN is gone. Without this we'd spin at 100%
 		 * CPU on the dead fd. */
-		if (kinput_idx >= 0 &&
-		    (fds[kinput_idx].revents & (POLLERR | POLLHUP | POLLNVAL))) {
+		if (kinput_idx >= 0 && (fds[kinput_idx].revents & (POLLERR | POLLHUP | POLLNVAL))) {
 			fprintf(stderr,
 				"spacemouse-desktop: kernel input disconnected, will reconnect\n");
 			close(g_kinput_fd);

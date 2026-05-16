@@ -38,9 +38,8 @@ int kinput_open(int verbose)
 
 	if (!path[0]) {
 		if (verbose)
-			fprintf(stderr,
-				"spacemouse-desktop: no 3Dconnexion event device under "
-				"/dev/input/by-id\n");
+			fprintf(stderr, "spacemouse-desktop: no 3Dconnexion event device under "
+					"/dev/input/by-id\n");
 		return -1;
 	}
 
