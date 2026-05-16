@@ -354,6 +354,13 @@ class SpaceMouseApp:
 
     def _quit(self):
         self._cleanup()
+        set_spacemouse_led(False)
+        subprocess.run(
+            ["systemctl", "--user", "stop", "spacemouse-desktop.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
         self.tray.hide()
         self.app.quit()
 
