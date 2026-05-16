@@ -172,6 +172,20 @@ static struct profile g_profiles[MAX_PROFILES];
 static int g_profile_count = 0;
 static int g_active_profile = 0;
 
+/* Desktop environment, picked at startup. Drives which backend
+ * desktop_action_*() uses: KDE keeps the D-Bus path, Sway/Hyprland use
+ * their IPC CLIs, everything else taps keyboard shortcuts via uinput. */
+enum desktop_env {
+	DE_UNKNOWN = 0,
+	DE_KDE,
+	DE_GNOME,
+	DE_XFCE_X11,    /* XFCE, Cinnamon, MATE, LXQt, generic X11 */
+	DE_SWAY,
+	DE_HYPRLAND,
+};
+
+static enum desktop_env g_de = DE_UNKNOWN;
+
 /* ── Signal handlers ────────────────────────────────────────────────── */
 
 static void on_sigterm(int sig) { (void)sig; g_running = 0; }
@@ -218,6 +232,8 @@ static int uinput_open(void)
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTCTRL);
+	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTALT);
+	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTMETA);
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEDOWN);
 	ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
@@ -293,6 +309,48 @@ static void emit_key_tap(int fd, int code)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
+/* Press modifiers (e.g. Super, Ctrl), tap key, release modifiers. Used
+ * for desktop actions on non-KDE DEs where we drive global shortcuts
+ * instead of D-Bus. n_mods may be 0 — then this degenerates to emit_key_tap. */
+static void emit_key_combo(int fd, const int *mods, int n_mods, int key)
+{
+	if (fd < 0) return;
+	for (int i = 0; i < n_mods; i++)
+		emit_event(fd, EV_KEY, mods[i], 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	emit_event(fd, EV_KEY, key, 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	emit_event(fd, EV_KEY, key, 0);
+	for (int i = n_mods - 1; i >= 0; i--)
+		emit_event(fd, EV_KEY, mods[i], 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+/* Fire-and-forget a subprocess. Used to dispatch swaymsg / hyprctl
+ * without blocking the event loop. We do not wait — the caller does not
+ * care about the exit status, and reaping is handled via SIGCHLD set to
+ * SIG_IGN at startup. */
+static void spawn_command(char *const argv[])
+{
+	pid_t pid = fork();
+	if (pid < 0) {
+		perror("spacemouse-desktop: fork");
+		return;
+	}
+	if (pid == 0) {
+		/* child */
+		int devnull = open("/dev/null", O_RDWR);
+		if (devnull >= 0) {
+			dup2(devnull, STDIN_FILENO);
+			dup2(devnull, STDOUT_FILENO);
+			dup2(devnull, STDERR_FILENO);
+			if (devnull > STDERR_FILENO) close(devnull);
+		}
+		execvp(argv[0], argv);
+		_exit(127);
+	}
+}
+
 static void emit_zoom(int fd, int dz)
 {
 	if (dz == 0) return;
@@ -303,6 +361,57 @@ static void emit_zoom(int fd, int dz)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 	emit_event(fd, EV_KEY, KEY_LEFTCTRL, 0);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+/* ── Desktop environment detection ──────────────────────────────────── */
+
+static int env_contains(const char *env, const char *needle)
+{
+	const char *v = getenv(env);
+	if (!v || !needle) return 0;
+	/* Case-insensitive substring search. XDG_CURRENT_DESKTOP is a
+	 * colon-separated list ("KDE", "GNOME", "ubuntu:GNOME", ...) and
+	 * casing varies between distros. */
+	size_t nl = strlen(needle);
+	for (const char *p = v; *p; p++) {
+		if (strncasecmp(p, needle, nl) == 0) return 1;
+	}
+	return 0;
+}
+
+static enum desktop_env detect_desktop_env(void)
+{
+	/* Compositor-specific env vars are the most reliable signal — set
+	 * directly by sway and hyprland, independent of XDG_CURRENT_DESKTOP. */
+	if (getenv("HYPRLAND_INSTANCE_SIGNATURE")) return DE_HYPRLAND;
+	if (getenv("SWAYSOCK")) return DE_SWAY;
+
+	/* XDG_CURRENT_DESKTOP is reliable for the major desktops. */
+	if (env_contains("XDG_CURRENT_DESKTOP", "KDE")) return DE_KDE;
+	if (env_contains("XDG_CURRENT_DESKTOP", "GNOME")) return DE_GNOME;
+	if (env_contains("XDG_CURRENT_DESKTOP", "XFCE") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "X-Cinnamon") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "Cinnamon") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "MATE") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "LXQt") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "LXDE") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "Pantheon") ||
+	    env_contains("XDG_CURRENT_DESKTOP", "Budgie"))
+		return DE_XFCE_X11;
+
+	return DE_UNKNOWN;
+}
+
+static const char *de_name(enum desktop_env de)
+{
+	switch (de) {
+	case DE_KDE:      return "KDE";
+	case DE_GNOME:    return "GNOME";
+	case DE_XFCE_X11: return "XFCE-family / X11-keys";
+	case DE_SWAY:     return "Sway";
+	case DE_HYPRLAND: return "Hyprland";
+	default:          return "unknown (defaulting to X11-keys)";
+	}
 }
 
 /* ── D-Bus helpers ──────────────────────────────────────────────────── */
@@ -368,6 +477,116 @@ static void dbus_call_kglobalaccel(DBusConnection *conn, const char *shortcut)
 	}
 	dbus_connection_flush(conn);
 	dbus_message_unref(msg);
+}
+
+/* ── Desktop actions (DE-dispatch) ──────────────────────────────────── */
+/*
+ * Workspace switch / overview / show-desktop dispatch based on g_de.
+ * KDE keeps the native D-Bus path (exact, no shortcut races, real
+ * show-desktop toggle). Sway/Hyprland use their IPC CLIs. Everything
+ * else taps keyboard shortcuts via uinput with DE-typical defaults.
+ *
+ * Defaults reflect each DE's out-of-the-box keymap. Users with custom
+ * shortcuts can rebind their compositor instead — exposing per-profile
+ * overrides in config is a follow-up phase.
+ */
+
+static void desktop_action_workspace(int direction)
+{
+	switch (g_de) {
+	case DE_KDE:
+		dbus_ensure_connected();
+		if (g_dbus)
+			dbus_call_kwin(g_dbus,
+				direction > 0 ? "nextDesktop" : "previousDesktop");
+		break;
+	case DE_SWAY: {
+		char *argv[] = { "swaymsg", "workspace",
+			direction > 0 ? "next" : "prev", NULL };
+		spawn_command(argv);
+		break;
+	}
+	case DE_HYPRLAND: {
+		char *argv[] = { "hyprctl", "dispatch", "workspace",
+			direction > 0 ? "+1" : "-1", NULL };
+		spawn_command(argv);
+		break;
+	}
+	case DE_GNOME: {
+		/* GNOME: Super+Page_Down/Up. Note: under default GNOME 40+ the
+		 * workspace layout is horizontal, but the keyboard shortcuts
+		 * keep the historical Page_Down/Up names. */
+		int mods[] = { KEY_LEFTMETA };
+		emit_key_combo(g_uinput_fd, mods, 1,
+			direction > 0 ? KEY_PAGEDOWN : KEY_PAGEUP);
+		break;
+	}
+	case DE_XFCE_X11:
+	case DE_UNKNOWN:
+	default: {
+		/* XFCE / Cinnamon / MATE / LXQt and unknown desktops:
+		 * Ctrl+Alt+Right/Left is the long-standing X11 default. */
+		int mods[] = { KEY_LEFTCTRL, KEY_LEFTALT };
+		emit_key_combo(g_uinput_fd, mods, 2,
+			direction > 0 ? KEY_RIGHT : KEY_LEFT);
+		break;
+	}
+	}
+}
+
+static void desktop_action_overview(void)
+{
+	switch (g_de) {
+	case DE_KDE:
+		dbus_ensure_connected();
+		if (g_dbus)
+			dbus_call_kglobalaccel(g_dbus, "ExposeAll");
+		break;
+	case DE_GNOME:
+		/* Tapping Super opens Activities — closest GNOME equivalent. */
+		emit_key_tap(g_uinput_fd, KEY_LEFTMETA);
+		break;
+	default:
+		/* XFCE/Cinnamon/MATE/Sway/Hyprland have no canonical overview;
+		 * Super alone is the most common user binding. */
+		emit_key_tap(g_uinput_fd, KEY_LEFTMETA);
+		break;
+	}
+}
+
+static void desktop_action_show_desktop(int *state)
+{
+	switch (g_de) {
+	case DE_KDE: {
+		dbus_ensure_connected();
+		if (!g_dbus) break;
+		*state = !*state;
+		DBusMessage *msg = dbus_message_new_method_call(
+			"org.kde.KWin", "/KWin",
+			"org.kde.KWin", "showDesktop");
+		if (msg) {
+			dbus_bool_t v = *state;
+			dbus_message_append_args(msg,
+				DBUS_TYPE_BOOLEAN, &v,
+				DBUS_TYPE_INVALID);
+			if (!dbus_connection_send(g_dbus, msg, NULL))
+				fprintf(stderr, "spacemouse-desktop: D-Bus send failed: showDesktop\n");
+			else
+				dbus_connection_flush(g_dbus);
+			dbus_message_unref(msg);
+		}
+		break;
+	}
+	default: {
+		/* Super+D is wired up by default on GNOME, XFCE, Cinnamon,
+		 * MATE. The DE itself owns the toggle state, so we don't
+		 * track *state here. */
+		(void)state;
+		int mods[] = { KEY_LEFTMETA };
+		emit_key_combo(g_uinput_fd, mods, 1, KEY_D);
+		break;
+	}
+	}
 }
 
 /* ── Kernel input device (replaces libspnav for our daemon) ─────────── */
@@ -906,6 +1125,17 @@ int main(int argc, char **argv)
 	sa.sa_handler = on_sighup;
 	sigaction(SIGHUP, &sa, NULL);
 
+	/* SIGCHLD = SIG_IGN tells the kernel to auto-reap children, which
+	 * keeps spawn_command() (swaymsg / hyprctl) zombie-free without a
+	 * dedicated reaper loop. */
+	sa.sa_handler = SIG_IGN;
+	sigaction(SIGCHLD, &sa, NULL);
+
+	/* Detect desktop environment once at startup. Influences which
+	 * backend desktop_action_*() uses. */
+	g_de = detect_desktop_env();
+	fprintf(stderr, "spacemouse-desktop: desktop environment: %s\n", de_name(g_de));
+
 	/* Open kernel input device directly (bypasses spacenavd). */
 	g_kinput_fd = kinput_open();
 	if (g_kinput_fd < 0) {
@@ -1061,10 +1291,7 @@ int main(int argc, char **argv)
 								const char *dir = axes[i] > 0 ? "next" : "prev";
 								fprintf(stderr, "spacemouse-desktop: dswitch axis=%d val=%d thresh=%d elapsed=%lldms -> %s\n",
 									i, axes[i], c->dswitch_threshold, elapsed, dir);
-								if (axes[i] > 0)
-									dbus_call_kwin(g_dbus, "nextDesktop");
-								else
-									dbus_call_kwin(g_dbus, "previousDesktop");
+								desktop_action_workspace(axes[i] > 0 ? 1 : -1);
 								last_dswitch = now;
 							}
 							break;
@@ -1134,28 +1361,11 @@ int main(int argc, char **argv)
 
 					switch (c->btn_map[bnum]) {
 					case BTNACT_OVERVIEW:
-						dbus_call_kglobalaccel(g_dbus, "ExposeAll");
+						desktop_action_overview();
 						break;
-					case BTNACT_SHOW_DESKTOP: {
-						if (!g_dbus || !dbus_connection_get_is_connected(g_dbus))
-							break;
-						desktop_shown = !desktop_shown;
-						DBusMessage *msg = dbus_message_new_method_call(
-							"org.kde.KWin", "/KWin",
-							"org.kde.KWin", "showDesktop");
-						if (msg) {
-							dbus_bool_t v = desktop_shown;
-							dbus_message_append_args(msg,
-								DBUS_TYPE_BOOLEAN, &v,
-								DBUS_TYPE_INVALID);
-							if (!dbus_connection_send(g_dbus, msg, NULL))
-								fprintf(stderr, "spacemouse-desktop: D-Bus send failed: showDesktop\n");
-							else
-								dbus_connection_flush(g_dbus);
-							dbus_message_unref(msg);
-						}
+					case BTNACT_SHOW_DESKTOP:
+						desktop_action_show_desktop(&desktop_shown);
 						break;
-					}
 					case BTNACT_VOLUME_UP:
 						emit_key_tap(g_uinput_fd, KEY_VOLUMEUP);
 						break;
