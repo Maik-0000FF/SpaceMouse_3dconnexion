@@ -34,6 +34,8 @@
 #include <dbus/dbus.h>
 #include <json-c/json.h>
 
+#include "spacemouse-core.h"
+
 /* ── Constants ──────────────────────────────────────────────────────── */
 
 #define SPACEMOUSE_VERSION  "0.1.0"
@@ -82,49 +84,7 @@ enum btn_action {
 #define VOLUME_THRESHOLD    60
 #define KEY_PAIR_THRESHOLD  60
 
-/* Mapping from human-readable key name (used in config.json) to kernel keycode.
- * Sentinel-terminated. Used for "key:NAME" button actions and
- * "key_pair:NEG,POS" axis actions. */
-struct key_name_entry {
-	const char *name;
-	int code;
-};
-
-static const struct key_name_entry KEY_NAMES[] = {
-	{"SPACE",     KEY_SPACE},
-	{"ENTER",     KEY_ENTER},
-	{"ESC",       KEY_ESC},
-	{"TAB",       KEY_TAB},
-	{"BACKSPACE", KEY_BACKSPACE},
-	{"LEFT",      KEY_LEFT},
-	{"RIGHT",     KEY_RIGHT},
-	{"UP",        KEY_UP},
-	{"DOWN",      KEY_DOWN},
-	{"PAGEUP",    KEY_PAGEUP},
-	{"PAGEDOWN",  KEY_PAGEDOWN},
-	{"HOME",      KEY_HOME},
-	{"END",       KEY_END},
-	{"A", KEY_A}, {"B", KEY_B}, {"C", KEY_C}, {"D", KEY_D},
-	{"E", KEY_E}, {"F", KEY_F}, {"G", KEY_G}, {"H", KEY_H},
-	{"I", KEY_I}, {"J", KEY_J}, {"K", KEY_K}, {"L", KEY_L},
-	{"M", KEY_M}, {"N", KEY_N}, {"O", KEY_O}, {"P", KEY_P},
-	{"Q", KEY_Q}, {"R", KEY_R}, {"S", KEY_S}, {"T", KEY_T},
-	{"U", KEY_U}, {"V", KEY_V}, {"W", KEY_W}, {"X", KEY_X},
-	{"Y", KEY_Y}, {"Z", KEY_Z},
-	{"F1", KEY_F1}, {"F2", KEY_F2}, {"F3", KEY_F3}, {"F4", KEY_F4},
-	{"F5", KEY_F5}, {"F6", KEY_F6}, {"F7", KEY_F7}, {"F8", KEY_F8},
-	{"F9", KEY_F9}, {"F10", KEY_F10}, {"F11", KEY_F11}, {"F12", KEY_F12},
-	{NULL, 0}
-};
-
-static int lookup_key(const char *name)
-{
-	if (!name) return 0;
-	for (const struct key_name_entry *e = KEY_NAMES; e->name; e++)
-		if (strcasecmp(name, e->name) == 0)
-			return e->code;
-	return 0;
-}
+/* KEY_NAMES, struct key_name_entry, lookup_key — see spacemouse-core. */
 
 struct config {
 	int deadzone;
@@ -153,9 +113,7 @@ struct profile {
 	int browser_keys; /* 1 if smart actions should send Space/Arrow keys */
 };
 
-struct scroll_acc {
-	double acc_x, acc_y, acc_z;
-};
+/* struct scroll_acc — see spacemouse-core. */
 
 /* ── Globals ────────────────────────────────────────────────────────── */
 
@@ -172,18 +130,9 @@ static struct profile g_profiles[MAX_PROFILES];
 static int g_profile_count = 0;
 static int g_active_profile = 0;
 
-/* Desktop environment, picked at startup. Drives which backend
+/* enum desktop_env — see spacemouse-core. g_de drives which backend
  * desktop_action_*() uses: KDE keeps the D-Bus path, Sway/Hyprland use
  * their IPC CLIs, everything else taps keyboard shortcuts via uinput. */
-enum desktop_env {
-	DE_UNKNOWN = 0,
-	DE_KDE,
-	DE_GNOME,
-	DE_XFCE_X11,    /* XFCE, Cinnamon, MATE, LXQt, generic X11 */
-	DE_SWAY,
-	DE_HYPRLAND,
-};
-
 static enum desktop_env g_de = DE_UNKNOWN;
 
 /* ── Signal handlers ────────────────────────────────────────────────── */
@@ -200,19 +149,7 @@ static long long time_ms(void)
 	return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-/* ── Nonlinear curve ────────────────────────────────────────────────── */
-
-static double apply_curve(int raw, int deadzone, double exponent, double scale)
-{
-	double v = (double)raw;
-	if (fabs(v) < deadzone)
-		return 0.0;
-	double sign = v > 0 ? 1.0 : -1.0;
-	double norm = (fabs(v) - deadzone) / (350.0 - deadzone);
-	if (norm > 1.0) norm = 1.0;
-	if (norm < 0.0) norm = 0.0;
-	return sign * pow(norm, exponent) * scale;
-}
+/* apply_curve — see spacemouse-core. */
 
 /* ── uinput ─────────────────────────────────────────────────────────── */
 
@@ -363,56 +300,7 @@ static void emit_zoom(int fd, int dz)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-/* ── Desktop environment detection ──────────────────────────────────── */
-
-static int env_contains(const char *env, const char *needle)
-{
-	const char *v = getenv(env);
-	if (!v || !needle) return 0;
-	/* Case-insensitive substring search. XDG_CURRENT_DESKTOP is a
-	 * colon-separated list ("KDE", "GNOME", "ubuntu:GNOME", ...) and
-	 * casing varies between distros. */
-	size_t nl = strlen(needle);
-	for (const char *p = v; *p; p++) {
-		if (strncasecmp(p, needle, nl) == 0) return 1;
-	}
-	return 0;
-}
-
-static enum desktop_env detect_desktop_env(void)
-{
-	/* Compositor-specific env vars are the most reliable signal — set
-	 * directly by sway and hyprland, independent of XDG_CURRENT_DESKTOP. */
-	if (getenv("HYPRLAND_INSTANCE_SIGNATURE")) return DE_HYPRLAND;
-	if (getenv("SWAYSOCK")) return DE_SWAY;
-
-	/* XDG_CURRENT_DESKTOP is reliable for the major desktops. */
-	if (env_contains("XDG_CURRENT_DESKTOP", "KDE")) return DE_KDE;
-	if (env_contains("XDG_CURRENT_DESKTOP", "GNOME")) return DE_GNOME;
-	if (env_contains("XDG_CURRENT_DESKTOP", "XFCE") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "X-Cinnamon") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "Cinnamon") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "MATE") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "LXQt") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "LXDE") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "Pantheon") ||
-	    env_contains("XDG_CURRENT_DESKTOP", "Budgie"))
-		return DE_XFCE_X11;
-
-	return DE_UNKNOWN;
-}
-
-static const char *de_name(enum desktop_env de)
-{
-	switch (de) {
-	case DE_KDE:      return "KDE";
-	case DE_GNOME:    return "GNOME";
-	case DE_XFCE_X11: return "XFCE-family / X11-keys";
-	case DE_SWAY:     return "Sway";
-	case DE_HYPRLAND: return "Hyprland";
-	default:          return "unknown (defaulting to X11-keys)";
-	}
-}
+/* detect_desktop_env, env_contains, de_name — see spacemouse-core. */
 
 /* ── D-Bus helpers ──────────────────────────────────────────────────── */
 
@@ -542,13 +430,11 @@ static void desktop_action_overview(void)
 		if (g_dbus)
 			dbus_call_kglobalaccel(g_dbus, "ExposeAll");
 		break;
-	case DE_GNOME:
-		/* Tapping Super opens Activities — closest GNOME equivalent. */
-		emit_key_tap(g_uinput_fd, KEY_LEFTMETA);
-		break;
 	default:
-		/* XFCE/Cinnamon/MATE/Sway/Hyprland have no canonical overview;
-		 * Super alone is the most common user binding. */
+		/* On GNOME a Super tap opens Activities — closest overview
+		 * equivalent. XFCE/Cinnamon/MATE/Sway/Hyprland have no
+		 * canonical overview command; Super alone is the most common
+		 * user binding. */
 		emit_key_tap(g_uinput_fd, KEY_LEFTMETA);
 		break;
 	}
@@ -952,10 +838,12 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 		struct json_object_iterator it = json_object_iter_begin(bmap);
 		struct json_object_iterator end = json_object_iter_end(bmap);
 		while (!json_object_iter_equal(&it, &end)) {
-			int bnum = atoi(json_object_iter_peek_name(&it));
+			const char *key = json_object_iter_peek_name(&it);
+			char *endp = NULL;
+			long bnum = strtol(key, &endp, 10);
 			struct json_object *bval = json_object_iter_peek_value(&it);
-			if (bnum >= 0 && bnum < 16)
-				apply_btn_action(c, bnum, json_object_get_string(bval));
+			if (endp != key && *endp == '\0' && bnum >= 0 && bnum < 16)
+				apply_btn_action(c, (int)bnum, json_object_get_string(bval));
 			json_object_iter_next(&it);
 		}
 	}
@@ -1061,19 +949,7 @@ static int config_load_all(const char *path)
 	return 0;
 }
 
-/* ── Scroll accumulator ─────────────────────────────────────────────── */
-
-static void scroll_acc_reset(struct scroll_acc *sa)
-{
-	sa->acc_x = sa->acc_y = sa->acc_z = 0;
-}
-
-static int scroll_acc_consume(double *acc)
-{
-	int val = (int)*acc;
-	*acc -= val;
-	return val;
-}
+/* scroll_acc_reset, scroll_acc_consume — see spacemouse-core. */
 
 /* ── Main ───────────────────────────────────────────────────────────── */
 

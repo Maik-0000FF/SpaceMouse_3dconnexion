@@ -7,6 +7,8 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
+from .profile_match import find_matching_profile
+
 # ── libspnav ctypes bindings ──────────────────────────────────────────
 
 class SpnavMotion(ctypes.Structure):
@@ -185,17 +187,7 @@ class WindowMonitor(QThread):
             pass
 
     def _find_matching_profile(self, wm_class):
-        wm_lower = wm_class.lower()
-        for name, profile in self._profiles.items():
-            if name == "default":
-                continue
-            for wc in profile.get("match_wm_class", []):
-                wc_lower = wc.lower()
-                if (wc_lower == wm_lower or
-                    wm_lower.startswith(wc_lower) or
-                    wc_lower in wm_lower):
-                    return name
-        return "default"
+        return find_matching_profile(wm_class, self._profiles)
 
     def run(self):
         # Start the journal tail BEFORE loading the KWin script. The script

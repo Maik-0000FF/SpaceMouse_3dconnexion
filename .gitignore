@@ -4,6 +4,13 @@
 src/spacemouse-desktop
 src/spacemouse-test
 src/spnav_example
+src/tests/test_curve
+src/tests/test_key_lookup
+src/tests/test_de_detect
+src/tests/test_scroll_acc
+
+# pytest cache
+.pytest_cache/
 
 # Generic compiled artefacts (mostly defensive — none of these should
 # ever be produced by this project, but a stray one shouldn't slip in)
