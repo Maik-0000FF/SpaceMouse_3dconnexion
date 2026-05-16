@@ -115,8 +115,9 @@ case "$DISTRO_FAMILY" in
         ;;
 
     fedora)
-        # xorg-x11-utils ships xprop for the X11 window-monitor backend.
-        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config xorg-x11-utils)
+        # Fedora 40+ ships xprop as its own package; older releases
+        # bundled it in xorg-x11-utils.
+        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config xprop)
         ;;
 
     debian)
