@@ -20,7 +20,8 @@ TEST_BINS = \
 	tests/test_curve \
 	tests/test_key_lookup \
 	tests/test_de_detect \
-	tests/test_scroll_acc
+	tests/test_scroll_acc \
+	tests/test_kinput_state
 
 all: $(TARGETS)
 
@@ -69,6 +70,10 @@ spnav_example: spnav_example.c
 tests/test_%: tests/test_%.c spacemouse-core.o spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< spacemouse-core.o -lm $(EXTRA_LDFLAGS)
 
+# Specific override: this test exercises kernel_input.c, not spacemouse-core.
+tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o kernel_input.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< kernel_input.o $(EXTRA_LDFLAGS)
+
 test: $(TEST_BINS)
 	@fail=0; \
 	for t in $(TEST_BINS); do \
@@ -97,7 +102,7 @@ C_SOURCES = spacemouse-desktop.c spacemouse-core.c spacemouse-core.h config.c co
             uinput.c uinput.h dbus_actions.c dbus_actions.h \
             desktop_actions.c desktop_actions.h \
             tests/test_curve.c tests/test_key_lookup.c tests/test_de_detect.c \
-            tests/test_scroll_acc.c
+            tests/test_scroll_acc.c tests/test_kinput_state.c
 
 format-check:
 	clang-format --dry-run --Werror $(C_SOURCES)

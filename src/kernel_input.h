@@ -41,4 +41,10 @@ int kinput_open(int verbose);
  * without producing a complete event. Safe to call repeatedly. */
 int kinput_poll_event(int fd, struct kinput_event *out);
 
+/* Zero the internal axis-state cache and dirty flag. kinput_open() calls
+ * this on every successful open so a reconnect doesn't replay stale
+ * pre-disconnect values; tests call it to put the module into a known
+ * baseline before exercising kinput_poll_event(). */
+void kinput_reset_state(void);
+
 #endif /* SPACEMOUSE_KERNEL_INPUT_H */

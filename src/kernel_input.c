@@ -17,6 +17,13 @@
 static int g_kinput_state[6] = {0};
 static int g_kinput_dirty = 0;
 
+void kinput_reset_state(void)
+{
+	for (int i = 0; i < 6; i++)
+		g_kinput_state[i] = 0;
+	g_kinput_dirty = 0;
+}
+
 int kinput_open(int verbose)
 {
 	DIR *d = opendir("/dev/input/by-id");
@@ -51,9 +58,7 @@ int kinput_open(int verbose)
 	}
 
 	/* Reset cached state — after a reconnect the device starts fresh. */
-	for (int i = 0; i < 6; i++)
-		g_kinput_state[i] = 0;
-	g_kinput_dirty = 0;
+	kinput_reset_state();
 
 	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
 	return fd;

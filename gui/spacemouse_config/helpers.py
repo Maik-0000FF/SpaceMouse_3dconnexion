@@ -1,15 +1,15 @@
 """Small helpers shared across modules — daemon socket, LED, common widget builders."""
 
 import os
-import socket
-import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
-from .constants import SOCK_PATH
+# Re-export daemon-socket helpers so existing callers keep their import path.
+# The actual implementations live in daemon_socket.py (Qt-free for testing).
+from .daemon_socket import send_daemon_cmd, wait_for_daemon_socket  # noqa: F401
 
 # ── LED control via direct USB HID ────────────────────────────────────
 
@@ -31,45 +31,6 @@ def set_spacemouse_led(on):
                 return True
     except OSError:
         pass
-    return False
-
-
-# ── Daemon socket ─────────────────────────────────────────────────────
-
-
-def send_daemon_cmd(cmd):
-    """Send command to spacemouse-desktop daemon via UNIX socket."""
-    try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(1.0)
-        sock.connect(SOCK_PATH)
-        sock.sendall(f"{cmd}\n".encode())
-        response = sock.recv(1024).decode().strip()
-        sock.close()
-        return response
-    except (ConnectionRefusedError, FileNotFoundError, OSError):
-        return None
-
-
-def wait_for_daemon_socket(timeout=2.0):
-    """Block until the daemon command socket is reachable, or timeout.
-
-    systemctl start returns as soon as the unit is forked (Type=simple),
-    but the daemon needs a moment to load config and bind the socket.
-    Callers that send commands right after starting the service must wait
-    for the socket, otherwise the first PROFILE command is dropped and
-    the daemon stays on its initial profile.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(0.2)
-            sock.connect(SOCK_PATH)
-            sock.close()
-            return True
-        except (ConnectionRefusedError, FileNotFoundError, OSError):
-            time.sleep(0.05)
     return False
 
 
