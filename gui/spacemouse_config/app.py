@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from .constants import CONFIG_DIR, CONFIG_PATH, DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd, set_spacemouse_led
-from .monitors import SpnavReader, WindowMonitor
+from .monitors import SpnavReader, make_window_monitor
 from .settings_window import SettingsWindow
 
 
@@ -229,7 +229,12 @@ class SpaceMouseApp:
 
     def _start_window_monitor(self):
         profiles = self.config.get("profiles", {"default": self.config})
-        self.window_monitor = WindowMonitor(profiles)
+        self.window_monitor = make_window_monitor(profiles)
+        if self.window_monitor is None:
+            # No portable backend for this session (GNOME-Wayland, Sway,
+            # Hyprland today). Daemon stays on its default profile;
+            # profile switching via the tray menu still works.
+            return
         self.window_monitor.window_changed.connect(self._on_window_changed)
         self.window_monitor.start()
 

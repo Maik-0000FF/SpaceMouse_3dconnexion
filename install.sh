@@ -98,7 +98,9 @@ PYSIDE_PIP_FALLBACK=false
 
 case "$DISTRO_FAMILY" in
     arch)
-        OFFICIAL_PKGS=(libspnav json-c dbus pyside6 gcc make pkgconf)
+        # xorg-xprop drives the X11 window-monitor backend (XFCE,
+        # Cinnamon, MATE, LXQt and X11 sessions of KDE/GNOME).
+        OFFICIAL_PKGS=(libspnav json-c dbus pyside6 gcc make pkgconf xorg-xprop)
         AUR_PKGS=(spacenavd)
 
         if command -v yay &>/dev/null; then
@@ -113,13 +115,15 @@ case "$DISTRO_FAMILY" in
         ;;
 
     fedora)
-        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config)
+        # xorg-x11-utils ships xprop for the X11 window-monitor backend.
+        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config xorg-x11-utils)
         ;;
 
     debian)
         # libx11-dev needed because spnav.h pulls in <X11/Xlib.h> and
-        # bookworm doesn't auto-install it as a dependency of libspnav-dev
-        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config)
+        # bookworm doesn't auto-install it as a dependency of libspnav-dev.
+        # x11-utils ships xprop for the X11 window-monitor backend.
+        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config x11-utils)
         sudo apt-get update
 
         # PySide6 availability:
@@ -137,8 +141,9 @@ case "$DISTRO_FAMILY" in
         ;;
 
     opensuse)
-        # libspnav-devel on openSUSE pulls in X11 headers via spnav.h
-        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel libX11-devel python3-pyside6 gcc make pkg-config)
+        # libspnav-devel on openSUSE pulls in X11 headers via spnav.h.
+        # xprop drives the X11 window-monitor backend.
+        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel libX11-devel python3-pyside6 gcc make pkg-config xprop)
         ;;
 esac
 

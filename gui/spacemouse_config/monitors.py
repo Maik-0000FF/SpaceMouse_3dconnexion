@@ -8,6 +8,13 @@ import subprocess
 from PySide6.QtCore import QThread, Signal
 
 from .profile_match import find_matching_profile
+from .window_backend import (
+    KWIN,
+    X11,
+    parse_xprop_active_window,
+    parse_xprop_wm_class,
+    select_backend,
+)
 
 # ── libspnav ctypes bindings ──────────────────────────────────────────
 
@@ -133,8 +140,13 @@ class SpnavReader(QThread):
 # ── Window Monitor Thread ─────────────────────────────────────────────
 
 
-class WindowMonitor(QThread):
-    """Monitors active window via KWin scripting and switches daemon profile."""
+class KWinWindowMonitor(QThread):
+    """Monitors active window via KWin scripting and switches daemon profile.
+
+    KDE-Plasma-only. Loads a small JS into KWin via gdbus that prints
+    SPACEMOUSE_WM:<resourceClass> on every window activation; the thread
+    tails kwin_wayland's journal stream and emits window_changed.
+    """
 
     window_changed = Signal(str, str)
 
@@ -288,3 +300,100 @@ class WindowMonitor(QThread):
             self._proc.terminate()
         self._uninstall_kwin_script()
         self.wait(2000)
+
+
+# ── X11 Window Monitor Thread ─────────────────────────────────────────
+
+
+class X11WindowMonitor(QThread):
+    """Monitors active window on X11 sessions via xprop.
+
+    Spawns `xprop -spy -root _NET_ACTIVE_WINDOW` as a long-running
+    process; every focus change prints one line. For each new window id
+    we run a one-shot `xprop -id <id> WM_CLASS` to read the class and
+    emit window_changed. Works on XFCE, Cinnamon, MATE, LXQt and the
+    X11 sessions of KDE/GNOME.
+    """
+
+    window_changed = Signal(str, str)
+
+    def __init__(self, profiles):
+        super().__init__()
+        self._running = True
+        self._profiles = profiles
+        self._last_profile = ""
+        self._last_wid = None
+        self._proc = None
+
+    def update_profiles(self, profiles):
+        self._profiles = profiles
+        # Force re-evaluation on the next event.
+        self._last_profile = ""
+        self._last_wid = None
+
+    def _wm_class_for(self, wid):
+        try:
+            result = subprocess.run(
+                ["xprop", "-id", wid, "WM_CLASS"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+        return parse_xprop_wm_class(result.stdout)
+
+    def run(self):
+        try:
+            self._proc = subprocess.Popen(
+                ["xprop", "-spy", "-root", "_NET_ACTIVE_WINDOW"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except FileNotFoundError:
+            return
+        stdout = self._proc.stdout
+        if not stdout:
+            return
+        while self._running:
+            line = stdout.readline()
+            if not line:
+                break
+            wid = parse_xprop_active_window(line)
+            if not wid or wid == self._last_wid:
+                continue
+            self._last_wid = wid
+            wm_class = self._wm_class_for(wid)
+            if not wm_class:
+                continue
+            profile_name = find_matching_profile(wm_class, self._profiles)
+            if profile_name != self._last_profile:
+                self._last_profile = profile_name
+                self.window_changed.emit(wm_class, profile_name)
+        if self._proc:
+            self._proc.terminate()
+
+    def stop(self):
+        self._running = False
+        if self._proc:
+            self._proc.terminate()
+        self.wait(2000)
+
+
+# ── Factory ───────────────────────────────────────────────────────────
+
+
+def make_window_monitor(profiles):
+    """Return the right monitor for the current session, or None.
+
+    None means no portable backend is available — the daemon stays on
+    its default profile. GNOME-Wayland, Sway and Hyprland fall in this
+    bucket today; their backends will land in a follow-up phase.
+    """
+    backend = select_backend()
+    if backend == KWIN:
+        return KWinWindowMonitor(profiles)
+    if backend == X11:
+        return X11WindowMonitor(profiles)
+    return None
