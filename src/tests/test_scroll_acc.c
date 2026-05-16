@@ -10,7 +10,9 @@ int main(void)
 	struct scroll_acc sa;
 
 	/* Reset zeros all three components. */
-	sa.acc_x = 7.5; sa.acc_y = -3.2; sa.acc_z = 0.9;
+	sa.acc_x = 7.5;
+	sa.acc_y = -3.2;
+	sa.acc_z = 0.9;
 	scroll_acc_reset(&sa);
 	assert(sa.acc_x == 0.0);
 	assert(sa.acc_y == 0.0);
@@ -27,7 +29,7 @@ int main(void)
 	acc = 0.4;
 	assert(scroll_acc_consume(&acc) == 0);
 	assert(acc > 0.39 && acc < 0.41);
-	acc += 0.7;       /* 1.1 total */
+	acc += 0.7; /* 1.1 total */
 	assert(scroll_acc_consume(&acc) == 1);
 	assert(acc > 0.09 && acc < 0.11);
 

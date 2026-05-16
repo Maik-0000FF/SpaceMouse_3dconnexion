@@ -6,8 +6,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .constants import (BLENDER_NDOF_PATH, BLENDER_STARTUP_DIR, BLENDER_SYNC_SCRIPT,
-                        CONFIG_DIR)
+from .constants import BLENDER_NDOF_PATH, BLENDER_STARTUP_DIR, BLENDER_SYNC_SCRIPT, CONFIG_DIR
+
 
 class FreeCADConfig:
     """Read/write FreeCAD user.cfg XML for SpaceMouse settings."""
@@ -31,8 +31,7 @@ class FreeCADConfig:
     @staticmethod
     def is_running():
         try:
-            result = subprocess.run(
-                ["pgrep", "-x", "FreeCAD"], capture_output=True, timeout=2)
+            result = subprocess.run(["pgrep", "-x", "FreeCAD"], capture_output=True, timeout=2)
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
@@ -115,12 +114,24 @@ class FreeCADConfig:
             "global_sensitivity": -15,
             "flip_yz": True,
             "dominant": False,
-            "pan_lr_enable": True, "pan_ud_enable": True, "zoom_enable": True,
-            "tilt_enable": True, "roll_enable": True, "spin_enable": True,
-            "pan_lr_reverse": False, "pan_ud_reverse": False, "zoom_reverse": False,
-            "tilt_reverse": False, "roll_reverse": False, "spin_reverse": False,
-            "panlr_deadzone": 0, "panud_deadzone": 0, "zoom_deadzone": 0,
-            "tilt_deadzone": 0, "roll_deadzone": 0, "spin_deadzone": 0,
+            "pan_lr_enable": True,
+            "pan_ud_enable": True,
+            "zoom_enable": True,
+            "tilt_enable": True,
+            "roll_enable": True,
+            "spin_enable": True,
+            "pan_lr_reverse": False,
+            "pan_ud_reverse": False,
+            "zoom_reverse": False,
+            "tilt_reverse": False,
+            "roll_reverse": False,
+            "spin_reverse": False,
+            "panlr_deadzone": 0,
+            "panud_deadzone": 0,
+            "zoom_deadzone": 0,
+            "tilt_deadzone": 0,
+            "roll_deadzone": 0,
+            "spin_deadzone": 0,
             "btn0_command": "Std_ViewFitAll",
             "btn1_command": "Std_ViewHome",
             "nav_style": "Gui::BlenderNavigationStyle",
@@ -181,8 +192,9 @@ class FreeCADConfig:
         if prefs is not None:
             view = self._find_group(prefs, "View")
             if view is not None:
-                result["nav_style"] = self._get_text(view, "NavigationStyle",
-                                                     "Gui::BlenderNavigationStyle")
+                result["nav_style"] = self._get_text(
+                    view, "NavigationStyle", "Gui::BlenderNavigationStyle"
+                )
                 result["orbit_style"] = self._get_int(view, "OrbitStyle", 1)
 
         return result
@@ -230,14 +242,17 @@ class FreeCADConfig:
         # View preferences
         prefs = self._ensure_group(base_app, "Preferences")
         view = self._ensure_group(prefs, "View")
-        self._set_text(view, "NavigationStyle",
-                       settings.get("nav_style", "Gui::BlenderNavigationStyle"))
+        self._set_text(
+            view, "NavigationStyle", settings.get("nav_style", "Gui::BlenderNavigationStyle")
+        )
         self._set_int(view, "OrbitStyle", settings.get("orbit_style", 1))
 
         tree.write(str(self.path), xml_declaration=True, encoding="utf-8")
         return True
 
+
 # ── Blender Config (JSON) ─────────────────────────────────────────────
+
 
 class BlenderConfig:
     """Read/write Blender NDOF settings as JSON + manage startup script."""
@@ -265,7 +280,7 @@ class BlenderConfig:
                 result = dict(self.DEFAULTS)
                 result.update(saved)
                 return result
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
         return dict(self.DEFAULTS)
 

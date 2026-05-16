@@ -1,25 +1,45 @@
 """Three settings pages: Desktop daemon profiles, FreeCAD, Blender."""
 
-from pathlib import Path
-
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog,
-                               QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
-                               QSizePolicy, QVBoxLayout, QWidget)
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .backends import BlenderConfig, FreeCADConfig
-from .constants import (AXIS_ACTION_LABELS, AXIS_ACTIONS, AXIS_KEYS, BLENDER_STARTUP_DIR,
-                        BLENDER_SYNC_SCRIPT, BTN_ACTION_LABELS, BTN_ACTIONS,
-                        FREECAD_BTN_COMMANDS, FREECAD_BTN_LABELS, FREECAD_NAV_LABELS,
-                        FREECAD_NAV_STYLES, FREECAD_ORBIT_STYLES)
+from .constants import (
+    AXIS_ACTION_LABELS,
+    AXIS_ACTIONS,
+    AXIS_KEYS,
+    BLENDER_STARTUP_DIR,
+    BLENDER_SYNC_SCRIPT,
+    BTN_ACTION_LABELS,
+    BTN_ACTIONS,
+    FREECAD_BTN_COMMANDS,
+    FREECAD_BTN_LABELS,
+    FREECAD_NAV_LABELS,
+    FREECAD_NAV_STYLES,
+    FREECAD_ORBIT_STYLES,
+)
 from .helpers import make_card, make_slider
-from .widgets import AxesCard, ToggleSwitch, make_toggle
-
+from .widgets import AxesCard, ToggleSwitch
 
 # ── DesktopPage ───────────────────────────────────────────────────────
 
+
 class DesktopPage(QWidget):
     """Daemon profile editor — switches between all daemon profiles."""
+
     changed = Signal()
 
     PROTECTED_PROFILES = {"default"}  # cannot be deleted
@@ -63,7 +83,9 @@ class DesktopPage(QWidget):
         fl = QFormLayout()
         fl.setSpacing(8)
         self.wm_class_edit = QLineEdit()
-        self.wm_class_edit.setPlaceholderText("comma-separated WM class names, e.g. firefox, Firefox")
+        self.wm_class_edit.setPlaceholderText(
+            "comma-separated WM class names, e.g. firefox, Firefox"
+        )
         self.wm_class_edit.textChanged.connect(self._emit_changed)
         fl.addRow("WM Classes:", self.wm_class_edit)
         bm_row = QHBoxLayout()
@@ -106,8 +128,12 @@ class DesktopPage(QWidget):
 
         # ── Card 3: AXES (AxesCard) ──
         desktop_axis_labels = [
-            "TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
-            "RX (Pitch)", "RY (Roll)", "RZ (Yaw/Twist)",
+            "TX (Left/Right)",
+            "TY (Push/Pull)",
+            "TZ (Up/Down)",
+            "RX (Pitch)",
+            "RY (Roll)",
+            "RZ (Yaw/Twist)",
         ]
         self.axes_card = AxesCard(
             desktop_axis_labels,
@@ -198,14 +224,15 @@ class DesktopPage(QWidget):
         self._building = False
 
     def _on_new_profile(self):
-        from PySide6.QtWidgets import QInputDialog
+
         name, ok = QInputDialog.getText(self, "New Profile", "Profile name:")
         if not ok or not name:
             return
         name = name.strip()
         if not name or name.startswith("_") or name == "default":
-            QMessageBox.warning(self, "Invalid Name",
-                                "Name cannot be empty, start with '_', or be 'default'.")
+            QMessageBox.warning(
+                self, "Invalid Name", "Name cannot be empty, start with '_', or be 'default'."
+            )
             return
         profiles = self._config.setdefault("profiles", {})
         if name in profiles:
@@ -215,7 +242,7 @@ class DesktopPage(QWidget):
         self._save_current_profile()
         profiles[name] = {
             "match_wm_class": [],
-            "axis_mapping": {k: "none" for k in AXIS_KEYS},
+            "axis_mapping": dict.fromkeys(AXIS_KEYS, "none"),
             "button_mapping": {"0": "none", "1": "none"},
         }
         self._current_profile = name
@@ -227,9 +254,11 @@ class DesktopPage(QWidget):
         if self._current_profile in self.PROTECTED_PROFILES:
             return
         reply = QMessageBox.question(
-            self, "Delete Profile",
+            self,
+            "Delete Profile",
             f"Delete profile '{self._current_profile}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if reply != QMessageBox.StandardButton.Yes:
             return
         profiles = self._config.setdefault("profiles", {})
@@ -338,8 +367,10 @@ class DesktopPage(QWidget):
 
 # ── FreeCADPage ───────────────────────────────────────────────────────
 
+
 class FreeCADPage(QWidget):
     """FreeCAD SpaceMouse settings editor."""
+
     changed = Signal()
 
     _FC_AXIS_KEYS = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
@@ -367,17 +398,18 @@ class FreeCADPage(QWidget):
         if not self._fc.is_available():
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
-                "color: #f9e2af; background-color: #3a3636; "
-                "border-radius: 6px; padding: 8px;")
+                "color: #f9e2af; background-color: #3a3636; border-radius: 6px; padding: 8px;"
+            )
             warn.setWordWrap(True)
             cl.addWidget(warn)
 
         self.running_warn = QLabel(
             "FreeCAD is running \u2014 it overwrites user.cfg on exit.\n"
-            "Close FreeCAD before applying changes.")
+            "Close FreeCAD before applying changes."
+        )
         self.running_warn.setStyleSheet(
-            "color: #f38ba8; background-color: #3a2a2a; "
-            "border-radius: 6px; padding: 8px;")
+            "color: #f38ba8; background-color: #3a2a2a; border-radius: 6px; padding: 8px;"
+        )
         self.running_warn.setWordWrap(True)
         self.running_warn.setVisible(False)
         cl.addWidget(self.running_warn)
@@ -395,8 +427,12 @@ class FreeCADPage(QWidget):
 
         # ── Card 3: AXES (AxesCard) ──
         fc_axis_labels = [
-            "TX \u2014 PanLR", "TY \u2014 PanUD", "TZ \u2014 Zoom",
-            "RX \u2014 Tilt", "RY \u2014 Spin", "RZ \u2014 Roll",
+            "TX \u2014 PanLR",
+            "TY \u2014 PanUD",
+            "TZ \u2014 Zoom",
+            "RX \u2014 Tilt",
+            "RY \u2014 Spin",
+            "RZ \u2014 Roll",
         ]
         self.axes_card = AxesCard(
             fc_axis_labels,
@@ -521,8 +557,10 @@ class FreeCADPage(QWidget):
 
 # ── BlenderPage ───────────────────────────────────────────────────────
 
+
 class BlenderPage(QWidget):
     """Blender NDOF settings editor."""
+
     changed = Signal()
 
     def __init__(self):
@@ -577,8 +615,12 @@ class BlenderPage(QWidget):
 
         # ── Card 3: AXES (AxesCard) ──
         bl_axis_labels = [
-            "TX \u2014 Pan X", "TY \u2014 Pan Y", "TZ \u2014 Pan Z",
-            "RX \u2014 Rot X", "RY \u2014 Rot Y", "RZ \u2014 Rot Z",
+            "TX \u2014 Pan X",
+            "TY \u2014 Pan Y",
+            "TZ \u2014 Pan Z",
+            "RX \u2014 Rot X",
+            "RY \u2014 Rot Y",
+            "RZ \u2014 Rot Z",
         ]
         self.axes_card = AxesCard(
             bl_axis_labels,
@@ -596,10 +638,10 @@ class BlenderPage(QWidget):
         layout.addWidget(self.axes_card)
 
         # Lock Horizon warning (below axes card)
-        lock_warn = QLabel(
-            "Lock Horizon blocks the RX/pitch axis \u2014 keep OFF for full 6DOF")
+        lock_warn = QLabel("Lock Horizon blocks the RX/pitch axis \u2014 keep OFF for full 6DOF")
         lock_warn.setStyleSheet(
-            "color: #f9e2af; font-size: 11px; background: transparent; padding: 0 12px;")
+            "color: #f9e2af; font-size: 11px; background: transparent; padding: 0 12px;"
+        )
         lock_warn.setWordWrap(True)
         layout.addWidget(lock_warn)
 
@@ -629,19 +671,23 @@ class BlenderPage(QWidget):
             self.install_btn.setText("Reinstall Startup Script")
         else:
             self.script_status.setText(
-                "Startup script not installed. Blender won't pick up settings "
-                "until you install it.")
+                "Startup script not installed. Blender won't pick up settings until you install it."
+            )
             self.script_status.setStyleSheet("color: #f9e2af; background: transparent;")
             self.install_btn.setText("Install Startup Script")
 
     def _install_script(self):
         if self._bc.install_startup_script():
             self._update_script_status()
-            QMessageBox.information(self, "Installed",
-                                   f"Script installed to:\n{BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT}")
+            QMessageBox.information(
+                self,
+                "Installed",
+                f"Script installed to:\n{BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT}",
+            )
         else:
-            QMessageBox.warning(self, "Error",
-                                "Could not find blender_spacemouse_sync.py next to this script.")
+            QMessageBox.warning(
+                self, "Error", "Could not find blender_spacemouse_sync.py next to this script."
+            )
 
     def _load_settings(self):
         s = self._bc.read()
@@ -652,8 +698,12 @@ class BlenderPage(QWidget):
         # Enable toggles: all enabled by default (Blender has no per-axis enable,
         # stored in our JSON for UI consistency)
         enable_keys = [
-            "ndof_panx_enable", "ndof_pany_enable", "ndof_panz_enable",
-            "ndof_rotx_enable", "ndof_roty_enable", "ndof_rotz_enable",
+            "ndof_panx_enable",
+            "ndof_pany_enable",
+            "ndof_panz_enable",
+            "ndof_rotx_enable",
+            "ndof_roty_enable",
+            "ndof_rotz_enable",
         ]
         for i, key in enumerate(enable_keys):
             self.axes_card.enable_toggles[i].setChecked(s.get(key, True))

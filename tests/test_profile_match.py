@@ -2,12 +2,11 @@
 
 from spacemouse_config.profile_match import find_matching_profile
 
-
 PROFILES = {
-    "default":    {"match_wm_class": []},
-    "blender":    {"match_wm_class": ["blender", "Blender"]},
-    "freecad":    {"match_wm_class": ["org.freecad.FreeCAD", "FreeCAD"]},
-    "browser":    {"match_wm_class": ["firefox", "chromium"]},
+    "default": {"match_wm_class": []},
+    "blender": {"match_wm_class": ["blender", "Blender"]},
+    "freecad": {"match_wm_class": ["org.freecad.FreeCAD", "FreeCAD"]},
+    "browser": {"match_wm_class": ["firefox", "chromium"]},
     "filemanager": {"match_wm_class": ["org.kde.dolphin"]},
 }
 
@@ -50,7 +49,7 @@ def test_default_profile_is_skipped_as_match_source():
 def test_profile_without_match_wm_class():
     profiles = {
         "default": {},
-        "empty":   {},  # no match_wm_class key at all
+        "empty": {},  # no match_wm_class key at all
     }
     assert find_matching_profile("anything", profiles) == "default"
 

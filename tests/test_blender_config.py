@@ -3,7 +3,6 @@
 import json
 
 import pytest
-
 from spacemouse_config import backends
 
 
@@ -27,8 +26,7 @@ def test_read_returns_defaults_when_file_missing(cfg):
 
 def test_read_merges_saved_values_over_defaults(cfg, tmp_path):
     bc, target = cfg
-    target.write_text(json.dumps({"ndof_sensitivity": 2.5,
-                                  "ndof_lock_horizon": True}))
+    target.write_text(json.dumps({"ndof_sensitivity": 2.5, "ndof_lock_horizon": True}))
     s = bc.read()
     # Saved values win
     assert s["ndof_sensitivity"] == 2.5
@@ -65,9 +63,17 @@ def test_read_recovers_from_corrupt_json(cfg, tmp_path):
 def test_defaults_has_all_documented_keys():
     """Every key listed in the CLAUDE.md NDOF table is present in DEFAULTS."""
     documented = {
-        "ndof_sensitivity", "ndof_orbit_sensitivity", "ndof_deadzone",
-        "ndof_lock_horizon", "ndof_pan_yz_swap_axis", "ndof_zoom_invert",
-        "ndof_rotx_invert_axis", "ndof_roty_invert_axis", "ndof_rotz_invert_axis",
-        "ndof_panx_invert_axis", "ndof_pany_invert_axis", "ndof_panz_invert_axis",
+        "ndof_sensitivity",
+        "ndof_orbit_sensitivity",
+        "ndof_deadzone",
+        "ndof_lock_horizon",
+        "ndof_pan_yz_swap_axis",
+        "ndof_zoom_invert",
+        "ndof_rotx_invert_axis",
+        "ndof_roty_invert_axis",
+        "ndof_rotz_invert_axis",
+        "ndof_panx_invert_axis",
+        "ndof_pany_invert_axis",
+        "ndof_panz_invert_axis",
     }
     assert documented == set(backends.BlenderConfig.DEFAULTS.keys())

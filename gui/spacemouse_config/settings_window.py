@@ -1,19 +1,27 @@
 """SettingsWindow — main settings UI with sidebar + apply/save dialog."""
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow,
-                               QMessageBox, QPushButton, QStackedWidget, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .backends import FreeCADConfig
-from .constants import DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 
+
 class SettingsWindow(QMainWindow):
     """Main settings window with sidebar navigation."""
+
     window_shown = Signal()
     window_hidden = Signal()
     window_focused = Signal()
@@ -162,24 +170,29 @@ class SettingsWindow(QMainWindow):
         elif page_idx == 1:
             # FreeCAD
             if FreeCADConfig.is_running():
-                QMessageBox.warning(self, "FreeCAD Running",
+                QMessageBox.warning(
+                    self,
+                    "FreeCAD Running",
                     "FreeCAD is running and will overwrite user.cfg on exit.\n"
-                    "Please close FreeCAD first.")
+                    "Please close FreeCAD first.",
+                )
                 return
             if self.freecad_page.apply_settings():
-                QMessageBox.information(self, "Applied",
+                QMessageBox.information(
+                    self,
+                    "Applied",
                     "FreeCAD settings saved to user.cfg.\n"
-                    "Restart FreeCAD for changes to take effect.")
+                    "Restart FreeCAD for changes to take effect.",
+                )
             else:
-                QMessageBox.warning(self, "Error",
-                    "Could not write FreeCAD user.cfg.")
+                QMessageBox.warning(self, "Error", "Could not write FreeCAD user.cfg.")
 
         elif page_idx == 2:
             # Blender
             self.blender_page.apply_settings()
-            QMessageBox.information(self, "Applied",
-                "Blender NDOF settings saved.\n"
-                "Restart Blender to apply.")
+            QMessageBox.information(
+                self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
+            )
 
         self._dirty = False
         self.setWindowTitle("SpaceMouse Control")
@@ -224,9 +237,10 @@ class SettingsWindow(QMainWindow):
             msg.setText("You have unsaved changes.")
             msg.setInformativeText("Do you want to save before closing?")
             msg.setStandardButtons(
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel)
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel
+            )
             msg.setDefaultButton(QMessageBox.StandardButton.Save)
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:

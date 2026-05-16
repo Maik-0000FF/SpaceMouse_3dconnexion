@@ -75,8 +75,7 @@ int main(void)
 	 * branch is acceptable. The substring search matches "Budgie" first
 	 * in code order though, so XFCE_X11 wins — verify the actual
 	 * behavior so the test catches regressions in that ordering. */
-	assert(detect_desktop_env() == DE_GNOME ||
-	       detect_desktop_env() == DE_XFCE_X11);
+	assert(detect_desktop_env() == DE_GNOME || detect_desktop_env() == DE_XFCE_X11);
 
 	/* Unknown desktop falls through to DE_UNKNOWN. */
 	clear_env();

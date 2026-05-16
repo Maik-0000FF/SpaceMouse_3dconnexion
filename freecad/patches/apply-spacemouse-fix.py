@@ -24,15 +24,18 @@ Usage:
     python3 apply-spacemouse-fix.py /path/to/freecad-source
     python3 apply-spacemouse-fix.py --check /path/to/freecad-source
 """
-import sys
+
 import os
+import sys
+
 
 def find_file(base_dir, filename):
     """Find a file anywhere in the source tree."""
-    for root, dirs, files in os.walk(base_dir):
+    for root, _dirs, files in os.walk(base_dir):
         if filename in files:
             return os.path.join(root, filename)
     return None
+
 
 # ---------------------------------------------------------------------------
 # Fix 1: Event coalescing (PR #28110)
@@ -48,7 +51,7 @@ def patch_poll_spacenav(source_dir):
         print("  SKIP: GuiNativeEventLinux.cpp not found (not a Linux build?)")
         return False
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     if "hasMotion" in content:
@@ -60,17 +63,17 @@ def patch_poll_spacenav(source_dir):
     new = "hasMotion = true;\n                break;"
 
     if old not in content:
-        print(f"  FAIL: Could not find postMotionEvent pattern in {os.path.relpath(filepath, source_dir)}")
-        print(f"        The code may have changed in this FreeCAD version.")
+        print(
+            f"  FAIL: Could not find postMotionEvent pattern in {os.path.relpath(filepath, source_dir)}"
+        )
+        print("        The code may have changed in this FreeCAD version.")
         return False
 
     content = content.replace(old, new, 1)
 
     # Add 'bool hasMotion = false;' after 'spnav_event ev;'
     content = content.replace(
-        "spnav_event ev;\n",
-        "spnav_event ev;\n    bool hasMotion = false;\n",
-        1
+        "spnav_event ev;\n", "spnav_event ev;\n    bool hasMotion = false;\n", 1
     )
 
     # Add the if(hasMotion) block immediately after the while loop closes.
@@ -97,8 +100,10 @@ def patch_poll_spacenav(source_dir):
     )
 
     if old_end not in content:
-        print(f"  FAIL: Could not find pollSpacenav end pattern in {os.path.relpath(filepath, source_dir)}")
-        print(f"        (looking for postButtonEvent + closing braces)")
+        print(
+            f"  FAIL: Could not find pollSpacenav end pattern in {os.path.relpath(filepath, source_dir)}"
+        )
+        print("        (looking for postButtonEvent + closing braces)")
         return False
 
     content = content.replace(old_end, new_end, 1)
@@ -108,6 +113,7 @@ def patch_poll_spacenav(source_dir):
 
     print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Event coalescing applied")
     return True
+
 
 # ---------------------------------------------------------------------------
 # Fix 2: Batched camera updates (PR #28110)
@@ -123,7 +129,7 @@ def patch_process_motion_event(source_dir):
         print(f"  FAIL: NavigationStyle.cpp not found in {source_dir}")
         return False
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     if "enableNotify(false)" in content:
@@ -138,7 +144,6 @@ def patch_process_motion_event(source_dir):
             "    camera->orientation.setValue(newRotation);\n"
             "    camera->orientation.getValue().multVec(dir,dir);\n"
             "    camera->position = newPosition + (dir * translationFactor);",
-
             "    newRotation.multVec(dir,dir);\n"
             "    SbVec3f finalPosition = newPosition + (dir * translationFactor);\n"
             "\n"
@@ -147,14 +152,13 @@ def patch_process_motion_event(source_dir):
             "    camera->orientation.setValue(newRotation);\n"
             "    camera->position = finalPosition;\n"
             "    camera->enableNotify(true);\n"
-            "    camera->touch();"
+            "    camera->touch();",
         ),
         # Style 2: with space in multVec(dir, dir)
         (
             "    camera->orientation.setValue(newRotation);\n"
             "    camera->orientation.getValue().multVec(dir, dir);\n"
             "    camera->position = newPosition + (dir * translationFactor);",
-
             "    newRotation.multVec(dir, dir);\n"
             "    SbVec3f finalPosition = newPosition + (dir * translationFactor);\n"
             "\n"
@@ -163,7 +167,7 @@ def patch_process_motion_event(source_dir):
             "    camera->orientation.setValue(newRotation);\n"
             "    camera->position = finalPosition;\n"
             "    camera->enableNotify(true);\n"
-            "    camera->touch();"
+            "    camera->touch();",
         ),
     ]
 
@@ -172,13 +176,16 @@ def patch_process_motion_event(source_dir):
             content = content.replace(old, new, 1)
             with open(filepath, "w") as f:
                 f.write(content)
-            print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Batched camera updates applied")
+            print(
+                f"  DONE: {os.path.relpath(filepath, source_dir)} - Batched camera updates applied"
+            )
             return True
 
-    print(f"  FAIL: Could not find processMotionEvent camera update pattern in")
+    print("  FAIL: Could not find processMotionEvent camera update pattern in")
     print(f"        {os.path.relpath(filepath, source_dir)}")
-    print(f"        The code may have changed in this FreeCAD version.")
+    print("        The code may have changed in this FreeCAD version.")
     return False
+
 
 # ---------------------------------------------------------------------------
 # Fix 3: Per-axis deadzone (PR #28110)
@@ -202,9 +209,9 @@ def patch_per_axis_deadzone(source_dir):
         print("  SKIP: GuiNativeEventLinux.h not found")
         return False
 
-    with open(cpp_path, "r") as f:
+    with open(cpp_path) as f:
         cpp = f.read()
-    with open(h_path, "r") as f:
+    with open(h_path) as f:
         header = f.read()
 
     if "DeadzoneCache" in cpp:
@@ -212,33 +219,31 @@ def patch_per_axis_deadzone(source_dir):
         return True
 
     if "hasMotion" not in cpp:
-        print(f"  FAIL: Event coalescing patch must be applied first")
+        print("  FAIL: Event coalescing patch must be applied first")
         return False
 
     # --- Patch header: add forward declaration, include, and member ---
 
     # Add #include <memory> if missing
-    if '#include <memory>' not in header:
+    if "#include <memory>" not in header:
         header = header.replace(
             '#include "GuiAbstractNativeEvent.h"',
             '#include "GuiAbstractNativeEvent.h"\n#include <memory>',
-            1
+            1,
         )
 
     # Add forward declaration of DeadzoneCache
-    if 'class DeadzoneCache;' not in header:
+    if "class DeadzoneCache;" not in header:
         header = header.replace(
-            'class GUIApplicationNativeEventAware;',
-            'class GUIApplicationNativeEventAware;\nclass DeadzoneCache;',
-            1
+            "class GUIApplicationNativeEventAware;",
+            "class GUIApplicationNativeEventAware;\nclass DeadzoneCache;",
+            1,
         )
 
     # Add unique_ptr<DeadzoneCache> member before "private Q_SLOTS:"
-    if 'unique_ptr<DeadzoneCache>' not in header:
+    if "unique_ptr<DeadzoneCache>" not in header:
         header = header.replace(
-            'private Q_SLOTS:',
-            '    std::unique_ptr<DeadzoneCache> dzCache;\n\nprivate Q_SLOTS:',
-            1
+            "private Q_SLOTS:", "    std::unique_ptr<DeadzoneCache> dzCache;\n\nprivate Q_SLOTS:", 1
         )
 
     with open(h_path, "w") as f:
@@ -247,88 +252,82 @@ def patch_per_axis_deadzone(source_dir):
     # --- Patch cpp: add includes, class definition, init, and usage ---
 
     # Add required includes
-    for inc in ['<array>', '<cmath>', '<cstring>']:
-        if f'#include {inc}' not in cpp:
+    for inc in ["<array>", "<cmath>", "<cstring>"]:
+        if f"#include {inc}" not in cpp:
             cpp = cpp.replace(
-                '#include <App/Application.h>',
-                f'#include {inc}\n#include <App/Application.h>',
-                1
+                "#include <App/Application.h>", f"#include {inc}\n#include <App/Application.h>", 1
             )
-    if '#include <App/Application.h>' not in cpp:
+    if "#include <App/Application.h>" not in cpp:
         cpp = cpp.replace(
-            '#include <FCConfig.h>\n',
-            '#include <FCConfig.h>\n#include <array>\n#include <cmath>\n#include <cstring>\n#include <App/Application.h>\n',
-            1
+            "#include <FCConfig.h>\n",
+            "#include <FCConfig.h>\n#include <array>\n#include <cmath>\n#include <cstring>\n#include <App/Application.h>\n",
+            1,
         )
-    if '#include <Base/Parameter.h>' not in cpp:
+    if "#include <Base/Parameter.h>" not in cpp:
         cpp = cpp.replace(
-            '#include <Base/Console.h>',
-            '#include <Base/Console.h>\n#include <Base/Parameter.h>',
-            1
+            "#include <Base/Console.h>", "#include <Base/Console.h>\n#include <Base/Parameter.h>", 1
         )
 
     # Add Gui::DeadzoneCache class definition before the constructor
     deadzone_cache_class = (
-        '\n// Cached per-axis deadzone values, auto-updated via Observer when user.cfg changes.\n'
-        'class Gui::DeadzoneCache: public ParameterGrp::ObserverType\n'
-        '{\n'
-        'public:\n'
-        '    static constexpr std::array<const char*, 6> keys = {\n'
+        "\n// Cached per-axis deadzone values, auto-updated via Observer when user.cfg changes.\n"
+        "class Gui::DeadzoneCache: public ParameterGrp::ObserverType\n"
+        "{\n"
+        "public:\n"
+        "    static constexpr std::array<const char*, 6> keys = {\n"
         '        "PanLRDeadzone",\n'
         '        "PanUDDeadzone",\n'
         '        "ZoomDeadzone",\n'
         '        "TiltDeadzone",\n'
         '        "RollDeadzone",\n'
         '        "SpinDeadzone",\n'
-        '    };\n'
-        '\n'
-        '    std::array<int, 6> values {};\n'
-        '\n'
-        '    explicit DeadzoneCache(ParameterGrp::handle hGrp)\n'
-        '        : hGrp(std::move(hGrp))\n'
-        '    {\n'
-        '        loadAll();\n'
-        '        this->hGrp->Attach(this);\n'
-        '    }\n'
-        '\n'
-        '    ~DeadzoneCache() override\n'
-        '    {\n'
-        '        hGrp->Detach(this);\n'
-        '    }\n'
-        '\n'
-        '    void OnChange(ParameterGrp::SubjectType& /*rCaller*/,\n'
-        '                  ParameterGrp::MessageType reason) override\n'
-        '    {\n'
-        '        for (size_t i = 0; i < keys.size(); i++) {\n'
-        '            if (std::strcmp(reason, keys[i]) == 0) {\n'
-        '                values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n'
-        '                return;\n'
-        '            }\n'
-        '        }\n'
-        '    }\n'
-        '\n'
-        'private:\n'
-        '    void loadAll()\n'
-        '    {\n'
-        '        for (size_t i = 0; i < keys.size(); i++) {\n'
-        '            values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n'
-        '        }\n'
-        '    }\n'
-        '\n'
-        '    ParameterGrp::handle hGrp;\n'
-        '};\n'
+        "    };\n"
+        "\n"
+        "    std::array<int, 6> values {};\n"
+        "\n"
+        "    explicit DeadzoneCache(ParameterGrp::handle hGrp)\n"
+        "        : hGrp(std::move(hGrp))\n"
+        "    {\n"
+        "        loadAll();\n"
+        "        this->hGrp->Attach(this);\n"
+        "    }\n"
+        "\n"
+        "    ~DeadzoneCache() override\n"
+        "    {\n"
+        "        hGrp->Detach(this);\n"
+        "    }\n"
+        "\n"
+        "    void OnChange(ParameterGrp::SubjectType& /*rCaller*/,\n"
+        "                  ParameterGrp::MessageType reason) override\n"
+        "    {\n"
+        "        for (size_t i = 0; i < keys.size(); i++) {\n"
+        "            if (std::strcmp(reason, keys[i]) == 0) {\n"
+        "                values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n"
+        "                return;\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "private:\n"
+        "    void loadAll()\n"
+        "    {\n"
+        "        for (size_t i = 0; i < keys.size(); i++) {\n"
+        "            values[i] = static_cast<int>(hGrp->GetInt(keys[i], 0));\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    ParameterGrp::handle hGrp;\n"
+        "};\n"
     )
 
-    constructor_pattern = 'Gui::GuiNativeEvent::GuiNativeEvent('
+    constructor_pattern = "Gui::GuiNativeEvent::GuiNativeEvent("
     if constructor_pattern not in cpp:
-        print(f"  FAIL: Could not find GuiNativeEvent constructor in {os.path.relpath(cpp_path, source_dir)}")
+        print(
+            f"  FAIL: Could not find GuiNativeEvent constructor in {os.path.relpath(cpp_path, source_dir)}"
+        )
         return False
 
-    cpp = cpp.replace(
-        constructor_pattern,
-        deadzone_cache_class + '\n' + constructor_pattern,
-        1
-    )
+    cpp = cpp.replace(constructor_pattern, deadzone_cache_class + "\n" + constructor_pattern, 1)
 
     # Add dzCache initialization in initSpaceball() after the connect() call.
     # The notifier variable is "SpacenavNotifier" before PR #28915 and
@@ -339,40 +338,40 @@ def patch_per_axis_deadzone(source_dir):
             notifier_name = candidate
             break
     if notifier_name is None:
-        print(f"  FAIL: Could not find connect() pattern in initSpaceball()")
+        print("  FAIL: Could not find connect() pattern in initSpaceball()")
         return False
 
-    connect_pattern = f'connect({notifier_name}, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));'
+    connect_pattern = (
+        f"connect({notifier_name}, SIGNAL(activated(int)), this, SLOT(pollSpacenav()));"
+    )
     dzCache_init = (
-        f'{connect_pattern}\n'
-        '        dzCache = std::make_unique<DeadzoneCache>(\n'
-        '            App::GetApplication().GetParameterGroupByPath(\n'
+        f"{connect_pattern}\n"
+        "        dzCache = std::make_unique<DeadzoneCache>(\n"
+        "            App::GetApplication().GetParameterGroupByPath(\n"
         '                "User parameter:BaseApp/Spaceball/Motion"\n'
-        '            )\n'
-        '        );'
+        "            )\n"
+        "        );"
     )
     cpp = cpp.replace(connect_pattern, dzCache_init, 1)
 
     # Replace the simple "if (hasMotion) { postMotionEvent }" block
     old_motion_block = (
-        "    if (hasMotion) {\n"
-        "        mainApp->postMotionEvent(motionDataArray);\n"
-        "    }"
+        "    if (hasMotion) {\n        mainApp->postMotionEvent(motionDataArray);\n    }"
     )
     new_motion_block = (
-        '    if (hasMotion) {\n'
-        '        // Per-axis deadzone: zero out axes below their individual threshold.\n'
-        '        // Values cached and auto-updated via Observer when user.cfg changes.\n'
-        '        if (dzCache) {\n'
-        '            for (size_t i = 0; i < dzCache->values.size(); i++) {\n'
-        '                int dz = dzCache->values[i];\n'
-        '                if (dz > 0 && std::abs(motionDataArray[i]) < dz) {\n'
-        '                    motionDataArray[i] = 0;\n'
-        '                }\n'
-        '            }\n'
-        '        }\n'
-        '        mainApp->postMotionEvent(motionDataArray);\n'
-        '    }'
+        "    if (hasMotion) {\n"
+        "        // Per-axis deadzone: zero out axes below their individual threshold.\n"
+        "        // Values cached and auto-updated via Observer when user.cfg changes.\n"
+        "        if (dzCache) {\n"
+        "            for (size_t i = 0; i < dzCache->values.size(); i++) {\n"
+        "                int dz = dzCache->values[i];\n"
+        "                if (dz > 0 && std::abs(motionDataArray[i]) < dz) {\n"
+        "                    motionDataArray[i] = 0;\n"
+        "                }\n"
+        "            }\n"
+        "        }\n"
+        "        mainApp->postMotionEvent(motionDataArray);\n"
+        "    }"
     )
 
     if old_motion_block not in cpp:
@@ -384,8 +383,11 @@ def patch_per_axis_deadzone(source_dir):
     with open(cpp_path, "w") as f:
         f.write(cpp)
 
-    print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - Per-axis deadzone with member Observer cache applied")
+    print(
+        f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - Per-axis deadzone with member Observer cache applied"
+    )
     return True
+
 
 # ---------------------------------------------------------------------------
 # Fix 4: Button selection sync (#17812)
@@ -403,7 +405,7 @@ def patch_button_select(source_dir):
         print("  SKIP: DlgCustomizeSpaceball.cpp not found")
         return False
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     if "this->setCurrentIndex(idx)" in content:
@@ -428,8 +430,10 @@ def patch_button_select(source_dir):
     )
 
     if old not in content:
-        print(f"  FAIL: Could not find selectButton pattern in {os.path.relpath(filepath, source_dir)}")
-        print(f"        The code may have changed in this FreeCAD version.")
+        print(
+            f"  FAIL: Could not find selectButton pattern in {os.path.relpath(filepath, source_dir)}"
+        )
+        print("        The code may have changed in this FreeCAD version.")
         return False
 
     content = content.replace(old, new, 1)
@@ -439,6 +443,7 @@ def patch_button_select(source_dir):
 
     print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button selection sync applied")
     return True
+
 
 # ---------------------------------------------------------------------------
 # Fix 5: Checkable action invoke (#10073)
@@ -458,6 +463,7 @@ def patch_button_invoke(source_dir):
     ok_navlib = _patch_button_invoke_navlib(source_dir)
     return ok_main and ok_navlib
 
+
 def _patch_button_invoke_mainwindow(source_dir):
     """Fix 5a: SpaceBall button handler in MainWindow.cpp (Linux/spnav)."""
     filepath = find_file(source_dir, "MainWindow.cpp")
@@ -465,38 +471,43 @@ def _patch_button_invoke_mainwindow(source_dir):
         print("  FAIL: MainWindow.cpp not found")
         return False
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     # Check if already patched
-    if "cmd->invoke(1);" in content and "getCommandByName(\n                    commandName" in content:
+    if (
+        "cmd->invoke(1);" in content
+        and "getCommandByName(\n                    commandName" in content
+    ):
         print(f"  OK:   {os.path.relpath(filepath, source_dir)} (already patched)")
         return True
 
     old = (
-        '            if (commandName.empty()) {\n'
-        '                return true;\n'
-        '            }\n'
-        '            else {\n'
-        '                Application::Instance->commandManager().runCommandByName(commandName.c_str());\n'
-        '            }'
+        "            if (commandName.empty()) {\n"
+        "                return true;\n"
+        "            }\n"
+        "            else {\n"
+        "                Application::Instance->commandManager().runCommandByName(commandName.c_str());\n"
+        "            }"
     )
     new = (
-        '            if (commandName.empty()) {\n'
-        '                return true;\n'
-        '            }\n'
-        '            else {\n'
-        '                Command* cmd = Application::Instance->commandManager().getCommandByName(\n'
-        '                    commandName.c_str());\n'
-        '                if (cmd) {\n'
-        '                    cmd->invoke(1);\n'
-        '                }\n'
-        '            }'
+        "            if (commandName.empty()) {\n"
+        "                return true;\n"
+        "            }\n"
+        "            else {\n"
+        "                Command* cmd = Application::Instance->commandManager().getCommandByName(\n"
+        "                    commandName.c_str());\n"
+        "                if (cmd) {\n"
+        "                    cmd->invoke(1);\n"
+        "                }\n"
+        "            }"
     )
 
     if old not in content:
-        print(f"  FAIL: Could not find SpaceBall button handler pattern in {os.path.relpath(filepath, source_dir)}")
-        print(f"        (looking for runCommandByName near commandName.empty())")
+        print(
+            f"  FAIL: Could not find SpaceBall button handler pattern in {os.path.relpath(filepath, source_dir)}"
+        )
+        print("        (looking for runCommandByName near commandName.empty())")
         return False
 
     content = content.replace(old, new, 1)
@@ -506,6 +517,7 @@ def _patch_button_invoke_mainwindow(source_dir):
 
     print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button invoke(1) applied")
     return True
+
 
 def _patch_button_invoke_navlib(source_dir):
     """Fix 5b: SpaceBall button handler in NavlibCmds.cpp (Windows/macOS)."""
@@ -514,7 +526,7 @@ def _patch_button_invoke_navlib(source_dir):
         print("  SKIP: NavlibCmds.cpp not found (NavLib not available?)")
         return True  # Not a failure — NavLib may not be present
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     # Check if already patched
@@ -522,22 +534,21 @@ def _patch_button_invoke_navlib(source_dir):
         print(f"  OK:   {os.path.relpath(filepath, source_dir)} (already patched)")
         return True
 
-    old = (
-        '    else\n'
-        '        commandManager.runCommandByName(parsedData.commandName.c_str());'
-    )
+    old = "    else\n        commandManager.runCommandByName(parsedData.commandName.c_str());"
     new = (
-        '    else {\n'
-        '        Gui::Command* cmd = commandManager.getCommandByName(parsedData.commandName.c_str());\n'
-        '        if (cmd) {\n'
-        '            cmd->invoke(1);\n'
-        '        }\n'
-        '    }'
+        "    else {\n"
+        "        Gui::Command* cmd = commandManager.getCommandByName(parsedData.commandName.c_str());\n"
+        "        if (cmd) {\n"
+        "            cmd->invoke(1);\n"
+        "        }\n"
+        "    }"
     )
 
     if old not in content:
-        print(f"  FAIL: Could not find NavLib button handler pattern in {os.path.relpath(filepath, source_dir)}")
-        print(f"        (looking for commandManager.runCommandByName(parsedData.commandName))")
+        print(
+            f"  FAIL: Could not find NavLib button handler pattern in {os.path.relpath(filepath, source_dir)}"
+        )
+        print("        (looking for commandManager.runCommandByName(parsedData.commandName))")
         return False
 
     content = content.replace(old, new, 1)
@@ -547,6 +558,7 @@ def _patch_button_invoke_navlib(source_dir):
 
     print(f"  DONE: {os.path.relpath(filepath, source_dir)} - Button invoke(1) applied")
     return True
+
 
 # ---------------------------------------------------------------------------
 # Fix 6: spnav disconnect detection (#17809)
@@ -572,45 +584,44 @@ def patch_spnav_disconnect(source_dir):
         print("  SKIP: GuiNativeEventLinux.h not found")
         return False
 
-    with open(cpp_path, "r") as f:
+    with open(cpp_path) as f:
         cpp = f.read()
-    with open(h_path, "r") as f:
+    with open(h_path) as f:
         header = f.read()
 
     if "spnavNotifier" in cpp:
-        print(f"  OK:   {os.path.relpath(cpp_path, source_dir)} (disconnect detection already patched)")
+        print(
+            f"  OK:   {os.path.relpath(cpp_path, source_dir)} (disconnect detection already patched)"
+        )
         return True
 
     if "hasMotion" not in cpp:
-        print(f"  FAIL: Event coalescing patch (Fix 1) must be applied first")
+        print("  FAIL: Event coalescing patch (Fix 1) must be applied first")
         return False
 
     # --- Patch header ---
 
     # Add QSocketNotifier forward declaration
-    if 'class QSocketNotifier;' not in header:
+    if "class QSocketNotifier;" not in header:
         header = header.replace(
-            'class QMainWindow;',
-            'class QMainWindow;\nclass QSocketNotifier;',
-            1
+            "class QMainWindow;", "class QMainWindow;\nclass QSocketNotifier;", 1
         )
 
     # Add spnavNotifier member
-    if 'spnavNotifier' not in header:
+    if "spnavNotifier" not in header:
         # Insert before "private Q_SLOTS:" or after dzCache if present
-        if 'std::unique_ptr<DeadzoneCache> dzCache;' in header:
+        if "std::unique_ptr<DeadzoneCache> dzCache;" in header:
             header = header.replace(
-                '    std::unique_ptr<DeadzoneCache> dzCache;',
-                '    std::unique_ptr<DeadzoneCache> dzCache;\n'
-                '    QSocketNotifier* spnavNotifier {nullptr};',
-                1
+                "    std::unique_ptr<DeadzoneCache> dzCache;",
+                "    std::unique_ptr<DeadzoneCache> dzCache;\n"
+                "    QSocketNotifier* spnavNotifier {nullptr};",
+                1,
             )
         else:
             header = header.replace(
-                'private Q_SLOTS:',
-                '    QSocketNotifier* spnavNotifier {nullptr};\n\n'
-                'private Q_SLOTS:',
-                1
+                "private Q_SLOTS:",
+                "    QSocketNotifier* spnavNotifier {nullptr};\n\nprivate Q_SLOTS:",
+                1,
             )
 
     with open(h_path, "w") as f:
@@ -619,111 +630,113 @@ def patch_spnav_disconnect(source_dir):
     # --- Patch cpp ---
 
     # Add includes for recv/errno
-    if '#include <cerrno>' not in cpp:
+    if "#include <cerrno>" not in cpp:
         cpp = cpp.replace(
-            '#include <spnav.h>',
-            '#include <cerrno>\n#include <sys/socket.h>\n\n#include <spnav.h>',
-            1
+            "#include <spnav.h>",
+            "#include <cerrno>\n#include <sys/socket.h>\n\n#include <spnav.h>",
+            1,
         )
 
     # Rename local SpacenavNotifier to member spnavNotifier
     cpp = cpp.replace(
-        'QSocketNotifier* SpacenavNotifier\n'
-        '            = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);',
-        'spnavNotifier = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);',
-        1
+        "QSocketNotifier* SpacenavNotifier\n"
+        "            = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);",
+        "spnavNotifier = new QSocketNotifier(spnav_fd(), QSocketNotifier::Read, this);",
+        1,
     )
     # Also rename in connect() call (may have dzCache init after it)
-    cpp = cpp.replace('connect(SpacenavNotifier,', 'connect(spnavNotifier,', 1)
+    cpp = cpp.replace("connect(SpacenavNotifier,", "connect(spnavNotifier,", 1)
 
     # Update destructor: only close if connection is active
     old_dtor = (
-        'Gui::GuiNativeEvent::~GuiNativeEvent()\n'
-        '{\n'
-        '    if (spnav_close()) {\n'
+        "Gui::GuiNativeEvent::~GuiNativeEvent()\n"
+        "{\n"
+        "    if (spnav_close()) {\n"
         '        Base::Console().log("Couldn\'t disconnect from spacenav daemon\\n");\n'
-        '    }\n'
-        '    else {\n'
+        "    }\n"
+        "    else {\n"
         '        Base::Console().log("Disconnected from spacenav daemon\\n");\n'
-        '    }\n'
-        '}'
+        "    }\n"
+        "}"
     )
     new_dtor = (
-        'Gui::GuiNativeEvent::~GuiNativeEvent()\n'
-        '{\n'
-        '    if (spnavNotifier) {\n'
-        '        if (spnav_close()) {\n'
+        "Gui::GuiNativeEvent::~GuiNativeEvent()\n"
+        "{\n"
+        "    if (spnavNotifier) {\n"
+        "        if (spnav_close()) {\n"
         '            Base::Console().log("Couldn\'t disconnect from spacenav daemon\\n");\n'
-        '        }\n'
-        '        else {\n'
+        "        }\n"
+        "        else {\n"
         '            Base::Console().log("Disconnected from spacenav daemon\\n");\n'
-        '        }\n'
-        '    }\n'
-        '}'
+        "        }\n"
+        "    }\n"
+        "}"
     )
 
     if old_dtor not in cpp:
-        print(f"  FAIL: Could not find destructor pattern in {os.path.relpath(cpp_path, source_dir)}")
+        print(
+            f"  FAIL: Could not find destructor pattern in {os.path.relpath(cpp_path, source_dir)}"
+        )
         return False
 
     cpp = cpp.replace(old_dtor, new_dtor, 1)
 
     # Add 'bool gotEvent = false;' after 'bool hasMotion = false;'
-    if 'bool gotEvent = false;' not in cpp:
+    if "bool gotEvent = false;" not in cpp:
         cpp = cpp.replace(
-            '    bool hasMotion = false;\n',
-            '    bool hasMotion = false;\n    bool gotEvent = false;\n\n',
-            1
+            "    bool hasMotion = false;\n",
+            "    bool hasMotion = false;\n    bool gotEvent = false;\n\n",
+            1,
         )
 
     # Add 'gotEvent = true;' at the top of the while loop body
     cpp = cpp.replace(
-        '    while (spnav_poll_event(&ev)) {\n        switch (ev.type) {',
-        '    while (spnav_poll_event(&ev)) {\n        gotEvent = true;\n        switch (ev.type) {',
-        1
+        "    while (spnav_poll_event(&ev)) {\n        switch (ev.type) {",
+        "    while (spnav_poll_event(&ev)) {\n        gotEvent = true;\n        switch (ev.type) {",
+        1,
     )
 
     # Add EOF detection block after the if(hasMotion) block, before the function-closing brace.
     # Anchor to the moc include to ensure we match the right closing brace.
     eof_block = (
-        '\n'
-        '    if (!gotEvent) {\n'
-        '        // QSocketNotifier fired but no events were available.\n'
-        '        // Verify the connection is still alive using a non-consuming peek.\n'
-        '        int fd = spnav_fd();\n'
-        '        if (fd >= 0) {\n'
-        '            char buf;\n'
-        '            ssize_t ret = recv(fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);\n'
-        '            if (ret == 0 || (ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {\n'
-        '                // EOF or socket error — spacenavd disconnected\n'
-        '                Base::Console().warning(\n'
+        "\n"
+        "    if (!gotEvent) {\n"
+        "        // QSocketNotifier fired but no events were available.\n"
+        "        // Verify the connection is still alive using a non-consuming peek.\n"
+        "        int fd = spnav_fd();\n"
+        "        if (fd >= 0) {\n"
+        "            char buf;\n"
+        "            ssize_t ret = recv(fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);\n"
+        "            if (ret == 0 || (ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {\n"
+        "                // EOF or socket error — spacenavd disconnected\n"
+        "                Base::Console().warning(\n"
         '                    "Lost connection to spacenav daemon. Restart FreeCAD to reconnect.\\n");\n'
-        '                spnavNotifier->setEnabled(false);\n'
-        '                spnav_close();\n'
-        '                spnavNotifier = nullptr;\n'
-        '            }\n'
-        '        }\n'
-        '    }\n'
+        "                spnavNotifier->setEnabled(false);\n"
+        "                spnav_close();\n"
+        "                spnavNotifier = nullptr;\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
     )
 
     old_end = (
-        '        mainApp->postMotionEvent(motionDataArray);\n'
-        '    }\n'
-        '}\n'
-        '\n'
+        "        mainApp->postMotionEvent(motionDataArray);\n"
+        "    }\n"
+        "}\n"
+        "\n"
         '#include "3Dconnexion/moc_GuiNativeEventLinux.cpp"'
     )
     new_end = (
-        '        mainApp->postMotionEvent(motionDataArray);\n'
-        '    }\n'
-        + eof_block +
-        '}\n'
-        '\n'
+        "        mainApp->postMotionEvent(motionDataArray);\n"
+        "    }\n" + eof_block + "}\n"
+        "\n"
         '#include "3Dconnexion/moc_GuiNativeEventLinux.cpp"'
     )
 
     if old_end not in cpp:
-        print(f"  FAIL: Could not find pollSpacenav end pattern for EOF block in {os.path.relpath(cpp_path, source_dir)}")
+        print(
+            f"  FAIL: Could not find pollSpacenav end pattern for EOF block in {os.path.relpath(cpp_path, source_dir)}"
+        )
         return False
 
     cpp = cpp.replace(old_end, new_end, 1)
@@ -731,7 +744,9 @@ def patch_spnav_disconnect(source_dir):
     with open(cpp_path, "w") as f:
         f.write(cpp)
 
-    print(f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - spnav disconnect detection applied")
+    print(
+        f"  DONE: {os.path.relpath(cpp_path, source_dir)} + {os.path.relpath(h_path, source_dir)} - spnav disconnect detection applied"
+    )
     return True
 
 
@@ -754,7 +769,7 @@ def patch_spaceball_reset(source_dir):
         print("  SKIP: DlgCustomizeSpaceball.cpp not found")
         return False
 
-    with open(cpp_path, "r") as f:
+    with open(cpp_path) as f:
         cpp = f.read()
 
     if "beginResetModel" in cpp:
@@ -762,30 +777,32 @@ def patch_spaceball_reset(source_dir):
         return True
 
     old_loadconfig = (
-        'void ButtonModel::loadConfig(const char* RequiredDeviceName)\n'
-        '{\n'
-        '    goClear();\n'
-        '    if (!RequiredDeviceName) {\n'
-        '        return;\n'
-        '    }\n'
-        '    load3DConnexionButtons(RequiredDeviceName);\n'
-        '}'
+        "void ButtonModel::loadConfig(const char* RequiredDeviceName)\n"
+        "{\n"
+        "    goClear();\n"
+        "    if (!RequiredDeviceName) {\n"
+        "        return;\n"
+        "    }\n"
+        "    load3DConnexionButtons(RequiredDeviceName);\n"
+        "}"
     )
 
     new_loadconfig = (
-        'void ButtonModel::loadConfig(const char* RequiredDeviceName)\n'
-        '{\n'
-        '    beginResetModel();\n'
-        '    spaceballButtonGroup()->Clear();\n'
-        '    if (RequiredDeviceName) {\n'
-        '        load3DConnexionButtons(RequiredDeviceName);\n'
-        '    }\n'
-        '    endResetModel();\n'
-        '}'
+        "void ButtonModel::loadConfig(const char* RequiredDeviceName)\n"
+        "{\n"
+        "    beginResetModel();\n"
+        "    spaceballButtonGroup()->Clear();\n"
+        "    if (RequiredDeviceName) {\n"
+        "        load3DConnexionButtons(RequiredDeviceName);\n"
+        "    }\n"
+        "    endResetModel();\n"
+        "}"
     )
 
     if old_loadconfig not in cpp:
-        print(f"  FAIL: Could not find loadConfig pattern in {os.path.relpath(cpp_path, source_dir)}")
+        print(
+            f"  FAIL: Could not find loadConfig pattern in {os.path.relpath(cpp_path, source_dir)}"
+        )
         return False
 
     cpp = cpp.replace(old_loadconfig, new_loadconfig, 1)
@@ -829,8 +846,8 @@ def main():
     spnav_file = find_file(source_dir, "GuiNativeEventLinux.cpp")
 
     if not nav_file and not spnav_file:
-        print(f"Error: This doesn't look like a FreeCAD source directory.")
-        print(f"       Could not find NavigationStyle.cpp or GuiNativeEventLinux.cpp")
+        print("Error: This doesn't look like a FreeCAD source directory.")
+        print("       Could not find NavigationStyle.cpp or GuiNativeEventLinux.cpp")
         sys.exit(1)
 
     if check_only:
@@ -873,7 +890,10 @@ def main():
             # Fix 2: Batched camera updates
             if "enableNotify(false)" in c:
                 print(f"  OK: {rel} batched camera updates already patched")
-            elif "camera->orientation.setValue(newRotation)" in c and "camera->orientation.getValue().multVec(dir" in c:
+            elif (
+                "camera->orientation.setValue(newRotation)" in c
+                and "camera->orientation.getValue().multVec(dir" in c
+            ):
                 print(f"  OK: {rel} batched camera updates can be patched")
             else:
                 print(f"  WARN: {rel} - batched camera updates pattern not found")
@@ -951,6 +971,7 @@ def main():
     else:
         print("Some patches failed. See errors above.")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -30,7 +30,7 @@ enum desktop_env {
 	DE_UNKNOWN = 0,
 	DE_KDE,
 	DE_GNOME,
-	DE_XFCE_X11,    /* XFCE, Cinnamon, MATE, LXQt, Pantheon, Budgie, generic X11 */
+	DE_XFCE_X11, /* XFCE, Cinnamon, MATE, LXQt, Pantheon, Budgie, generic X11 */
 	DE_SWAY,
 	DE_HYPRLAND,
 };

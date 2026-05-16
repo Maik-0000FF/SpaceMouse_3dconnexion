@@ -68,6 +68,14 @@ lint-c:
 	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c -- $$CFLAGS_TIDY; \
 	clang-tidy --quiet tests/test_*.c -- -I. -std=gnu11
 
+# clang-format check: fail if any source needs reformatting. Counterpart
+# to `make format` at the repo root which actually applies the changes.
+format-check:
+	clang-format --dry-run --Werror spacemouse-desktop.c spacemouse-core.c spacemouse-core.h tests/test_*.c
+
+format:
+	clang-format -i spacemouse-desktop.c spacemouse-core.c spacemouse-core.h tests/test_*.c
+
 clean:
 	rm -f $(TARGETS) spacemouse-core.o $(TEST_BINS)
 
@@ -76,4 +84,4 @@ install: all
 	install -Dm755 spacemouse-test $(DESTDIR)$(HOME)/.local/bin/spacemouse-test
 	install -Dm755 ../gui/spacemouse-config.py $(DESTDIR)$(HOME)/.local/bin/spacemouse-config.py
 
-.PHONY: all clean install test lint-c
+.PHONY: all clean install test lint-c format format-check

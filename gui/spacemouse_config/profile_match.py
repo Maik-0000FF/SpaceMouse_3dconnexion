@@ -19,8 +19,6 @@ def find_matching_profile(wm_class, profiles):
             continue
         for wc in profile.get("match_wm_class", []):
             wc_lower = wc.lower()
-            if (wc_lower == wm_lower or
-                wm_lower.startswith(wc_lower) or
-                wc_lower in wm_lower):
+            if wc_lower == wm_lower or wm_lower.startswith(wc_lower) or wc_lower in wm_lower:
                 return name
     return "default"

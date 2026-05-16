@@ -3,9 +3,7 @@
 import xml.etree.ElementTree as ET
 
 import pytest
-
 from spacemouse_config.backends import FreeCADConfig
-
 
 MINIMAL_USER_CFG = """<?xml version="1.0" encoding="utf-8"?>
 <FCParameters>
@@ -89,8 +87,12 @@ def test_write_then_read_roundtrip(cfg):
         "global_sensitivity": -42,
         "flip_yz": False,
         "dominant": True,
-        "panlr_enable": False, "panlr_reverse": True, "panlr_deadzone": 99,
-        "zoom_enable": True, "zoom_reverse": False, "zoom_deadzone": 7,
+        "panlr_enable": False,
+        "panlr_reverse": True,
+        "panlr_deadzone": 99,
+        "zoom_enable": True,
+        "zoom_reverse": False,
+        "zoom_deadzone": 7,
         "btn0_command": "Std_OrthographicCamera",
         "btn1_command": "Std_PerspectiveCamera",
         "nav_style": "Gui::CADNavigationStyle",
@@ -119,11 +121,12 @@ def test_write_creates_missing_groups(tmp_path):
     bare = tmp_path / "user.cfg"
     bare.write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<FCParameters>\n'
+        "<FCParameters>\n"
         '  <FCParamGroup Name="Root">\n'
         '    <FCParamGroup Name="BaseApp"/>\n'
-        '  </FCParamGroup>\n'
-        '</FCParameters>\n')
+        "  </FCParamGroup>\n"
+        "</FCParameters>\n"
+    )
     c = FreeCADConfig()
     c.path = bare
     assert c.write({"btn0_command": "Std_Fit"}) is True

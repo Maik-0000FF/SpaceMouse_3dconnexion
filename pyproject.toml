@@ -1,0 +1,44 @@
+# Project-wide Python tooling configuration. Keeps ruff (formatter +
+# linter) and pytest in one place; intentionally not declaring this as
+# an installable package — the GUI ships as a script under
+# ~/.local/bin/, not as a wheel.
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = [".pytest_cache"]
+
+[tool.ruff.lint]
+# Curated check set — every family must catch real bugs or surface
+# concrete quality issues, not style preferences.
+#
+# E, W   — pycodestyle errors and warnings
+# F      — pyflakes (undefined names, unused imports)
+# I      — isort (import ordering)
+# B      — flake8-bugbear (likely bugs)
+# UP     — pyupgrade (dated syntax that newer Python obsoletes)
+# SIM    — flake8-simplify (redundant constructs)
+# C4     — flake8-comprehensions
+# RUF    — ruff-native checks
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "RUF"]
+
+# B008   — function calls in argument defaults (PySide6 widgets do this
+#          routinely and there is no clean alternative)
+# E501   — long lines — already enforced by formatter, skip the lint
+# UP007  — `Optional[X]` -> `X | None` (still chasing py3.9 compat)
+# RUF012 — mutable class defaults (PySide6 widget code uses these
+#          intentionally and the warning is noisy)
+# SIM105 — `contextlib.suppress(...)` instead of `try/except/pass`. The
+#          explicit form reads better here, especially when the suppressed
+#          subprocess errors carry comments documenting why they're benign.
+ignore = ["B008", "E501", "UP007", "RUF012", "SIM105"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra"

@@ -38,20 +38,20 @@
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-#define SPACEMOUSE_VERSION  "0.1.0"
+#define SPACEMOUSE_VERSION "0.1.0"
 
-#define MAX_PROFILES    32
-#define MAX_WM_CLASSES  8
-#define CMD_BUF_SIZE    256
-#define SOCK_BACKLOG    4
+#define MAX_PROFILES 32
+#define MAX_WM_CLASSES 8
+#define CMD_BUF_SIZE 256
+#define SOCK_BACKLOG 4
 
-#define DEFAULT_DEADZONE        15
-#define DEFAULT_SCROLL_SPEED    3.0
-#define DEFAULT_SCROLL_EXP      2.0
-#define DEFAULT_ZOOM_SPEED      2.0
-#define DEFAULT_DSWITCH_THRESH  200
+#define DEFAULT_DEADZONE 15
+#define DEFAULT_SCROLL_SPEED 3.0
+#define DEFAULT_SCROLL_EXP 2.0
+#define DEFAULT_ZOOM_SPEED 2.0
+#define DEFAULT_DSWITCH_THRESH 200
 #define DEFAULT_DSWITCH_COOL_MS 500
-#define DEFAULT_SENSITIVITY     1.0
+#define DEFAULT_SENSITIVITY 1.0
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
@@ -80,9 +80,9 @@ enum btn_action {
 	BTNACT_PLAY_PAUSE_AUTO
 };
 
-#define VOLUME_COOLDOWN_MS  80
-#define VOLUME_THRESHOLD    60
-#define KEY_PAIR_THRESHOLD  60
+#define VOLUME_COOLDOWN_MS 80
+#define VOLUME_THRESHOLD 60
+#define KEY_PAIR_THRESHOLD 60
 
 /* KEY_NAMES, struct key_name_entry, lookup_key — see spacemouse-core. */
 
@@ -95,10 +95,10 @@ struct config {
 	int dswitch_threshold;
 	int dswitch_cooldown_ms;
 	enum axis_action axis_map[6];
-	int axis_key_neg[6];   /* keycode for negative direction (ACT_KEY_PAIR only) */
-	int axis_key_pos[6];   /* keycode for positive direction (ACT_KEY_PAIR only) */
+	int axis_key_neg[6]; /* keycode for negative direction (ACT_KEY_PAIR only) */
+	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[16];
-	int btn_key[16];        /* keycode (BTNACT_KEY only) */
+	int btn_key[16]; /* keycode (BTNACT_KEY only) */
 	int invert_scroll_x;
 	int invert_scroll_y;
 	double sensitivity;
@@ -109,7 +109,7 @@ struct profile {
 	char *wm_classes[MAX_WM_CLASSES];
 	int wm_class_count;
 	struct config cfg;
-	int passthrough; /* 1 if all axes+buttons are none → skip event processing */
+	int passthrough;  /* 1 if all axes+buttons are none → skip event processing */
 	int browser_keys; /* 1 if smart actions should send Space/Arrow keys */
 };
 
@@ -137,8 +137,16 @@ static enum desktop_env g_de = DE_UNKNOWN;
 
 /* ── Signal handlers ────────────────────────────────────────────────── */
 
-static void on_sigterm(int sig) { (void)sig; g_running = 0; }
-static void on_sighup(int sig)  { (void)sig; g_reload = 1; }
+static void on_sigterm(int sig)
+{
+	(void)sig;
+	g_running = 0;
+}
+static void on_sighup(int sig)
+{
+	(void)sig;
+	g_reload = 1;
+}
 
 /* ── Time helpers ───────────────────────────────────────────────────── */
 
@@ -185,7 +193,7 @@ static int uinput_open(void)
 	struct uinput_setup usetup;
 	memset(&usetup, 0, sizeof(usetup));
 	usetup.id.bustype = BUS_VIRTUAL;
-	usetup.id.vendor = 0x1209;   /* pid.codes assigned for testing */
+	usetup.id.vendor = 0x1209; /* pid.codes assigned for testing */
 	usetup.id.product = 0x000a;
 	/* Avoid the literal string "SpaceMouse" so spacenavd's autodetect
 	 * does not bind to this virtual scroll-wheel device. */
@@ -239,7 +247,8 @@ static void emit_scroll(int fd, int dx, int dy)
 
 static void emit_key_tap(int fd, int code)
 {
-	if (fd < 0) return;
+	if (fd < 0)
+		return;
 	emit_event(fd, EV_KEY, code, 1);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 	emit_event(fd, EV_KEY, code, 0);
@@ -251,7 +260,8 @@ static void emit_key_tap(int fd, int code)
  * instead of D-Bus. n_mods may be 0 — then this degenerates to emit_key_tap. */
 static void emit_key_combo(int fd, const int *mods, int n_mods, int key)
 {
-	if (fd < 0) return;
+	if (fd < 0)
+		return;
 	for (int i = 0; i < n_mods; i++)
 		emit_event(fd, EV_KEY, mods[i], 1);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
@@ -281,7 +291,8 @@ static void spawn_command(char *const argv[])
 			dup2(devnull, STDIN_FILENO);
 			dup2(devnull, STDOUT_FILENO);
 			dup2(devnull, STDERR_FILENO);
-			if (devnull > STDERR_FILENO) close(devnull);
+			if (devnull > STDERR_FILENO)
+				close(devnull);
 		}
 		execvp(argv[0], argv);
 		_exit(127);
@@ -290,7 +301,8 @@ static void spawn_command(char *const argv[])
 
 static void emit_zoom(int fd, int dz)
 {
-	if (dz == 0) return;
+	if (dz == 0)
+		return;
 	emit_event(fd, EV_KEY, KEY_LEFTCTRL, 1);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 	emit_event(fd, EV_REL, REL_WHEEL, dz);
@@ -335,10 +347,12 @@ static void dbus_ensure_connected(void)
 
 static void dbus_call_kwin(DBusConnection *conn, const char *method)
 {
-	if (!conn || !dbus_connection_get_is_connected(conn)) return;
-	DBusMessage *msg = dbus_message_new_method_call(
-		"org.kde.KWin", "/KWin", "org.kde.KWin", method);
-	if (!msg) return;
+	if (!conn || !dbus_connection_get_is_connected(conn))
+		return;
+	DBusMessage *msg =
+		dbus_message_new_method_call("org.kde.KWin", "/KWin", "org.kde.KWin", method);
+	if (!msg)
+		return;
 	dbus_message_set_no_reply(msg, TRUE);
 	if (!dbus_connection_send(conn, msg, NULL)) {
 		fprintf(stderr, "spacemouse-desktop: D-Bus send failed: %s\n", method);
@@ -351,11 +365,13 @@ static void dbus_call_kwin(DBusConnection *conn, const char *method)
 
 static void dbus_call_kglobalaccel(DBusConnection *conn, const char *shortcut)
 {
-	if (!conn || !dbus_connection_get_is_connected(conn)) return;
-	DBusMessage *msg = dbus_message_new_method_call(
-		"org.kde.kglobalaccel", "/component/kwin",
-		"org.kde.kglobalaccel.Component", "invokeShortcut");
-	if (!msg) return;
+	if (!conn || !dbus_connection_get_is_connected(conn))
+		return;
+	DBusMessage *msg =
+		dbus_message_new_method_call("org.kde.kglobalaccel", "/component/kwin",
+					     "org.kde.kglobalaccel.Component", "invokeShortcut");
+	if (!msg)
+		return;
 	dbus_message_append_args(msg, DBUS_TYPE_STRING, &shortcut, DBUS_TYPE_INVALID);
 	dbus_message_set_no_reply(msg, TRUE);
 	if (!dbus_connection_send(conn, msg, NULL)) {
@@ -385,18 +401,16 @@ static void desktop_action_workspace(int direction)
 	case DE_KDE:
 		dbus_ensure_connected();
 		if (g_dbus)
-			dbus_call_kwin(g_dbus,
-				direction > 0 ? "nextDesktop" : "previousDesktop");
+			dbus_call_kwin(g_dbus, direction > 0 ? "nextDesktop" : "previousDesktop");
 		break;
 	case DE_SWAY: {
-		char *argv[] = { "swaymsg", "workspace",
-			direction > 0 ? "next" : "prev", NULL };
+		char *argv[] = {"swaymsg", "workspace", direction > 0 ? "next" : "prev", NULL};
 		spawn_command(argv);
 		break;
 	}
 	case DE_HYPRLAND: {
-		char *argv[] = { "hyprctl", "dispatch", "workspace",
-			direction > 0 ? "+1" : "-1", NULL };
+		char *argv[] = {"hyprctl", "dispatch", "workspace", direction > 0 ? "+1" : "-1",
+				NULL};
 		spawn_command(argv);
 		break;
 	}
@@ -404,9 +418,8 @@ static void desktop_action_workspace(int direction)
 		/* GNOME: Super+Page_Down/Up. Note: under default GNOME 40+ the
 		 * workspace layout is horizontal, but the keyboard shortcuts
 		 * keep the historical Page_Down/Up names. */
-		int mods[] = { KEY_LEFTMETA };
-		emit_key_combo(g_uinput_fd, mods, 1,
-			direction > 0 ? KEY_PAGEDOWN : KEY_PAGEUP);
+		int mods[] = {KEY_LEFTMETA};
+		emit_key_combo(g_uinput_fd, mods, 1, direction > 0 ? KEY_PAGEDOWN : KEY_PAGEUP);
 		break;
 	}
 	case DE_XFCE_X11:
@@ -414,9 +427,8 @@ static void desktop_action_workspace(int direction)
 	default: {
 		/* XFCE / Cinnamon / MATE / LXQt and unknown desktops:
 		 * Ctrl+Alt+Right/Left is the long-standing X11 default. */
-		int mods[] = { KEY_LEFTCTRL, KEY_LEFTALT };
-		emit_key_combo(g_uinput_fd, mods, 2,
-			direction > 0 ? KEY_RIGHT : KEY_LEFT);
+		int mods[] = {KEY_LEFTCTRL, KEY_LEFTALT};
+		emit_key_combo(g_uinput_fd, mods, 2, direction > 0 ? KEY_RIGHT : KEY_LEFT);
 		break;
 	}
 	}
@@ -445,18 +457,17 @@ static void desktop_action_show_desktop(int *state)
 	switch (g_de) {
 	case DE_KDE: {
 		dbus_ensure_connected();
-		if (!g_dbus) break;
+		if (!g_dbus)
+			break;
 		*state = !*state;
-		DBusMessage *msg = dbus_message_new_method_call(
-			"org.kde.KWin", "/KWin",
-			"org.kde.KWin", "showDesktop");
+		DBusMessage *msg = dbus_message_new_method_call("org.kde.KWin", "/KWin",
+								"org.kde.KWin", "showDesktop");
 		if (msg) {
 			dbus_bool_t v = *state;
-			dbus_message_append_args(msg,
-				DBUS_TYPE_BOOLEAN, &v,
-				DBUS_TYPE_INVALID);
+			dbus_message_append_args(msg, DBUS_TYPE_BOOLEAN, &v, DBUS_TYPE_INVALID);
 			if (!dbus_connection_send(g_dbus, msg, NULL))
-				fprintf(stderr, "spacemouse-desktop: D-Bus send failed: showDesktop\n");
+				fprintf(stderr,
+					"spacemouse-desktop: D-Bus send failed: showDesktop\n");
 			else
 				dbus_connection_flush(g_dbus);
 			dbus_message_unref(msg);
@@ -468,7 +479,7 @@ static void desktop_action_show_desktop(int *state)
 		 * MATE. The DE itself owns the toggle state, so we don't
 		 * track *state here. */
 		(void)state;
-		int mods[] = { KEY_LEFTMETA };
+		int mods[] = {KEY_LEFTMETA};
 		emit_key_combo(g_uinput_fd, mods, 1, KEY_D);
 		break;
 	}
@@ -511,8 +522,7 @@ static int kinput_open(void)
 	char path[512] = {0};
 	struct dirent *ent;
 	while ((ent = readdir(d))) {
-		if (strstr(ent->d_name, "3Dconnexion") &&
-		    strstr(ent->d_name, "-event-")) {
+		if (strstr(ent->d_name, "3Dconnexion") && strstr(ent->d_name, "-event-")) {
 			snprintf(path, sizeof(path), "/dev/input/by-id/%s", ent->d_name);
 			break;
 		}
@@ -520,7 +530,8 @@ static int kinput_open(void)
 	closedir(d);
 
 	if (!path[0]) {
-		fprintf(stderr, "spacemouse-desktop: no 3Dconnexion event device under /dev/input/by-id\n");
+		fprintf(stderr,
+			"spacemouse-desktop: no 3Dconnexion event device under /dev/input/by-id\n");
 		return -1;
 	}
 
@@ -552,9 +563,9 @@ static int kinput_poll_event(int fd, struct kinput_event *out)
 		} else if (ie.type == EV_SYN && ie.code == SYN_REPORT) {
 			if (g_kinput_dirty) {
 				out->type = KIE_MOTION;
-				out->motion.x  = g_kinput_state[0];
-				out->motion.y  = g_kinput_state[1];
-				out->motion.z  = g_kinput_state[2];
+				out->motion.x = g_kinput_state[0];
+				out->motion.y = g_kinput_state[1];
+				out->motion.z = g_kinput_state[2];
 				out->motion.rx = g_kinput_state[3];
 				out->motion.ry = g_kinput_state[4];
 				out->motion.rz = g_kinput_state[5];
@@ -607,22 +618,28 @@ static int cmd_sock_open(const char *path)
 
 static void cmd_sock_close(int fd, const char *path)
 {
-	if (fd >= 0) close(fd);
-	if (path[0]) unlink(path);
+	if (fd >= 0)
+		close(fd);
+	if (path[0])
+		unlink(path);
 }
 
 /* Handle a single client connection: read command, send response */
 static void cmd_handle_client(int listen_fd)
 {
 	int cfd = accept(listen_fd, NULL, NULL);
-	if (cfd < 0) return;
+	if (cfd < 0)
+		return;
 
 	char buf[CMD_BUF_SIZE] = {0};
 	ssize_t n = read(cfd, buf, sizeof(buf) - 1);
-	if (n <= 0) { close(cfd); return; }
+	if (n <= 0) {
+		close(cfd);
+		return;
+	}
 
 	/* Strip trailing newline */
-	while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r'))
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
 		buf[--n] = '\0';
 
 	char response[CMD_BUF_SIZE] = {0};
@@ -642,25 +659,24 @@ static void cmd_handle_client(int listen_fd)
 			fprintf(stderr, "spacemouse-desktop: switched to profile '%s'\n",
 				g_profiles[found].name);
 		} else {
-			snprintf(response, sizeof(response), "ERR unknown profile '%.200s'\n", name);
+			snprintf(response, sizeof(response), "ERR unknown profile '%.200s'\n",
+				 name);
 		}
-	}
-	else if (strcmp(buf, "RELOAD") == 0) {
+	} else if (strcmp(buf, "RELOAD") == 0) {
 		g_reload = 1;
 		snprintf(response, sizeof(response), "OK reloading\n");
-	}
-	else if (strcmp(buf, "STATUS") == 0) {
+	} else if (strcmp(buf, "STATUS") == 0) {
 		snprintf(response, sizeof(response), "ACTIVE %s\nPROFILES",
-			g_profiles[g_active_profile].name);
+			 g_profiles[g_active_profile].name);
 		for (int i = 0; i < g_profile_count; i++) {
 			int rem = sizeof(response) - strlen(response) - 1;
-			if (rem < 2) break;
+			if (rem < 2)
+				break;
 			strncat(response, " ", rem);
 			strncat(response, g_profiles[i].name, rem - 1);
 		}
 		strncat(response, "\n", sizeof(response) - strlen(response) - 1);
-	}
-	else {
+	} else {
 		snprintf(response, sizeof(response), "ERR unknown command\n");
 	}
 
@@ -672,28 +688,45 @@ static void cmd_handle_client(int listen_fd)
 
 static enum axis_action parse_axis_action(const char *s)
 {
-	if (!s) return ACT_NONE;
-	if (strcmp(s, "scroll_h") == 0) return ACT_SCROLL_H;
-	if (strcmp(s, "scroll_v") == 0) return ACT_SCROLL_V;
-	if (strcmp(s, "zoom") == 0) return ACT_ZOOM;
-	if (strcmp(s, "desktop_switch") == 0) return ACT_DESKTOP_SWITCH;
-	if (strcmp(s, "volume") == 0) return ACT_VOLUME;
-	if (strcmp(s, "seek_auto") == 0) return ACT_SEEK_AUTO;
+	if (!s)
+		return ACT_NONE;
+	if (strcmp(s, "scroll_h") == 0)
+		return ACT_SCROLL_H;
+	if (strcmp(s, "scroll_v") == 0)
+		return ACT_SCROLL_V;
+	if (strcmp(s, "zoom") == 0)
+		return ACT_ZOOM;
+	if (strcmp(s, "desktop_switch") == 0)
+		return ACT_DESKTOP_SWITCH;
+	if (strcmp(s, "volume") == 0)
+		return ACT_VOLUME;
+	if (strcmp(s, "seek_auto") == 0)
+		return ACT_SEEK_AUTO;
 	return ACT_NONE;
 }
 
 static enum btn_action parse_btn_action(const char *s)
 {
-	if (!s) return BTNACT_NONE;
-	if (strcmp(s, "overview") == 0) return BTNACT_OVERVIEW;
-	if (strcmp(s, "show_desktop") == 0) return BTNACT_SHOW_DESKTOP;
-	if (strcmp(s, "volume_up") == 0) return BTNACT_VOLUME_UP;
-	if (strcmp(s, "volume_down") == 0) return BTNACT_VOLUME_DOWN;
-	if (strcmp(s, "mute") == 0) return BTNACT_MUTE;
-	if (strcmp(s, "play_pause") == 0) return BTNACT_PLAY_PAUSE;
-	if (strcmp(s, "next_track") == 0) return BTNACT_NEXT_TRACK;
-	if (strcmp(s, "prev_track") == 0) return BTNACT_PREV_TRACK;
-	if (strcmp(s, "play_pause_auto") == 0) return BTNACT_PLAY_PAUSE_AUTO;
+	if (!s)
+		return BTNACT_NONE;
+	if (strcmp(s, "overview") == 0)
+		return BTNACT_OVERVIEW;
+	if (strcmp(s, "show_desktop") == 0)
+		return BTNACT_SHOW_DESKTOP;
+	if (strcmp(s, "volume_up") == 0)
+		return BTNACT_VOLUME_UP;
+	if (strcmp(s, "volume_down") == 0)
+		return BTNACT_VOLUME_DOWN;
+	if (strcmp(s, "mute") == 0)
+		return BTNACT_MUTE;
+	if (strcmp(s, "play_pause") == 0)
+		return BTNACT_PLAY_PAUSE;
+	if (strcmp(s, "next_track") == 0)
+		return BTNACT_NEXT_TRACK;
+	if (strcmp(s, "prev_track") == 0)
+		return BTNACT_PREV_TRACK;
+	if (strcmp(s, "play_pause_auto") == 0)
+		return BTNACT_PLAY_PAUSE_AUTO;
 	return BTNACT_NONE;
 }
 
@@ -703,7 +736,10 @@ static void apply_axis_action(struct config *c, int idx, const char *s)
 {
 	c->axis_key_neg[idx] = 0;
 	c->axis_key_pos[idx] = 0;
-	if (!s) { c->axis_map[idx] = ACT_NONE; return; }
+	if (!s) {
+		c->axis_map[idx] = ACT_NONE;
+		return;
+	}
 	if (strncmp(s, "key_pair:", 9) == 0) {
 		const char *rest = s + 9;
 		const char *comma = strchr(rest, ',');
@@ -733,7 +769,10 @@ static void apply_axis_action(struct config *c, int idx, const char *s)
 static void apply_btn_action(struct config *c, int idx, const char *s)
 {
 	c->btn_key[idx] = 0;
-	if (!s) { c->btn_map[idx] = BTNACT_NONE; return; }
+	if (!s) {
+		c->btn_map[idx] = BTNACT_NONE;
+		return;
+	}
 	if (strncmp(s, "key:", 4) == 0) {
 		int code = lookup_key(s + 4);
 		if (code) {
@@ -784,7 +823,7 @@ static void profiles_free_all(void)
 /* Parse a single profile JSON object into a profile struct.
  * If defaults is non-NULL, inherit from it first. */
 static void parse_profile_obj(struct json_object *obj, struct profile *p,
-                              const struct config *defaults)
+			      const struct config *defaults)
 {
 	if (defaults)
 		memcpy(&p->cfg, defaults, sizeof(p->cfg));
@@ -852,10 +891,10 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 	struct json_object *wmarr;
 	if (json_object_object_get_ex(obj, "match_wm_class", &wmarr)) {
 		int n = json_object_array_length(wmarr);
-		if (n > MAX_WM_CLASSES) n = MAX_WM_CLASSES;
+		if (n > MAX_WM_CLASSES)
+			n = MAX_WM_CLASSES;
 		for (int i = 0; i < n; i++) {
-			const char *s = json_object_get_string(
-				json_object_array_get_idx(wmarr, i));
+			const char *s = json_object_get_string(json_object_array_get_idx(wmarr, i));
 			if (s)
 				p->wm_classes[p->wm_class_count++] = strdup(s);
 		}
@@ -870,11 +909,17 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 	/* Detect passthrough profiles (all axes+buttons none) — skip event processing */
 	p->passthrough = 1;
 	for (int i = 0; i < 6; i++) {
-		if (c->axis_map[i] != ACT_NONE) { p->passthrough = 0; break; }
+		if (c->axis_map[i] != ACT_NONE) {
+			p->passthrough = 0;
+			break;
+		}
 	}
 	if (p->passthrough) {
 		for (int i = 0; i < 16; i++) {
-			if (c->btn_map[i] != BTNACT_NONE) { p->passthrough = 0; break; }
+			if (c->btn_map[i] != BTNACT_NONE) {
+				p->passthrough = 0;
+				break;
+			}
 		}
 	}
 }
@@ -886,7 +931,8 @@ static int config_load_all(const char *path)
 
 	struct json_object *root = json_object_from_file(path);
 	if (!root) {
-		fprintf(stderr, "spacemouse-desktop: config not found at %s, using defaults\n", path);
+		fprintf(stderr, "spacemouse-desktop: config not found at %s, using defaults\n",
+			path);
 		snprintf(g_profiles[0].name, sizeof(g_profiles[0].name), "default");
 		config_defaults(&g_profiles[0].cfg);
 		g_profile_count = 1;
@@ -915,8 +961,8 @@ static int config_load_all(const char *path)
 				struct profile *p = &g_profiles[g_profile_count];
 				memset(p, 0, sizeof(*p));
 				snprintf(p->name, sizeof(p->name), "%s", pname);
-				parse_profile_obj(json_object_iter_peek_value(&it),
-					p, &g_profiles[0].cfg);
+				parse_profile_obj(json_object_iter_peek_value(&it), p,
+						  &g_profiles[0].cfg);
 				g_profile_count++;
 			}
 			json_object_iter_next(&it);
@@ -939,11 +985,10 @@ static int config_load_all(const char *path)
 		g_profile_count++;
 	}
 
-	fprintf(stderr, "spacemouse-desktop: loaded %d profile(s) from %s\n",
-		g_profile_count, path);
+	fprintf(stderr, "spacemouse-desktop: loaded %d profile(s) from %s\n", g_profile_count,
+		path);
 	for (int i = 0; i < g_profile_count; i++)
-		fprintf(stderr, "  [%d] %s%s (wm_classes: %d)\n",
-			i, g_profiles[i].name,
+		fprintf(stderr, "  [%d] %s%s (wm_classes: %d)\n", i, g_profiles[i].name,
 			g_profiles[i].passthrough ? " [passthrough]" : "",
 			g_profiles[i].wm_class_count);
 	return 0;
@@ -972,18 +1017,24 @@ int main(int argc, char **argv)
 	const char *home = getenv("HOME");
 
 	if (home)
-		snprintf(g_config_path, sizeof(g_config_path),
-			"%s/.config/spacemouse/config.json", home);
+		snprintf(g_config_path, sizeof(g_config_path), "%s/.config/spacemouse/config.json",
+			 home);
 	else
-		snprintf(g_config_path, sizeof(g_config_path),
-			"/etc/spacemouse-desktop.conf");
+		snprintf(g_config_path, sizeof(g_config_path), "/etc/spacemouse-desktop.conf");
 
 	int opt;
 	while ((opt = getopt(argc, argv, "fc:h")) != -1) {
 		switch (opt) {
-		case 'f': foreground = 1; break;
-		case 'c': snprintf(g_config_path, sizeof(g_config_path), "%s", optarg); break;
-		case 'h': default: usage(argv[0]); return opt == 'h' ? 0 : 1;
+		case 'f':
+			foreground = 1;
+			break;
+		case 'c':
+			snprintf(g_config_path, sizeof(g_config_path), "%s", optarg);
+			break;
+		case 'h':
+		default:
+			usage(argv[0]);
+			return opt == 'h' ? 0 : 1;
 		}
 	}
 
@@ -1031,8 +1082,7 @@ int main(int argc, char **argv)
 
 	/* Command socket */
 	uid_t uid = getuid();
-	snprintf(g_sock_path, sizeof(g_sock_path),
-		"/run/user/%u/spacemouse-cmd.sock", uid);
+	snprintf(g_sock_path, sizeof(g_sock_path), "/run/user/%u/spacemouse-cmd.sock", uid);
 	int cmd_fd = cmd_sock_open(g_sock_path);
 	if (cmd_fd < 0)
 		fprintf(stderr, "spacemouse-desktop: command socket failed\n");
@@ -1042,13 +1092,17 @@ int main(int argc, char **argv)
 	/* Daemonize */
 	if (!foreground) {
 		pid_t pid = fork();
-		if (pid < 0) { perror("fork"); goto cleanup; }
-		if (pid > 0) _exit(0);
+		if (pid < 0) {
+			perror("fork");
+			goto cleanup;
+		}
+		if (pid > 0)
+			_exit(0);
 		setsid();
 	}
 
-	fprintf(stderr, "spacemouse-desktop: running (PID %d), active profile: %s\n",
-		getpid(), g_profiles[g_active_profile].name);
+	fprintf(stderr, "spacemouse-desktop: running (PID %d), active profile: %s\n", getpid(),
+		g_profiles[g_active_profile].name);
 
 	/* State */
 	struct scroll_acc sacc;
@@ -1064,7 +1118,7 @@ int main(int argc, char **argv)
 			int old_active = g_active_profile;
 			char old_name[64];
 			snprintf(old_name, sizeof(old_name), "%s",
-				g_profiles[g_active_profile].name);
+				 g_profiles[g_active_profile].name);
 			config_load_all(g_config_path);
 			/* Try to keep same profile active after reload */
 			g_active_profile = 0;
@@ -1100,14 +1154,16 @@ int main(int argc, char **argv)
 
 		int ret = poll(fds, nfds, 100); /* 100ms timeout for signal handling */
 		if (ret < 0) {
-			if (errno == EINTR) continue;
+			if (errno == EINTR)
+				continue;
 			break;
 		}
 		if (ret == 0) {
 			/* Reconnect D-Bus if needed, drain incoming messages */
 			dbus_ensure_connected();
 			if (g_dbus && dbus_connection_get_is_connected(g_dbus))
-				while (dbus_connection_dispatch(g_dbus) == DBUS_DISPATCH_DATA_REMAINS)
+				while (dbus_connection_dispatch(g_dbus) ==
+				       DBUS_DISPATCH_DATA_REMAINS)
 					;
 			continue;
 		}
@@ -1128,34 +1184,40 @@ int main(int argc, char **argv)
 				struct config *c = &g_profiles[g_active_profile].cfg;
 
 				if (ev.type == KIE_MOTION) {
-					int axes[6] = {
-						ev.motion.x, ev.motion.y, ev.motion.z,
-						ev.motion.rx, ev.motion.ry, ev.motion.rz
-					};
+					int axes[6] = {ev.motion.x,  ev.motion.y,  ev.motion.z,
+						       ev.motion.rx, ev.motion.ry, ev.motion.rz};
 
 					for (int i = 0; i < 6; i++) {
-						int dz = c->axis_deadzone[i] > 0 ? c->axis_deadzone[i] : c->deadzone;
-						if (abs(axes[i]) < dz) continue;
+						int dz = c->axis_deadzone[i] > 0
+								 ? c->axis_deadzone[i]
+								 : c->deadzone;
+						if (abs(axes[i]) < dz)
+							continue;
 						double val;
 						switch (c->axis_map[i]) {
 						case ACT_SCROLL_H:
 							val = apply_curve(axes[i], dz,
-								c->scroll_exponent, c->scroll_speed)
-								* c->sensitivity;
-							if (c->invert_scroll_x) val = -val;
+									  c->scroll_exponent,
+									  c->scroll_speed) *
+							      c->sensitivity;
+							if (c->invert_scroll_x)
+								val = -val;
 							sacc.acc_x += val;
 							break;
 						case ACT_SCROLL_V:
 							val = apply_curve(axes[i], dz,
-								c->scroll_exponent, c->scroll_speed)
-								* c->sensitivity;
-							if (c->invert_scroll_y) val = -val;
+									  c->scroll_exponent,
+									  c->scroll_speed) *
+							      c->sensitivity;
+							if (c->invert_scroll_y)
+								val = -val;
 							sacc.acc_y -= val;
 							break;
 						case ACT_ZOOM:
 							val = apply_curve(axes[i], dz,
-								c->scroll_exponent, c->zoom_speed)
-								* c->sensitivity;
+									  c->scroll_exponent,
+									  c->zoom_speed) *
+							      c->sensitivity;
 							sacc.acc_z += val;
 							break;
 						case ACT_DESKTOP_SWITCH: {
@@ -1164,10 +1226,19 @@ int main(int argc, char **argv)
 							int val = abs(axes[i]);
 							if (val > c->dswitch_threshold &&
 							    elapsed > c->dswitch_cooldown_ms) {
-								const char *dir = axes[i] > 0 ? "next" : "prev";
-								fprintf(stderr, "spacemouse-desktop: dswitch axis=%d val=%d thresh=%d elapsed=%lldms -> %s\n",
-									i, axes[i], c->dswitch_threshold, elapsed, dir);
-								desktop_action_workspace(axes[i] > 0 ? 1 : -1);
+								const char *dir = axes[i] > 0
+											  ? "next"
+											  : "prev";
+								fprintf(stderr,
+									"spacemouse-desktop: "
+									"dswitch axis=%d val=%d "
+									"thresh=%d elapsed=%lldms "
+									"-> %s\n",
+									i, axes[i],
+									c->dswitch_threshold,
+									elapsed, dir);
+								desktop_action_workspace(
+									axes[i] > 0 ? 1 : -1);
 								last_dswitch = now;
 							}
 							break;
@@ -1179,10 +1250,15 @@ int main(int argc, char **argv)
 							if (val > VOLUME_THRESHOLD &&
 							    elapsed > VOLUME_COOLDOWN_MS) {
 								int up = axes[i] > 0;
-								fprintf(stderr, "spacemouse-desktop: volume axis=%d val=%d -> %s\n",
-									i, axes[i], up ? "up" : "down");
+								fprintf(stderr,
+									"spacemouse-desktop: "
+									"volume axis=%d val=%d -> "
+									"%s\n",
+									i, axes[i],
+									up ? "up" : "down");
 								emit_key_tap(g_uinput_fd,
-									up ? KEY_VOLUMEUP : KEY_VOLUMEDOWN);
+									     up ? KEY_VOLUMEUP
+										: KEY_VOLUMEDOWN);
 								last_volume = now;
 							}
 							break;
@@ -1193,10 +1269,14 @@ int main(int argc, char **argv)
 							int val = abs(axes[i]);
 							if (val > KEY_PAIR_THRESHOLD &&
 							    elapsed > c->dswitch_cooldown_ms) {
-								int code = axes[i] > 0
-									? c->axis_key_pos[i]
-									: c->axis_key_neg[i];
-								if (code) emit_key_tap(g_uinput_fd, code);
+								int code =
+									axes[i] > 0
+										? c->axis_key_pos[i]
+										: c->axis_key_neg
+											  [i];
+								if (code)
+									emit_key_tap(g_uinput_fd,
+										     code);
 								last_keypair[i] = now;
 							}
 							break;
@@ -1209,16 +1289,21 @@ int main(int argc, char **argv)
 							    elapsed > c->dswitch_cooldown_ms) {
 								int forward = axes[i] > 0;
 								int code;
-								if (g_profiles[g_active_profile].browser_keys)
-									code = forward ? KEY_RIGHT : KEY_LEFT;
+								if (g_profiles[g_active_profile]
+									    .browser_keys)
+									code = forward ? KEY_RIGHT
+										       : KEY_LEFT;
 								else
-									code = forward ? KEY_FASTFORWARD : KEY_REWIND;
+									code = forward ? KEY_FASTFORWARD
+										       : KEY_REWIND;
 								emit_key_tap(g_uinput_fd, code);
 								last_keypair[i] = now;
 							}
 							break;
 						}
-						case ACT_NONE: default: break;
+						case ACT_NONE:
+						default:
+							break;
 						}
 					}
 
@@ -1227,13 +1312,15 @@ int main(int argc, char **argv)
 						int sy = scroll_acc_consume(&sacc.acc_y);
 						int sz = scroll_acc_consume(&sacc.acc_z);
 						emit_scroll(g_uinput_fd, sx, sy);
-						if (sz != 0) emit_zoom(g_uinput_fd, sz);
+						if (sz != 0)
+							emit_zoom(g_uinput_fd, sz);
 					}
-				}
-				else if (ev.type == KIE_BUTTON) {
-					if (!ev.button.press) continue;
+				} else if (ev.type == KIE_BUTTON) {
+					if (!ev.button.press)
+						continue;
 					int bnum = ev.button.bnum;
-					if (bnum < 0 || bnum >= 16) continue;
+					if (bnum < 0 || bnum >= 16)
+						continue;
 
 					switch (c->btn_map[bnum]) {
 					case BTNACT_OVERVIEW:
@@ -1265,11 +1352,15 @@ int main(int argc, char **argv)
 							emit_key_tap(g_uinput_fd, c->btn_key[bnum]);
 						break;
 					case BTNACT_PLAY_PAUSE_AUTO:
-						emit_key_tap(g_uinput_fd,
+						emit_key_tap(
+							g_uinput_fd,
 							g_profiles[g_active_profile].browser_keys
-								? KEY_SPACE : KEY_PLAYPAUSE);
+								? KEY_SPACE
+								: KEY_PLAYPAUSE);
 						break;
-					case BTNACT_NONE: default: break;
+					case BTNACT_NONE:
+					default:
+						break;
 					}
 				}
 			}
@@ -1284,10 +1375,12 @@ int main(int argc, char **argv)
 
 cleanup:
 	fprintf(stderr, "spacemouse-desktop: shutting down\n");
-	if (g_kinput_fd >= 0) close(g_kinput_fd);
+	if (g_kinput_fd >= 0)
+		close(g_kinput_fd);
 	uinput_close(g_uinput_fd);
 	cmd_sock_close(cmd_fd, g_sock_path);
-	if (g_dbus) dbus_connection_unref(g_dbus);
+	if (g_dbus)
+		dbus_connection_unref(g_dbus);
 	profiles_free_all();
 	return 0;
 }

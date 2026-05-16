@@ -21,7 +21,7 @@ int main(void)
 
 	/* Case-insensitive — config files use lowercase too. */
 	assert(lookup_key("space") == KEY_SPACE);
-	assert(lookup_key("Page_Down") == 0);  /* underscore is not part of any name */
+	assert(lookup_key("Page_Down") == 0); /* underscore is not part of any name */
 	assert(lookup_key("pagedown") == KEY_PAGEDOWN);
 	assert(lookup_key("f5") == KEY_F5);
 

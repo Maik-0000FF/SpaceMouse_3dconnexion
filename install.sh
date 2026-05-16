@@ -14,11 +14,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}   $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; }
-step()  { echo -e "\n${BOLD}==> $*${NC}"; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok() { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() { echo -e "${RED}[FAIL]${NC} $*"; }
+step() { echo -e "\n${BOLD}==> $*${NC}"; }
 
 # ── Preflight checks ───────────────────────────────────────────────
 
@@ -41,10 +41,10 @@ fi
 # (Manjaro/EndeavourOS → arch, Linux Mint/Pop_OS → debian, etc.).
 DISTRO_FAMILY=""
 case " $ID ${ID_LIKE:-} " in
-    *" arch "*)        DISTRO_FAMILY="arch" ;;
-    *" fedora "*|*" rhel "*|*" centos "*) DISTRO_FAMILY="fedora" ;;
-    *" debian "*|*" ubuntu "*) DISTRO_FAMILY="debian" ;;
-    *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*) DISTRO_FAMILY="opensuse" ;;
+    *" arch "*) DISTRO_FAMILY="arch" ;;
+    *" fedora "* | *" rhel "* | *" centos "*) DISTRO_FAMILY="fedora" ;;
+    *" debian "* | *" ubuntu "*) DISTRO_FAMILY="debian" ;;
+    *" opensuse "* | *" opensuse-tumbleweed "* | *" opensuse-leap "* | *" suse "* | *" sles "*) DISTRO_FAMILY="opensuse" ;;
 esac
 
 if [[ -z "$DISTRO_FAMILY" ]]; then
@@ -76,17 +76,17 @@ fi
 # Helpers route through DISTRO_FAMILY so the rest of the script is generic.
 pkg_installed() {
     case "$DISTRO_FAMILY" in
-        arch)              pacman -Q "$1" &>/dev/null ;;
-        fedora|opensuse)   rpm -q "$1" &>/dev/null ;;
-        debian)            dpkg -s "$1" &>/dev/null ;;
+        arch) pacman -Q "$1" &>/dev/null ;;
+        fedora | opensuse) rpm -q "$1" &>/dev/null ;;
+        debian) dpkg -s "$1" &>/dev/null ;;
     esac
 }
 
 pkg_install() {
     case "$DISTRO_FAMILY" in
-        arch)     sudo pacman -S --needed --noconfirm "$@" ;;
-        fedora)   sudo dnf install -y "$@" ;;
-        debian)   sudo apt-get install -y "$@" ;;
+        arch) sudo pacman -S --needed --noconfirm "$@" ;;
+        fedora) sudo dnf install -y "$@" ;;
+        debian) sudo apt-get install -y "$@" ;;
         opensuse) sudo zypper --non-interactive install "$@" ;;
     esac
 }
@@ -287,7 +287,7 @@ cp "$SCRIPT_DIR/systemd/spacemouse-desktop.service" "$HOME/.config/systemd/user/
 if $PYSIDE_PIP_FALLBACK; then
     sed "s|^ExecStart=.*|ExecStart=$HOME/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
         "$SCRIPT_DIR/systemd/spacemouse-config.service" \
-        > "$HOME/.config/systemd/user/spacemouse-config.service"
+        >"$HOME/.config/systemd/user/spacemouse-config.service"
 else
     cp "$SCRIPT_DIR/systemd/spacemouse-config.service" "$HOME/.config/systemd/user/"
 fi
@@ -313,7 +313,7 @@ if $HAVE_SYSTEMD; then
         fi
     else
         warn "/dev/uinput not writable. Adding udev rule..."
-        echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null
+        echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null
         sudo udevadm control --reload-rules
         sudo udevadm trigger
         warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
@@ -338,9 +338,9 @@ step "Running diagnostics"
 if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
     warn "GNOME detected — system tray icons are not visible by default."
     case "$DISTRO_FAMILY" in
-        fedora)   info "Install:  sudo dnf install gnome-shell-extension-appindicator" ;;
-        debian)   info "Install:  sudo apt install gnome-shell-extension-appindicator3" ;;
-        arch)     info "Install:  yay -S gnome-shell-extension-appindicator" ;;
+        fedora) info "Install:  sudo dnf install gnome-shell-extension-appindicator" ;;
+        debian) info "Install:  sudo apt install gnome-shell-extension-appindicator3" ;;
+        arch) info "Install:  yay -S gnome-shell-extension-appindicator" ;;
         opensuse) info "Install:  sudo zypper install gnome-shell-extension-appindicator" ;;
     esac
     info "Then log out and back in. Manual install: https://extensions.gnome.org/extension/615/appindicator-support/"

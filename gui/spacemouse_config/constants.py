@@ -11,36 +11,93 @@ SOCK_PATH = f"/run/user/{os.getuid()}/spacemouse-cmd.sock"
 BLENDER_STARTUP_DIR = Path.home() / ".config" / "blender" / "5.0" / "scripts" / "startup"
 BLENDER_SYNC_SCRIPT = "spacemouse_sync.py"
 
-AXIS_ACTIONS = ["none", "scroll_h", "scroll_v", "zoom", "desktop_switch", "volume",
-                "seek_auto",
-                "key_pair:LEFT,RIGHT", "key_pair:DOWN,UP",
-                "key_pair:PAGEDOWN,PAGEUP", "key_pair:J,L"]
-AXIS_ACTION_LABELS = ["None", "Horizontal Scroll", "Vertical Scroll", "Zoom", "Desktop Switch", "Volume",
-                      "Seek (auto: arrows in browser, media keys else)",
-                      "Arrow Left/Right (5s Seek)", "Arrow Down/Up",
-                      "Page Down/Up", "J/L (10s Seek)"]
+AXIS_ACTIONS = [
+    "none",
+    "scroll_h",
+    "scroll_v",
+    "zoom",
+    "desktop_switch",
+    "volume",
+    "seek_auto",
+    "key_pair:LEFT,RIGHT",
+    "key_pair:DOWN,UP",
+    "key_pair:PAGEDOWN,PAGEUP",
+    "key_pair:J,L",
+]
+AXIS_ACTION_LABELS = [
+    "None",
+    "Horizontal Scroll",
+    "Vertical Scroll",
+    "Zoom",
+    "Desktop Switch",
+    "Volume",
+    "Seek (auto: arrows in browser, media keys else)",
+    "Arrow Left/Right (5s Seek)",
+    "Arrow Down/Up",
+    "Page Down/Up",
+    "J/L (10s Seek)",
+]
 
-BTN_ACTIONS = ["none", "overview", "show_desktop", "volume_up", "volume_down", "mute",
-               "play_pause_auto",
-               "play_pause", "next_track", "prev_track",
-               "key:SPACE", "key:F", "key:M", "key:ENTER", "key:ESC"]
-BTN_ACTION_LABELS = ["None", "Overview (Expose)", "Show Desktop", "Volume Up", "Volume Down", "Mute",
-                     "Play/Pause (auto: Space in browser, MPRIS else)",
-                     "Play/Pause (MPRIS only)", "Next Track", "Previous Track",
-                     "Space (Play/Pause Browser)", "F (Fullscreen)", "M (Mute YouTube)",
-                     "Enter", "Escape"]
+BTN_ACTIONS = [
+    "none",
+    "overview",
+    "show_desktop",
+    "volume_up",
+    "volume_down",
+    "mute",
+    "play_pause_auto",
+    "play_pause",
+    "next_track",
+    "prev_track",
+    "key:SPACE",
+    "key:F",
+    "key:M",
+    "key:ENTER",
+    "key:ESC",
+]
+BTN_ACTION_LABELS = [
+    "None",
+    "Overview (Expose)",
+    "Show Desktop",
+    "Volume Up",
+    "Volume Down",
+    "Mute",
+    "Play/Pause (auto: Space in browser, MPRIS else)",
+    "Play/Pause (MPRIS only)",
+    "Next Track",
+    "Previous Track",
+    "Space (Play/Pause Browser)",
+    "F (Fullscreen)",
+    "M (Mute YouTube)",
+    "Enter",
+    "Escape",
+]
 
-AXIS_NAMES = ["TX (Left/Right)", "TY (Push/Pull)", "TZ (Up/Down)",
-              "RX (Pitch)", "RY (Roll)", "RZ (Yaw/Twist)"]
+AXIS_NAMES = [
+    "TX (Left/Right)",
+    "TY (Push/Pull)",
+    "TZ (Up/Down)",
+    "RX (Pitch)",
+    "RY (Roll)",
+    "RZ (Yaw/Twist)",
+]
 AXIS_KEYS = ["tx", "ty", "tz", "rx", "ry", "rz"]
 
 FREECAD_BTN_COMMANDS = [
-    "Std_ViewFitAll", "Std_ViewHome", "Std_ViewIsometric",
-    "Std_ViewFront", "Std_ViewTop", "Std_ViewRight",
+    "Std_ViewFitAll",
+    "Std_ViewHome",
+    "Std_ViewIsometric",
+    "Std_ViewFront",
+    "Std_ViewTop",
+    "Std_ViewRight",
 ]
 FREECAD_BTN_LABELS = [
-    "Fit All", "Home View", "Isometric",
-    "Front", "Top", "Right",
+    "Fit All",
+    "Home View",
+    "Isometric",
+    "Front",
+    "Top",
+    "Right",
 ]
 
 FREECAD_NAV_STYLES = [

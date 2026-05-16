@@ -10,8 +10,8 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout,
 
 from .constants import SOCK_PATH
 
-
 # ── LED control via direct USB HID ────────────────────────────────────
+
 
 def set_spacemouse_led(on):
     """Control SpaceMouse LED directly via USB HID (bypasses libspnav/spacenavd).
@@ -35,6 +35,7 @@ def set_spacemouse_led(on):
 
 # ── Daemon socket ─────────────────────────────────────────────────────
 
+
 def send_daemon_cmd(cmd):
     """Send command to spacemouse-desktop daemon via UNIX socket."""
     try:
@@ -51,13 +52,15 @@ def send_daemon_cmd(cmd):
 
 # ── UI helpers ────────────────────────────────────────────────────────
 
+
 def make_card(title=None):
     """Create a styled card frame with optional section title."""
     card = QFrame()
     card.setProperty("class", "card")
     card.setObjectName("card")
     card.setStyleSheet(
-        "QFrame#card { background-color: #2a2a3e; border-radius: 8px; padding: 12px; }")
+        "QFrame#card { background-color: #2a2a3e; border-radius: 8px; padding: 12px; }"
+    )
     layout = QVBoxLayout(card)
     layout.setContentsMargins(12, 12, 12, 12)
     layout.setSpacing(8)
@@ -75,7 +78,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     hl.setContentsMargins(0, 0, 0, 0)
 
     slider = QSlider(Qt.Orientation.Horizontal)
-    scale = 10 ** decimals
+    scale = 10**decimals
     slider.setRange(int(minimum * scale), int(maximum * scale))
     slider.setValue(int(value * scale))
     slider.setMinimumWidth(200)
@@ -99,6 +102,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
 
 
 # ── Tray icon pixmap ──────────────────────────────────────────────────
+
 
 def create_tray_icon_pixmap(text="SM"):
     pixmap = QPixmap(64, 64)

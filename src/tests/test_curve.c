@@ -38,7 +38,7 @@ int main(void)
 
 	/* Exponent shape: at midpoint (raw=183, deadzone=15 → norm≈0.5),
 	 * exponent=1 (linear) gives larger magnitude than exponent=2 (squared). */
-	double lin  = apply_curve(183, 15, 1.0, 1.0);
+	double lin = apply_curve(183, 15, 1.0, 1.0);
 	double quad = apply_curve(183, 15, 2.0, 1.0);
 	assert(lin > quad);
 

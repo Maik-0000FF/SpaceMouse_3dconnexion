@@ -9,9 +9,9 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "[INFO] $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}   $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+info() { echo -e "[INFO] $*"; }
+ok() { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
 echo -e "${BOLD}SpaceMouse Uninstaller${NC}\n"
 
@@ -102,13 +102,13 @@ if [[ "$ans" == [yY] ]]; then
                 paru -R --noconfirm spacenavd 2>/dev/null || true
             fi
             ;;
-        *" fedora "*|*" rhel "*|*" centos "*)
+        *" fedora "* | *" rhel "* | *" centos "*)
             sudo dnf remove -y spacenavd 2>/dev/null || true
             ;;
-        *" debian "*|*" ubuntu "*)
+        *" debian "* | *" ubuntu "*)
             sudo apt-get remove -y spacenavd 2>/dev/null || true
             ;;
-        *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*)
+        *" opensuse "* | *" opensuse-tumbleweed "* | *" opensuse-leap "* | *" suse "* | *" sles "*)
             sudo zypper --non-interactive remove spacenavd 2>/dev/null || true
             ;;
     esac

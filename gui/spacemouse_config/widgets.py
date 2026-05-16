@@ -1,20 +1,24 @@
 """Custom widgets: ToggleSwitch, AxesCard, AxisBar, LivePreviewBar."""
 
-from PySide6.QtCore import (Property, QEasingCurve, QPropertyAnimation, QSize, QTimer,
-                            Qt, Signal)
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QSizePolicy, QSlider, QSpacerItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
-from .constants import (AXIS_ACTIONS, AXIS_ACTION_LABELS, AXIS_KEYS, AXIS_NAMES,
-                        BTN_ACTIONS, BTN_ACTION_LABELS)
 from .helpers import make_card
-
 
 # ── ToggleSwitch (Apple-style pill) ───────────────────────────────────
 
+
 class ToggleSwitch(QWidget):
     """Apple-style animated toggle switch with label."""
+
     stateChanged = Signal(int)
 
     def __init__(self, label_text="", checked=False, parent=None):
@@ -87,8 +91,8 @@ class ToggleSwitch(QWidget):
         y_offset = (self.height() - self._track_h) // 2
 
         # Track colors
-        off_color = QColor(0x45, 0x47, 0x5a)
-        on_color = QColor(0x52, 0x94, 0xe2)
+        off_color = QColor(0x45, 0x47, 0x5A)
+        on_color = QColor(0x52, 0x94, 0xE2)
 
         # Interpolate track color
         t = self._knob_x
@@ -100,8 +104,9 @@ class ToggleSwitch(QWidget):
         # Draw track (pill shape)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track_color)
-        p.drawRoundedRect(0, y_offset, self._track_w, self._track_h,
-                          self._track_h / 2, self._track_h / 2)
+        p.drawRoundedRect(
+            0, y_offset, self._track_w, self._track_h, self._track_h / 2, self._track_h / 2
+        )
 
         # Draw knob (white circle)
         knob_travel = self._track_w - self._knob_size - 2 * self._knob_margin
@@ -118,9 +123,11 @@ class ToggleSwitch(QWidget):
 
         # Draw label text
         if self._label_text:
-            p.setPen(QColor(0xcd, 0xd6, 0xf4))
+            p.setPen(QColor(0xCD, 0xD6, 0xF4))
             text_x = self._track_w + self._label_gap
-            text_y = (self.height() + self.fontMetrics().ascent() - self.fontMetrics().descent()) // 2
+            text_y = (
+                self.height() + self.fontMetrics().ascent() - self.fontMetrics().descent()
+            ) // 2
             p.drawText(text_x, text_y, self._label_text)
 
         p.end()
@@ -129,6 +136,7 @@ class ToggleSwitch(QWidget):
 def make_toggle(label_text, checked=False):
     """Create an Apple-style toggle switch with label."""
     return ToggleSwitch(label_text, checked)
+
 
 # ── Reusable Axes Card ────────────────────────────────────────────────
 
@@ -141,6 +149,7 @@ QSlider::sub-page:horizontal { background: #45475a; border-radius: 3px; }
 
 # ── AxesCard ──────────────────────────────────────────────────────────
 
+
 class AxesCard(QWidget):
     """Reusable 6-axis table with configurable columns per page.
 
@@ -151,16 +160,23 @@ class AxesCard(QWidget):
       - deadzone: QSlider 0-100 (Desktop: active, FreeCAD/Blender: greyed out)
     Extra toggles: appended below the axis grid.
     """
+
     changed = Signal()
 
-    def __init__(self, axis_labels, *,
-                 show_action=False, action_items=None,
-                 show_enable=False,
-                 show_invert=True,
-                 show_deadzone=True, deadzone_enabled=True,
-                 deadzone_max=300,
-                 extra_toggles=None,
-                 parent=None):
+    def __init__(
+        self,
+        axis_labels,
+        *,
+        show_action=False,
+        action_items=None,
+        show_enable=False,
+        show_invert=True,
+        show_deadzone=True,
+        deadzone_enabled=True,
+        deadzone_max=300,
+        extra_toggles=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._building = True
         self._axis_labels = axis_labels
@@ -210,7 +226,7 @@ class AxesCard(QWidget):
         cl.addLayout(header)
 
         # Axis rows
-        for i, label in enumerate(axis_labels):
+        for label in axis_labels:
             row = QHBoxLayout()
             row.setSpacing(6)
 
@@ -252,7 +268,7 @@ class AxesCard(QWidget):
                 dz_lbl = QLabel("0")
                 dz_lbl.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 28px;")
                 dz_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                dz_slider.valueChanged.connect(lambda v, l=dz_lbl: l.setText(str(v)))
+                dz_slider.valueChanged.connect(lambda v, lbl=dz_lbl: lbl.setText(str(v)))
                 dz_slider.valueChanged.connect(self._emit_changed)
                 if not deadzone_enabled:
                     dz_slider.setEnabled(False)
@@ -298,6 +314,7 @@ class AxesCard(QWidget):
 
 # ── AxisBar + LivePreviewBar ──────────────────────────────────────────
 
+
 class AxisBar(QWidget):
     """Custom axis bar with deadzone visualization.
 
@@ -337,10 +354,10 @@ class AxisBar(QWidget):
         # Deadzone region (centered, visible red-tinted area)
         if self._deadzone > 0:
             dz_half = (self._deadzone / self._AXIS_RANGE) * (w / 2.0)
-            p.setBrush(QColor(0xf3, 0x8b, 0xa8, 50))
+            p.setBrush(QColor(0xF3, 0x8B, 0xA8, 50))
             p.drawRoundedRect(int(center - dz_half), 0, int(dz_half * 2), h, 3, 3)
             # Deadzone edge lines
-            pen = QPen(QColor(0xf3, 0x8b, 0xa8, 120))
+            pen = QPen(QColor(0xF3, 0x8B, 0xA8, 120))
             pen.setWidthF(1.0)
             p.setPen(pen)
             p.drawLine(int(center - dz_half), 0, int(center - dz_half), h)
@@ -350,10 +367,11 @@ class AxisBar(QWidget):
         # Value bar (from center)
         if self._value != 0:
             inside_dz = abs(self._value) <= self._deadzone
-            if inside_dz:
-                color = QColor(0xf3, 0x8b, 0xa8, 100)  # muted red inside deadzone
-            else:
-                color = QColor(0x52, 0x94, 0xe2)        # bright blue outside
+            color = (
+                QColor(0xF3, 0x8B, 0xA8, 100)  # muted red inside deadzone
+                if inside_dz
+                else QColor(0x52, 0x94, 0xE2)  # bright blue outside
+            )
             p.setBrush(color)
             val_x = center + (self._value / self._AXIS_RANGE) * (w / 2.0)
             if val_x > center:
@@ -365,6 +383,7 @@ class AxisBar(QWidget):
 
 
 # ── Live Preview Bar ──────────────────────────────────────────────────
+
 
 class LivePreviewBar(QWidget):
     """Compact horizontal live preview bar with deadzone visualization."""
@@ -399,7 +418,7 @@ class LivePreviewBar(QWidget):
         layout.addWidget(lbl)
 
         self.btn_labels = []
-        for i in range(2):
+        for _ in range(2):
             bl = QLabel("\u25cb")
             bl.setStyleSheet("font-size: 14px; color: #45475a;")
             layout.addWidget(bl)

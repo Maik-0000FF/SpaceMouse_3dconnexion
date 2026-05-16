@@ -37,19 +37,16 @@ jobs:
             bash -n "$f"
           done
 
-  python-syntax:
-    name: lint / python compile
+  ruff:
+    name: lint / ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: |
-          for f in $(find . -name '*.py' -not -path './.git/*' -not -path '*/__pycache__/*'); do
-            echo "compiling $f"
-            python3 -m py_compile "$f"
-          done
+      - run: pip install ruff
+      - run: ruff check .
 
   no-binaries:
     name: lint / no binaries
@@ -70,6 +67,20 @@ jobs:
             exit 1
           fi
           echo 'No binary artefacts tracked.'
+
+  # ─── Format gate ────────────────────────────────────────────────────
+  # Runs the same `make format-check` developers use locally so any
+  # un-formatted commit fails fast. Covers all three languages.
+
+  format-check:
+    name: lint / format-check
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - run: pacman -Sy --noconfirm git make clang ruff shfmt
+      - uses: actions/checkout@v6
+      - run: make format-check
 
   # ─── C build matrix ─────────────────────────────────────────────────
 

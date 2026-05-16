@@ -29,7 +29,7 @@ class SpaceMouseApp:
         pixmap.fill(QColor(0, 0, 0, 0))
         p = QPainter(pixmap)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(QColor(0xa6, 0xad, 0xc8))
+        pen = QPen(QColor(0xA6, 0xAD, 0xC8))
         pen.setWidthF(1.8)
         p.setPen(pen)
         p.drawLine(1, 2, 6, 6)
@@ -39,7 +39,8 @@ class SpaceMouseApp:
 
         theme = DARK_THEME.replace(
             "image: none;\n    width: 0;\n    height: 0;",
-            f"image: url({self._arrow_path});\n    width: 12px;\n    height: 8px;")
+            f"image: url({self._arrow_path});\n    width: 12px;\n    height: 8px;",
+        )
         self.app.setStyleSheet(theme)
 
         self.config = self._load_config()
@@ -124,7 +125,7 @@ class SpaceMouseApp:
                 "  • Manual:  https://extensions.gnome.org/extension/615/appindicator-support/\n\n"
                 "Until then the settings window will open on every launch so "
                 "the app stays reachable. The background daemon works "
-                "regardless."
+                "regardless.",
             )
             settings["tray_warning_shown"] = True
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -138,17 +139,32 @@ class SpaceMouseApp:
             try:
                 with open(CONFIG_PATH) as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
-        return {"profiles": {"default": {
-            "deadzone": 15, "scroll_speed": 3.0, "scroll_exponent": 2.0,
-            "zoom_speed": 2.0, "sensitivity": 1.0,
-            "desktop_switch_threshold": 200, "desktop_switch_cooldown_ms": 500,
-            "axis_mapping": {"tx": "scroll_h", "ty": "scroll_v", "tz": "zoom",
-                             "rx": "none", "ry": "desktop_switch", "rz": "none"},
-            "button_mapping": {"0": "overview", "1": "show_desktop"},
-            "invert_scroll_x": False, "invert_scroll_y": False
-        }}}
+        return {
+            "profiles": {
+                "default": {
+                    "deadzone": 15,
+                    "scroll_speed": 3.0,
+                    "scroll_exponent": 2.0,
+                    "zoom_speed": 2.0,
+                    "sensitivity": 1.0,
+                    "desktop_switch_threshold": 200,
+                    "desktop_switch_cooldown_ms": 500,
+                    "axis_mapping": {
+                        "tx": "scroll_h",
+                        "ty": "scroll_v",
+                        "tz": "zoom",
+                        "rx": "none",
+                        "ry": "desktop_switch",
+                        "rz": "none",
+                    },
+                    "button_mapping": {"0": "overview", "1": "show_desktop"},
+                    "invert_scroll_x": False,
+                    "invert_scroll_y": False,
+                }
+            }
+        }
 
     def _cleanup(self):
         if self._cleaned_up:
@@ -177,10 +193,16 @@ class SpaceMouseApp:
             action = "enable" if new_autostart else "disable"
             subprocess.run(
                 ["systemctl", "--user", action, "spacemouse-config.service"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
             subprocess.run(
                 ["systemctl", "--user", action, "spacemouse-desktop.service"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
 
         if self.window_monitor:
             profiles = config.get("profiles", {})
@@ -191,8 +213,7 @@ class SpaceMouseApp:
         self.tray.setContextMenu(menu)
 
     def _rebuild_tray_menu(self, menu):
-        toggle_action = QAction(
-            "Enable" if self._paused else "Disable", menu)
+        toggle_action = QAction("Enable" if self._paused else "Disable", menu)
         toggle_action.triggered.connect(self._toggle_pause)
         menu.addAction(toggle_action)
 
@@ -230,8 +251,7 @@ class SpaceMouseApp:
         bm = prof.get("button_mapping", {})
         if not am:
             return False
-        return (all(v == "none" for v in am.values()) and
-                all(v == "none" for v in bm.values()))
+        return all(v == "none" for v in am.values()) and all(v == "none" for v in bm.values())
 
     def _save_disabled_state(self):
         """Persist disabled state to config.json."""
@@ -290,8 +310,8 @@ class SpaceMouseApp:
             # Disabled: daemon stays on _passthrough; just update LED + tooltip
             set_spacemouse_led(is_3d_app)
             self.tray.setToolTip(
-                f"SpaceMouse: DISABLED ({wm_class})" if is_3d_app
-                else "SpaceMouse: DISABLED")
+                f"SpaceMouse: DISABLED ({wm_class})" if is_3d_app else "SpaceMouse: DISABLED"
+            )
         else:
             send_daemon_cmd(f"PROFILE {profile_name}")
             set_spacemouse_led(True)
@@ -334,8 +354,6 @@ class SpaceMouseApp:
 
     def run(self):
         return self.app.exec()
-
-
 
 
 def main():

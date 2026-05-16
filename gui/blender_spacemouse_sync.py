@@ -6,9 +6,10 @@ Reads settings from ~/.config/spacemouse/blender-ndof.json
 and applies them to Blender's NDOF input preferences on startup.
 """
 
-import bpy
 import json
 import os
+
+import bpy
 
 CONFIG = os.path.expanduser("~/.config/spacemouse/blender-ndof.json")
 
@@ -20,7 +21,7 @@ def sync_ndof_settings():
     try:
         with open(CONFIG) as f:
             cfg = json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return
 
     prefs = bpy.context.preferences.inputs

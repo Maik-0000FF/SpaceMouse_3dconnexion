@@ -11,14 +11,20 @@ from .profile_match import find_matching_profile
 
 # ── libspnav ctypes bindings ──────────────────────────────────────────
 
+
 class SpnavMotion(ctypes.Structure):
     _fields_ = [
         ("type", ctypes.c_int),
-        ("x", ctypes.c_int), ("y", ctypes.c_int), ("z", ctypes.c_int),
-        ("rx", ctypes.c_int), ("ry", ctypes.c_int), ("rz", ctypes.c_int),
+        ("x", ctypes.c_int),
+        ("y", ctypes.c_int),
+        ("z", ctypes.c_int),
+        ("rx", ctypes.c_int),
+        ("ry", ctypes.c_int),
+        ("rz", ctypes.c_int),
         ("period", ctypes.c_uint),
         ("data", ctypes.c_void_p),
     ]
+
 
 class SpnavButton(ctypes.Structure):
     _fields_ = [
@@ -27,6 +33,7 @@ class SpnavButton(ctypes.Structure):
         ("bnum", ctypes.c_int),
     ]
 
+
 class SpnavEvent(ctypes.Union):
     _fields_ = [
         ("type", ctypes.c_int),
@@ -34,7 +41,9 @@ class SpnavEvent(ctypes.Union):
         ("button", SpnavButton),
     ]
 
+
 # ── SpaceMouse Reader Thread ──────────────────────────────────────────
+
 
 class SpnavReader(QThread):
     """Reads SpaceMouse events via libspnav for live axis preview.
@@ -43,6 +52,7 @@ class SpnavReader(QThread):
     Automatically suspends event reading when 3D apps (Blender/FreeCAD)
     are active — no point updating a hidden preview bar.
     """
+
     axes_updated = Signal(list)
     button_pressed = Signal(int, bool)
 
@@ -99,10 +109,16 @@ class SpnavReader(QThread):
                     # device directly, so to keep the "rz = Yaw/Twist" semantics
                     # consistent across config keys and live preview, swap them
                     # back here.
-                    self.axes_updated.emit([
-                        ev.motion.x, ev.motion.y, ev.motion.z,
-                        ev.motion.rx, ev.motion.rz, ev.motion.ry
-                    ])
+                    self.axes_updated.emit(
+                        [
+                            ev.motion.x,
+                            ev.motion.y,
+                            ev.motion.z,
+                            ev.motion.rx,
+                            ev.motion.rz,
+                            ev.motion.ry,
+                        ]
+                    )
                 elif ev.type == 2:  # SPNAV_EVENT_BUTTON
                     self.button_pressed.emit(ev.button.bnum, bool(ev.button.press))
 
@@ -113,20 +129,23 @@ class SpnavReader(QThread):
         self._running = False
         self.wait(2000)
 
+
 # ── Window Monitor Thread ─────────────────────────────────────────────
+
 
 class WindowMonitor(QThread):
     """Monitors active window via KWin scripting and switches daemon profile."""
+
     window_changed = Signal(str, str)
 
     _KWIN_SCRIPT_NAME = "spacemouse-wm-watch"
     _KWIN_SCRIPT = (
-        'workspace.windowActivated.connect(function(w) {\n'
-        '    if (w && w.resourceClass)\n'
+        "workspace.windowActivated.connect(function(w) {\n"
+        "    if (w && w.resourceClass)\n"
         '        print("SPACEMOUSE_WM:" + w.resourceClass);\n'
-        '});\n'
-        'var cur = workspace.activeWindow;\n'
-        'if (cur && cur.resourceClass)\n'
+        "});\n"
+        "var cur = workspace.activeWindow;\n"
+        "if (cur && cur.resourceClass)\n"
         '    print("SPACEMOUSE_WM:" + cur.resourceClass);\n'
     )
 
@@ -153,36 +172,77 @@ class WindowMonitor(QThread):
             f.write(self._KWIN_SCRIPT)
         try:
             subprocess.run(
-                ["gdbus", "call", "--session",
-                 "--dest", "org.kde.KWin", "--object-path", "/Scripting",
-                 "--method", "org.kde.kwin.Scripting.unloadScript",
-                 self._KWIN_SCRIPT_NAME],
-                capture_output=True, timeout=2)
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.kde.KWin",
+                    "--object-path",
+                    "/Scripting",
+                    "--method",
+                    "org.kde.kwin.Scripting.unloadScript",
+                    self._KWIN_SCRIPT_NAME,
+                ],
+                capture_output=True,
+                timeout=2,
+            )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
         try:
             subprocess.run(
-                ["gdbus", "call", "--session",
-                 "--dest", "org.kde.KWin", "--object-path", "/Scripting",
-                 "--method", "org.kde.kwin.Scripting.loadScript",
-                 self._script_path, self._KWIN_SCRIPT_NAME],
-                capture_output=True, timeout=2)
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.kde.KWin",
+                    "--object-path",
+                    "/Scripting",
+                    "--method",
+                    "org.kde.kwin.Scripting.loadScript",
+                    self._script_path,
+                    self._KWIN_SCRIPT_NAME,
+                ],
+                capture_output=True,
+                timeout=2,
+            )
             subprocess.run(
-                ["gdbus", "call", "--session",
-                 "--dest", "org.kde.KWin", "--object-path", "/Scripting",
-                 "--method", "org.kde.kwin.Scripting.start"],
-                capture_output=True, timeout=2)
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.kde.KWin",
+                    "--object-path",
+                    "/Scripting",
+                    "--method",
+                    "org.kde.kwin.Scripting.start",
+                ],
+                capture_output=True,
+                timeout=2,
+            )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
     def _uninstall_kwin_script(self):
         try:
             subprocess.run(
-                ["gdbus", "call", "--session",
-                 "--dest", "org.kde.KWin", "--object-path", "/Scripting",
-                 "--method", "org.kde.kwin.Scripting.unloadScript",
-                 self._KWIN_SCRIPT_NAME],
-                capture_output=True, timeout=2)
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.kde.KWin",
+                    "--object-path",
+                    "/Scripting",
+                    "--method",
+                    "org.kde.kwin.Scripting.unloadScript",
+                    self._KWIN_SCRIPT_NAME,
+                ],
+                capture_output=True,
+                timeout=2,
+            )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
@@ -197,9 +257,11 @@ class WindowMonitor(QThread):
         # alt-tabs to another window.
         try:
             self._proc = subprocess.Popen(
-                ["journalctl", "--user", "-t", "kwin_wayland",
-                 "-f", "-o", "cat", "--since", "now"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                ["journalctl", "--user", "-t", "kwin_wayland", "-f", "-o", "cat", "--since", "now"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
         except FileNotFoundError:
             return
         self._install_kwin_script()
@@ -226,5 +288,3 @@ class WindowMonitor(QThread):
             self._proc.terminate()
         self._uninstall_kwin_script()
         self.wait(2000)
-
-

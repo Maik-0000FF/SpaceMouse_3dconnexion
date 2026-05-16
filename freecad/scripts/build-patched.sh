@@ -32,10 +32,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[ OK ]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok() { echo -e "${GREEN}[ OK ]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() {
+    echo -e "${RED}[FAIL]${NC} $*"
+    exit 1
+}
 
 DO_CLONE=false
 DO_INSTALL=false
@@ -53,7 +56,7 @@ while [[ $# -gt 0 ]]; do
         --install)
             DO_INSTALL=true
             ;;
-        --help|-h)
+        --help | -h)
             head -17 "$0" | tail -15
             exit 0
             ;;
@@ -116,7 +119,7 @@ SMESH_CMAKE="$BUILD_BASE/cMake/FreeCAD_Helpers/SetupSalomeSMESH.cmake"
 if [[ -f "$SMESH_CMAKE" ]] && grep -q 'hdf5-serial' "$SMESH_CMAKE"; then
     info "Fixing HDF5 2.0 cmake compatibility..."
     sed -i -e 's/set(HDF5_VARIANT "hdf5-serial")/set(HDF5_VARIANT "hdf5")/' \
-           -e 's/find_file(Hdf5dotH hdf5.h PATHS ${HDF5_INCLUDE_DIRS} NO_DEFAULT_PATH)/find_file(Hdf5dotH hdf5.h)/' \
+        -e 's/find_file(Hdf5dotH hdf5.h PATHS ${HDF5_INCLUDE_DIRS} NO_DEFAULT_PATH)/find_file(Hdf5dotH hdf5.h)/' \
         "$SMESH_CMAKE"
     ok "HDF5 cmake fix applied"
 fi
