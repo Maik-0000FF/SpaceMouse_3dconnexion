@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# SpaceMouse Driver Installation Script
+# SpaceMouse Linux Control — installer
 # Supports Arch (+ derivatives), Fedora, Debian/Ubuntu, openSUSE
-# Installs spacenavd, configures udev, builds tools, sets up systemd services
+# Installs the upstream driver stack (spacenavd), configures udev, builds
+# this project's control daemon + GUI, sets up systemd user services.
 #
 set -euo pipefail
 
@@ -55,12 +56,13 @@ fi
 
 ok "Distribution: $PRETTY_NAME (family: $DISTRO_FAMILY)"
 
-# KDE Plasma detection — driver and 3D-app integration work on any desktop,
-# but window detection and desktop switching are KWin-specific.
+# KDE Plasma detection — the daemon and 3D-app integration work on
+# any desktop; window detection and desktop switching have native
+# backends per DE, with KWin getting the richest support.
 if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
     warn "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
     warn "Window detection and desktop switching are Plasma-specific and will be inactive."
-    warn "The driver, GUI, Blender and FreeCAD integration will still work."
+    warn "The control daemon, GUI, Blender and FreeCAD integration will still work."
 fi
 
 # /run/systemd/system exists only when systemd is PID 1 — service and udev

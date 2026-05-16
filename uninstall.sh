@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# SpaceMouse Driver Uninstall Script
+# SpaceMouse Linux Control — uninstaller
 #
 set -euo pipefail
 

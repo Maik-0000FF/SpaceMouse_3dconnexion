@@ -1,12 +1,12 @@
-# SpaceMouse Linux Driver
+# SpaceMouse Linux Control
 
 [![CI](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml/badge.svg)](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 ![version](https://img.shields.io/badge/version-0.1.0-blue)
 
 > **Under active development.** Contributions and feedback are welcome.
 
-Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
-Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it works natively inside Blender and FreeCAD for 3D navigation.
+Userspace control daemon and GUI for 3Dconnexion SpaceMouse devices on Linux. Sits on top of the existing driver stack (Linux evdev + spacenavd + libspnav) and turns 6DOF input into desktop actions: tilt to scroll, push/pull to zoom, twist to switch virtual desktops. Blender and FreeCAD continue to use their native 3D navigation — this project does not interfere with that path.
 
 The current version (`0.1.0`) is reported by `spacemouse-desktop --version`, `spacemouse-test --version` and `spacemouse_config.__version__`.
 
@@ -23,7 +23,7 @@ The current version (`0.1.0`) is reported by `spacemouse-desktop --version`, `sp
   | **Debian 12 (bookworm)** / **Ubuntu 24.04 LTS** / **Ubuntu 24.10** | works, but PySide6 isn't in apt — the installer falls back to a pip venv automatically. (`python3-pyside6.qtwidgets` first lands in Ubuntu 25.10.) |
   | **openSUSE Tumbleweed / Leap** | everything from the official repos |
 
-- **A desktop environment.** **KDE Plasma (Wayland)** is the primary target and the only one where the full feature set works. The driver itself is desktop-agnostic — see the table below.
+- **A desktop environment.** **KDE Plasma (Wayland)** is the primary target and the only one where the full feature set works. The control daemon itself is desktop-agnostic — see the table below.
 
 ### Feature support per desktop
 
@@ -49,7 +49,7 @@ cd SpaceMouse_3dconnexion
 ./install.sh
 ```
 
-The installer takes care of everything: installing packages, setting up permissions, compiling the driver, and starting the background services. You'll be asked for your password when it needs administrator access.
+The installer takes care of everything: installing packages, setting up permissions, compiling the daemon and tools, and starting the background services. You'll be asked for your password when it needs administrator access.
 
 After installation, **plug in your SpaceMouse** (or unplug and replug it) and it's ready to use.
 
@@ -64,7 +64,7 @@ Once installed, the SpaceMouse works on your desktop like this:
 - **Left button** → KDE Overview
 - **Right button** → Show Desktop
 
-When you switch to **Blender** or **FreeCAD**, the desktop driver steps aside automatically and the app's native 3D navigation takes over — no manual switching needed.
+When you switch to **Blender** or **FreeCAD**, the desktop daemon steps aside automatically and the app's native 3D navigation takes over — no manual switching needed.
 
 A **system tray icon** appears in your taskbar. Click it to open **SpaceMouse Control** — a settings app with three pages:
 
@@ -98,7 +98,7 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 To configure SpaceMouse inside FreeCAD, use the **FreeCAD** page in **SpaceMouse Control** (tray icon → Settings).
 
-FreeCAD on Linux has had several SpaceMouse-related bugs. Most fixes are now in 1.1.1 and the 1.2 development branch, but jerky navigation (PR #28110) is still missing from the 1.1 series, and the reset-button bug (PR #28956) is open. If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the fixes locally — completely separate from the driver here.
+FreeCAD on Linux has had several SpaceMouse-related bugs. Most fixes are now in 1.1.1 and the 1.2 development branch, but jerky navigation (PR #28110) is still missing from the 1.1 series, and the reset-button bug (PR #28956) is open. If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the fixes locally — completely separate from the control daemon here.
 
 ## Uninstall
 
@@ -122,7 +122,7 @@ sudo systemctl enable --now spacenavd
 
 ### FreeCAD SpaceMouse bugs (jerky navigation, 100% CPU, broken buttons)
 
-These are upstream FreeCAD issues, not driver bugs. See [`freecad/`](freecad/) for the patcher and patched Arch build.
+These are upstream FreeCAD issues, unrelated to this project. See [`freecad/`](freecad/) for the patcher and patched Arch build.
 
 ### Tray icon not showing
 
@@ -171,9 +171,17 @@ Any 6DOF device supported by spacenavd should work. LED control currently only w
 
 ## License
 
-GPLv3 — See [LICENSE](LICENSE) for details.
+GPL-3.0-or-later — see [LICENSE](LICENSE) for the full text. The project links against `libdbus-1` (LGPL), `libspnav` (BSD-3-Clause) and `json-c` (MIT), all compatible with GPL-3.0 distribution.
+
+## Trademarks
+
+*SpaceMouse* and *3Dconnexion* are trademarks of 3Dconnexion GmbH. This project is **not affiliated with, endorsed by, or sponsored by 3Dconnexion**. The name is used only to identify the hardware this software supports.
 
 ## Acknowledgments
 
-- [spacenavd](https://github.com/FreeSpacenav/spacenavd) — Open-source SpaceMouse device daemon
-- [libspnav](https://github.com/FreeSpacenav/libspnav) — Client library for SpaceMouse input
+The actual SpaceMouse driver stack on Linux is the work of [John Tsiombikas](https://nuclear.mutantstargoat.com/) and the FreeSpacenav community — without it none of this would exist:
+
+- [spacenavd](https://github.com/FreeSpacenav/spacenavd) — system daemon that owns the device
+- [libspnav](https://github.com/FreeSpacenav/libspnav) — client library used by spacenavd-aware apps (Blender, FreeCAD, the diagnostic tool here)
+
+This project is a userspace layer on top of that stack: a control daemon that maps 6DOF input to desktop actions, plus a configuration GUI.

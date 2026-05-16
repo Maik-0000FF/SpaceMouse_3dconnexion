@@ -1,6 +1,6 @@
 # FreeCAD SpaceMouse Patches
 
-Self-contained collection of patches and build scripts for fixing FreeCAD's SpaceMouse handling on Linux. Independent from the SpaceMouse driver/GUI in the rest of this repository — once all fixes ship in upstream FreeCAD releases, this directory can be removed without affecting the driver.
+Self-contained collection of patches and build scripts for fixing FreeCAD's SpaceMouse handling on Linux. Independent from the control daemon and GUI in the rest of this repository — once all fixes ship in upstream FreeCAD releases, this directory can be removed without affecting anything else.
 
 ## Why this exists
 
