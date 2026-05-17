@@ -136,6 +136,19 @@ sudo systemctl enable --now spacenavd
 
 These are upstream FreeCAD issues, unrelated to this project. See [`freecad/`](freecad/) for the patcher and patched Arch build.
 
+### Choppy 3D navigation in Blender or FreeCAD
+
+If 3D navigation feels stuttery while only one libspnav client is connected
+and goes smooth the moment a second one attaches (e.g. opening
+`spacemouse-test --live`), enable **Smooth 3D nav** in the sidebar of
+SpaceMouse Control. The GUI then keeps a silent second libspnav reader
+(`spacemouse-test --live`, output discarded) attached to spacenavd in the
+background for as long as the toggle is on, regardless of which window is
+focused. Turning the toggle off stops the reader again.
+
+This mitigates an event-pacing quirk in spacenavd that surfaces on some
+GNOME-Wayland setups; KDE Plasma is usually unaffected. Off by default.
+
 ### Tray icon not showing
 
 ```bash
