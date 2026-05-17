@@ -95,6 +95,12 @@ class SettingsWindow(QMainWindow):
         self.blender_page = BlenderPage()
         self.blender_page.changed.connect(self._mark_dirty)
         self.blender_page.changed.connect(self._sync_deadzones)
+        # Immediate-effect path for the experimental bg_test toggle so the
+        # user can flip it during a test without hitting Apply. The Blender
+        # Apply branch still re-sends the value for consistency — the app
+        # callback no-ops when the value is unchanged.
+        if self.on_bg_test_change is not None:
+            self.blender_page.bg_test_changed.connect(self.on_bg_test_change)
         self.stack.addWidget(self.blender_page)
 
         # Content wrapper with padding

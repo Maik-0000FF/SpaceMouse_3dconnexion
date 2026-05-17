@@ -560,6 +560,9 @@ class BlenderPage(QWidget):
     """Blender NDOF settings editor."""
 
     changed = Signal()
+    # bg_test toggle is a quick experimental switch — fires immediately
+    # on click so the user can test the workaround without hitting Apply.
+    bg_test_changed = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -673,6 +676,7 @@ class BlenderPage(QWidget):
             "while Blender is the active window. Mitigates GPU "
             "power-state stutter on some NVIDIA setups. Off by default."
         )
+        self.bg_test_cb.stateChanged.connect(lambda state: self.bg_test_changed.emit(state == 1))
         cl.addWidget(self.bg_test_cb)
         layout.addWidget(card)
 
