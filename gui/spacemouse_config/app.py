@@ -3,10 +3,12 @@
 import atexit
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
@@ -249,33 +251,65 @@ class SpaceMouseApp:
         # On some GNOME-Wayland setups spacenavd's event pacing degrades when
         # only one libspnav client is connected — the lone client (Blender or
         # FreeCAD) gets choppy SpaceMouse input. A second silent reader on the
-        # same socket keeps the pipeline warm and the navigation smooth. The
-        # workaround is opt-in (sidebar toggle) because not every system
-        # exhibits the problem.
-        should_run = (
-            self._bg_test_enabled
-            and not self._gui_has_focus
-            and self._saved_profile in ("blender", "freecad")
-        )
-        if should_run and self._bg_test_proc is None:
+        # same socket keeps the pipeline warm and the navigation smooth.
+        #
+        # The reader runs continuously while the toggle is on, not gated by
+        # focus: spacemouse-test --live needs a moment to open its libspnav
+        # socket, and spawning it on every focus change leaves a noticeable
+        # init lag at the start of each session in a 3D app. CPU cost of
+        # idle libspnav drain is negligible; resource-wise it's safe to leave
+        # running.
+        if self._bg_test_enabled and self._bg_test_proc is None:
             self._start_bg_test_proc()
-        elif not should_run and self._bg_test_proc is not None:
+        elif not self._bg_test_enabled and self._bg_test_proc is not None:
             self._stop_bg_test_proc()
 
+    @staticmethod
+    def _locate_bg_test_binary():
+        # systemd-user-services inherit a PATH that does NOT include
+        # ~/.local/bin, so a bare Popen(["spacemouse-test", ...]) lookup
+        # fails silently when the GUI is started as a service even though
+        # install.sh / make install put the binary right there. Resolve
+        # it explicitly: PATH first (covers homebrew / packaged installs),
+        # then the default install location as a fallback. None means the
+        # binary is genuinely missing.
+        found = shutil.which("spacemouse-test")
+        if found:
+            return found
+        fallback = Path.home() / ".local" / "bin" / "spacemouse-test"
+        if fallback.is_file() and os.access(fallback, os.X_OK):
+            return str(fallback)
+        return None
+
     def _start_bg_test_proc(self):
-        # spacemouse-test --live is just a libspnav reader that prints axis
-        # values to stdout. We discard the output and only need the side
-        # effect of having a second client attached to spacenavd. Falling
-        # back silently if the binary isn't on PATH — the toggle is best-
-        # effort, no need to scare the user with a popup.
+        # spacemouse-test --live is just a libspnav reader. We discard the
+        # output and only need the side effect of having a second client
+        # attached to spacenavd, which fixes the GNOME-Wayland single-
+        # client stutter.
+        binary = self._locate_bg_test_binary()
+        if binary is None:
+            # Surface the failure so journalctl shows it instead of leaving
+            # the user wondering why the toggle does nothing.
+            print(
+                "spacemouse-config: 'Smooth 3D nav' enabled but spacemouse-test "
+                "binary not found on PATH or in ~/.local/bin — toggle has no effect. "
+                "Run 'make -C src install' or install.sh to deploy it.",
+                flush=True,
+            )
+            self._bg_test_proc = None
+            return
         try:
             self._bg_test_proc = subprocess.Popen(
-                ["spacemouse-test", "--live"],
+                [binary, "--live"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
-        except (OSError, FileNotFoundError):
+        except OSError as exc:
+            print(
+                f"spacemouse-config: failed to spawn {binary}: {exc}",
+                flush=True,
+            )
             self._bg_test_proc = None
 
     def _stop_bg_test_proc(self):
