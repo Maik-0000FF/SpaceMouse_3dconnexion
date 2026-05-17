@@ -587,9 +587,14 @@ class BlenderPage(QWidget):
         self.script_status.setWordWrap(True)
         cl.addWidget(self.script_status)
 
+        btn_row = QHBoxLayout()
         self.install_btn = QPushButton("Install Startup Script")
         self.install_btn.clicked.connect(self._install_script)
-        cl.addWidget(self.install_btn)
+        btn_row.addWidget(self.install_btn)
+        self.uninstall_btn = QPushButton("Uninstall")
+        self.uninstall_btn.clicked.connect(self._uninstall_script)
+        btn_row.addWidget(self.uninstall_btn)
+        cl.addLayout(btn_row)
         self._update_script_status()
         layout.addWidget(card)
 
@@ -665,16 +670,36 @@ class BlenderPage(QWidget):
             self.changed.emit()
 
     def _update_script_status(self):
-        if self._bc.is_script_installed():
-            self.script_status.setText("Startup script is installed.")
-            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
-            self.install_btn.setText("Reinstall Startup Script")
-        else:
+        st = self._bc.script_status()
+        # Uninstall only makes sense when something is actually installed.
+        self.uninstall_btn.setVisible(st["installed"])
+
+        if not st["installed"]:
             self.script_status.setText(
                 "Startup script not installed. Blender won't pick up settings until you install it."
             )
             self.script_status.setStyleSheet("color: #f9e2af; background: transparent;")
             self.install_btn.setText("Install Startup Script")
+            return
+
+        # Installed — show timestamp + content match against bundled source.
+        from datetime import datetime
+        when = datetime.fromtimestamp(st["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
+        path = str(st["path"])
+        if st["up_to_date"]:
+            self.script_status.setText(
+                f"Startup script installed and up to date.\n{path}\nLast install: {when}"
+            )
+            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
+            self.install_btn.setText("Reinstall Startup Script")
+        else:
+            self.script_status.setText(
+                "Startup script installed but differs from the bundled version.\n"
+                f"{path}\nLast install: {when}\n"
+                "Click below to overwrite it with the current version."
+            )
+            self.script_status.setStyleSheet("color: #fab387; background: transparent;")
+            self.install_btn.setText("Update Startup Script")
 
     def _install_script(self):
         if self._bc.install_startup_script():
@@ -682,11 +707,40 @@ class BlenderPage(QWidget):
             QMessageBox.information(
                 self,
                 "Installed",
-                f"Script installed to:\n{BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT}",
+                f"Script installed to:\n{BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT}\n\n"
+                "Restart Blender for the new version to take effect.",
             )
         else:
             QMessageBox.warning(
                 self, "Error", "Could not find blender_spacemouse_sync.py next to this script."
+            )
+
+    def _uninstall_script(self):
+        path = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall Startup Script",
+            f"Remove the startup script from Blender?\n\n{path}\n\n"
+            "Blender will fall back to its own NDOF defaults on the next start "
+            "and stop picking up settings made here.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        if self._bc.uninstall_startup_script():
+            self._update_script_status()
+            QMessageBox.information(
+                self,
+                "Uninstalled",
+                "Startup script removed.\nRestart Blender to drop the previously applied settings.",
+            )
+        else:
+            # File was already gone — refresh the status anyway so the
+            # UI matches reality.
+            self._update_script_status()
+            QMessageBox.warning(
+                self, "Nothing to remove", "The startup script was not present."
             )
 
     def _load_settings(self):

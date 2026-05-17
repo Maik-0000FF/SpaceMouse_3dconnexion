@@ -1,5 +1,6 @@
 """Backends for FreeCAD user.cfg (XML) and Blender NDOF settings (JSON)."""
 
+import filecmp
 import json
 import shutil
 import subprocess
@@ -292,12 +293,61 @@ class BlenderConfig:
     def is_script_installed(self):
         return (BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT).exists()
 
+    def _script_source_path(self):
+        return Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
+
+    def script_status(self):
+        """Inspect the installed startup script.
+
+        Returns a dict with the real state so the UI can distinguish
+        between "not installed", "installed and matches the GUI's
+        bundled source", and "installed but out of date" (would happen
+        e.g. after a GUI upgrade brings a newer script).
+        """
+        src = self._script_source_path()
+        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
+        if not dst.exists():
+            return {
+                "installed": False,
+                "up_to_date": False,
+                "path": dst,
+                "mtime": None,
+                "source_exists": src.exists(),
+            }
+        up_to_date = src.exists() and filecmp.cmp(src, dst, shallow=False)
+        return {
+            "installed": True,
+            "up_to_date": up_to_date,
+            "path": dst,
+            "mtime": dst.stat().st_mtime,
+            "source_exists": src.exists(),
+        }
+
     def install_startup_script(self):
-        """Copy blender_spacemouse_sync.py to Blender's startup dir."""
+        """Copy blender_spacemouse_sync.py to Blender's startup dir.
+
+        Uses plain copy (not copy2) so the destination mtime reflects
+        the install time, not the source file's mtime — that way the
+        UI can show the user *when* they last installed.
+        """
         BLENDER_STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-        src = Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
+        src = self._script_source_path()
         dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
         if src.exists():
-            shutil.copy2(src, dst)
+            shutil.copy(src, dst)
             return True
         return False
+
+    def uninstall_startup_script(self):
+        """Remove the startup script from Blender's startup dir.
+
+        Returns True if the file existed and was removed (or vanished
+        between the existence check and the unlink). Blender will fall
+        back to its own NDOF defaults on the next start.
+        """
+        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
+        try:
+            dst.unlink()
+            return True
+        except FileNotFoundError:
+            return False
