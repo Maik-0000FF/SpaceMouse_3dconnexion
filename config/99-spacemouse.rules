@@ -40,3 +40,12 @@ SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c627", MODE="066
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c628", MODE="0666", GROUP="input", TAG+="uaccess"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c629", MODE="0666", GROUP="input", TAG+="uaccess"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c62b", MODE="0666", GROUP="input", TAG+="uaccess"
+
+# Suppress the secondary mouse-class HID interface that high-end devices
+# (SpacePilot, SpacePilot Pro, SpaceMouse Pro Wireless, etc.) expose
+# alongside the 6DOF puck. Without this libinput moves the cursor whenever
+# the puck moves, even while a 3D app is focused — bypassing the daemon
+# completely. The ENV{ID_INPUT_MOUSE}=="1" match scopes the rule to the
+# mouse-classified event device only; the 6DOF interface stays untouched.
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="256f", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
