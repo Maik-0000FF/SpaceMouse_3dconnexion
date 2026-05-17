@@ -27,10 +27,17 @@ class SettingsWindow(QMainWindow):
     window_focused = Signal()
     window_unfocused = Signal()
 
-    def __init__(self, config_data, on_save_callback, on_bg_test_change=None):
+    def __init__(
+        self,
+        config_data,
+        on_save_callback,
+        on_bg_test_change=None,
+        on_actions_change=None,
+    ):
         super().__init__()
         self.on_save = on_save_callback
         self.on_bg_test_change = on_bg_test_change
+        self.on_actions_change = on_actions_change
         self.setWindowTitle("SpaceMouse Control")
         self.setWindowIcon(QIcon(create_tray_icon_pixmap("SM")))
         self.setMinimumSize(820, 600)
@@ -76,6 +83,22 @@ class SettingsWindow(QMainWindow):
         # General settings at bottom of sidebar
         self.autostart_cb = make_toggle("Autostart")
         sb_layout.addWidget(self.autostart_cb)
+
+        # Mirror of the tray Enable/Disable action. Toggle ON = SpaceMouse
+        # desktop actions active (scroll, zoom, workspace switching). OFF
+        # = daemon stays on _passthrough so 3D apps still receive events
+        # but no desktop input is generated. Immediate-effect — clicking
+        # flips the daemon state without needing Apply.
+        self.actions_cb = make_toggle("Actions")
+        self.actions_cb.setToolTip(
+            "Enable or disable SpaceMouse desktop actions (scroll, zoom, "
+            "workspace switching). Mirrors the tray Enable/Disable menu "
+            "item. 3D apps keep receiving events either way."
+        )
+        self.actions_cb.stateChanged.connect(
+            lambda state: self.on_actions_change and self.on_actions_change(state == 1)
+        )
+        sb_layout.addWidget(self.actions_cb)
 
         top.addWidget(sidebar)
 
@@ -226,6 +249,8 @@ class SettingsWindow(QMainWindow):
     def sync_settings(self, settings_state):
         self.autostart_cb.setChecked(settings_state.get("autostart", True))
         self.blender_page.set_bg_test(settings_state.get("bg_test", False))
+        if "disabled" in settings_state:
+            self.actions_cb.setChecked(not settings_state["disabled"])
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -56,11 +56,15 @@ class SpaceMouseApp:
         self._autostart = settings.get("autostart", True)
         self._bg_test_enabled = settings.get("bg_test", False)
         self._bg_test_proc = None
+        self._paused = settings.get("disabled", False)
 
-        self.settings_window = SettingsWindow(self.config, self._on_save, self._on_bg_test_change)
-        self.settings_window.sync_settings(
-            {"autostart": self._autostart, "bg_test": self._bg_test_enabled}
+        self.settings_window = SettingsWindow(
+            self.config,
+            self._on_save,
+            on_bg_test_change=self._on_bg_test_change,
+            on_actions_change=self._on_actions_change,
         )
+        self.settings_window.sync_settings(self._settings_snapshot())
 
         # System tray
         self.tray = QSystemTrayIcon()
@@ -68,7 +72,6 @@ class SpaceMouseApp:
         self.tray.setToolTip("SpaceMouse: default")
         self.tray.activated.connect(self._on_tray_activated)
 
-        self._paused = settings.get("disabled", False)
         self.window_monitor = None
 
         # Build the tray menu ONCE and keep references alive on self. Two
@@ -350,34 +353,55 @@ class SpaceMouseApp:
         with open(CONFIG_PATH, "w") as f:
             json.dump(self.config, f, indent=2)
 
+    def _settings_snapshot(self):
+        # Single source of truth for the values the SettingsWindow mirrors:
+        # autostart and the experimental bg_test toggle live on app side
+        # and need to be pushed back into the UI whenever they change.
+        return {
+            "autostart": self._autostart,
+            "bg_test": self._bg_test_enabled,
+            "disabled": self._paused,
+        }
+
     def _toggle_pause(self):
-        if self._paused:
+        self._set_paused(not self._paused)
+
+    def _on_actions_change(self, enabled):
+        # Sidebar "Actions" toggle: ON means desktop actions enabled
+        # (i.e. _paused = False), OFF means paused.
+        self._set_paused(not enabled)
+
+    def _set_paused(self, paused):
+        if paused == self._paused:
+            return
+        self._paused = paused
+        if paused:
+            # Disable: daemon to passthrough (still drains events, but no actions).
+            # 3D apps (Blender/FreeCAD) keep working via their own libspnav path.
+            send_daemon_cmd("PROFILE _passthrough")
+            set_spacemouse_led(False)
+            self.tray.setToolTip("SpaceMouse: DISABLED")
+            self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
+        else:
             # Enable: restore daemon to whatever the current focus dictates.
-            self._paused = False
             target = "_passthrough" if self._gui_has_focus else self._saved_profile
             send_daemon_cmd(f"PROFILE {target}")
             set_spacemouse_led(True)
             self.tray.setToolTip(f"SpaceMouse: {self._saved_profile}")
             self.tray.setIcon(QIcon(create_tray_icon_pixmap("SM")))
-        else:
-            # Disable: daemon to passthrough (still drains events, but no actions).
-            # 3D apps (Blender/FreeCAD) keep working via their own libspnav path.
-            self._paused = True
-            send_daemon_cmd("PROFILE _passthrough")
-            set_spacemouse_led(False)
-            self.tray.setToolTip("SpaceMouse: DISABLED")
-            self.tray.setIcon(QIcon(create_tray_icon_pixmap("||")))
         self._save_disabled_state()
         self._update_tray_menu()
+        # Keep the sidebar toggle in sync when state was changed from the
+        # tray menu. sync_settings → setChecked re-emits stateChanged, but
+        # _set_paused early-returns on no-change so no loop.
+        self.settings_window.sync_settings(self._settings_snapshot())
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self._show_settings()
 
     def _show_settings(self):
-        self.settings_window.sync_settings(
-            {"autostart": self._autostart, "bg_test": self._bg_test_enabled}
-        )
+        self.settings_window.sync_settings(self._settings_snapshot())
         # Clear any minimised state — on Wayland the window can come back
         # invisible after a previous close+show cycle if WindowMinimized was
         # left set, since the compositor decides where to put it.
