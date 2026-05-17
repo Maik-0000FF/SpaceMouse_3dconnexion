@@ -336,7 +336,7 @@ if $HAVE_SYSTEMD; then
     # independently of the daemon branch above. Without this, users on a
     # repeat install keep talking to the old Python process and wonder why
     # their fix didn't take effect.
-    if systemctl --user restart spacemouse-config.service 2> /dev/null; then
+    if systemctl --user restart spacemouse-config.service 2>/dev/null; then
         ok "spacemouse-config GUI restarted"
     else
         warn "spacemouse-config restart failed (no graphical session? safe to ignore on headless installs)"
