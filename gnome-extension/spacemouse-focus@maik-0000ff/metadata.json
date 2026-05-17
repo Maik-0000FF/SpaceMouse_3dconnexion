@@ -1,0 +1,7 @@
+{
+    "uuid": "spacemouse-focus@maik-0000ff",
+    "name": "SpaceMouse Focus Bridge",
+    "description": "Exposes the active window's wm_class on D-Bus so the SpaceMouse desktop daemon can auto-switch profiles when Blender or FreeCAD gains focus. GNOME-Wayland has no portable window-listing protocol; without this bridge auto profile switching cannot work on GNOME-Wayland.",
+    "shell-version": ["45", "46", "47", "48", "49", "50"],
+    "url": "https://github.com/Maik-0000FF/SpaceMouse_3dconnexion"
+}

@@ -1,0 +1,35 @@
+---
+# Static analysis for the C daemon and unit tests.
+#
+# Curated check set — every enabled family must catch real bugs, not
+# style preferences. The pattern follows the schnelle-umlaute checks
+# but trimmed for C (no -modernize-*, no -cppcoreguidelines-*).
+#
+# bugprone-*           — concrete bug patterns (suspicious-string-compare,
+#                         signed-char-misuse, integer-division, branch-clone)
+# clang-analyzer-*     — LLVM's static analyzer (null deref, leaks, UAF)
+# portability-*        — platform-portability issues
+# performance-*        — perf anti-patterns
+# readability-non-const-parameter — caller may pass const; fix the API
+# misc-include-cleaner — unused / missing includes
+#
+# Explicit -checks disable the noisy ones that fire on patterns we
+# intentionally use (sscanf parsing, fixed-size buffers, magic numbers
+# baked into the spnav protocol).
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-reserved-identifier,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.strcpy,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  performance-*,
+  -performance-enum-size,
+  portability-*,
+  readability-non-const-parameter
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'spacemouse-.*\.h$'
+FormatStyle: none

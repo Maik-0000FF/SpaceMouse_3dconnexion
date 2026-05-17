@@ -26,10 +26,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[ OK ]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok() { echo -e "${GREEN}[ OK ]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() {
+    echo -e "${RED}[FAIL]${NC} $*"
+    exit 1
+}
 
 DO_INSTALL=false
 [[ "${1:-}" == "--install" ]] && DO_INSTALL=true
@@ -89,7 +92,7 @@ if grep -q "apply-spacemouse-fix.py" PKGBUILD; then
 else
     info "Adding SpaceMouse patch to PKGBUILD..."
 
-    python3 << 'PATCHSCRIPT'
+    python3 <<'PATCHSCRIPT'
 import re
 
 with open("PKGBUILD", "r") as f:
@@ -150,7 +153,7 @@ fi
 # ── Update checksums ─────────────────────────────────────────────
 
 info "Updating checksums..."
-updpkgsums 2>/dev/null || makepkg -g >> PKGBUILD 2>/dev/null || warn "Could not auto-update checksums (install pacman-contrib for updpkgsums)"
+updpkgsums 2>/dev/null || makepkg -g >>PKGBUILD 2>/dev/null || warn "Could not auto-update checksums (install pacman-contrib for updpkgsums)"
 
 # ── Build package ────────────────────────────────────────────────
 

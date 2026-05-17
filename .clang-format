@@ -1,0 +1,35 @@
+---
+# Linux-kernel-style C with a few pragmatic relaxations:
+#  - 100 column limit (kernel's 80 is tight for the dbus_*/json-c calls)
+#  - tabs for indent (matches the existing codebase)
+#  - K&R brace placement
+BasedOnStyle: LLVM
+Language: Cpp
+
+UseTab: Always
+TabWidth: 8
+IndentWidth: 8
+ContinuationIndentWidth: 8
+ColumnLimit: 100
+
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments: true
+
+PointerAlignment: Right
+SortIncludes: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesBeforeTrailingComments: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+
+# Treat the existing per-section header comments as block-level so
+# clang-format does not collapse them.
+ReflowComments: false

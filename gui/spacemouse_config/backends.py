@@ -1,13 +1,20 @@
 """Backends for FreeCAD user.cfg (XML) and Blender NDOF settings (JSON)."""
 
+import filecmp
 import json
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .constants import (BLENDER_NDOF_PATH, BLENDER_STARTUP_DIR, BLENDER_SYNC_SCRIPT,
-                        CONFIG_DIR)
+from .constants import (
+    BLENDER_NDOF_PATH,
+    BLENDER_SYNC_SCRIPT,
+    CONFIG_DIR,
+    blender_install_targets,
+    discover_blender_versions,
+)
+
 
 class FreeCADConfig:
     """Read/write FreeCAD user.cfg XML for SpaceMouse settings."""
@@ -31,8 +38,7 @@ class FreeCADConfig:
     @staticmethod
     def is_running():
         try:
-            result = subprocess.run(
-                ["pgrep", "-x", "FreeCAD"], capture_output=True, timeout=2)
+            result = subprocess.run(["pgrep", "-x", "FreeCAD"], capture_output=True, timeout=2)
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
@@ -115,12 +121,24 @@ class FreeCADConfig:
             "global_sensitivity": -15,
             "flip_yz": True,
             "dominant": False,
-            "pan_lr_enable": True, "pan_ud_enable": True, "zoom_enable": True,
-            "tilt_enable": True, "roll_enable": True, "spin_enable": True,
-            "pan_lr_reverse": False, "pan_ud_reverse": False, "zoom_reverse": False,
-            "tilt_reverse": False, "roll_reverse": False, "spin_reverse": False,
-            "panlr_deadzone": 0, "panud_deadzone": 0, "zoom_deadzone": 0,
-            "tilt_deadzone": 0, "roll_deadzone": 0, "spin_deadzone": 0,
+            "pan_lr_enable": True,
+            "pan_ud_enable": True,
+            "zoom_enable": True,
+            "tilt_enable": True,
+            "roll_enable": True,
+            "spin_enable": True,
+            "pan_lr_reverse": False,
+            "pan_ud_reverse": False,
+            "zoom_reverse": False,
+            "tilt_reverse": False,
+            "roll_reverse": False,
+            "spin_reverse": False,
+            "panlr_deadzone": 0,
+            "panud_deadzone": 0,
+            "zoom_deadzone": 0,
+            "tilt_deadzone": 0,
+            "roll_deadzone": 0,
+            "spin_deadzone": 0,
             "btn0_command": "Std_ViewFitAll",
             "btn1_command": "Std_ViewHome",
             "nav_style": "Gui::BlenderNavigationStyle",
@@ -181,8 +199,9 @@ class FreeCADConfig:
         if prefs is not None:
             view = self._find_group(prefs, "View")
             if view is not None:
-                result["nav_style"] = self._get_text(view, "NavigationStyle",
-                                                     "Gui::BlenderNavigationStyle")
+                result["nav_style"] = self._get_text(
+                    view, "NavigationStyle", "Gui::BlenderNavigationStyle"
+                )
                 result["orbit_style"] = self._get_int(view, "OrbitStyle", 1)
 
         return result
@@ -230,14 +249,17 @@ class FreeCADConfig:
         # View preferences
         prefs = self._ensure_group(base_app, "Preferences")
         view = self._ensure_group(prefs, "View")
-        self._set_text(view, "NavigationStyle",
-                       settings.get("nav_style", "Gui::BlenderNavigationStyle"))
+        self._set_text(
+            view, "NavigationStyle", settings.get("nav_style", "Gui::BlenderNavigationStyle")
+        )
         self._set_int(view, "OrbitStyle", settings.get("orbit_style", 1))
 
         tree.write(str(self.path), xml_declaration=True, encoding="utf-8")
         return True
 
+
 # ── Blender Config (JSON) ─────────────────────────────────────────────
+
 
 class BlenderConfig:
     """Read/write Blender NDOF settings as JSON + manage startup script."""
@@ -265,7 +287,7 @@ class BlenderConfig:
                 result = dict(self.DEFAULTS)
                 result.update(saved)
                 return result
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
         return dict(self.DEFAULTS)
 
@@ -275,14 +297,105 @@ class BlenderConfig:
             json.dump(settings, f, indent=2)
 
     def is_script_installed(self):
-        return (BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT).exists()
+        """True if any detected Blender version has the script."""
+        return any((dir_ / BLENDER_SYNC_SCRIPT).exists() for _, dir_ in discover_blender_versions())
+
+    def _script_source_path(self):
+        return Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
+
+    def script_status(self):
+        """Inspect the installed startup script across all Blender versions.
+
+        Returns a dict with per-version status plus aggregate flags so
+        the UI can render mixed states (e.g. installed for 5.0 but
+        missing in 4.5, or installed everywhere but one copy out of
+        date after a GUI upgrade).
+
+        Schema:
+            {
+              "source_exists": bool,
+              "any_installed": bool,
+              "all_installed_up_to_date": bool,
+              "versions": [
+                {"version": "5.0", "path": Path, "installed": bool,
+                 "up_to_date": bool, "mtime": float | None},
+                ...
+              ],
+            }
+
+        When no Blender version dir exists yet, versions[] reflects the
+        default install target so the UI can still show a target path.
+        """
+        src = self._script_source_path()
+        targets = blender_install_targets()
+
+        per_version = []
+        for version, dir_ in targets:
+            dst = dir_ / BLENDER_SYNC_SCRIPT
+            if not dst.exists():
+                per_version.append(
+                    {
+                        "version": version,
+                        "path": dst,
+                        "installed": False,
+                        "up_to_date": False,
+                        "mtime": None,
+                    }
+                )
+                continue
+            up_to_date = src.exists() and filecmp.cmp(src, dst, shallow=False)
+            per_version.append(
+                {
+                    "version": version,
+                    "path": dst,
+                    "installed": True,
+                    "up_to_date": up_to_date,
+                    "mtime": dst.stat().st_mtime,
+                }
+            )
+
+        installed_entries = [v for v in per_version if v["installed"]]
+        return {
+            "source_exists": src.exists(),
+            "any_installed": bool(installed_entries),
+            "all_installed_up_to_date": bool(installed_entries)
+            and all(v["up_to_date"] for v in installed_entries),
+            "versions": per_version,
+        }
 
     def install_startup_script(self):
-        """Copy blender_spacemouse_sync.py to Blender's startup dir."""
-        BLENDER_STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-        src = Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
-        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
-        if src.exists():
-            shutil.copy2(src, dst)
-            return True
-        return False
+        """Copy blender_spacemouse_sync.py to every Blender version's startup dir.
+
+        Returns the list of (version, path) entries that were written
+        (empty if the bundled source is missing). Uses plain copy (not
+        copy2) so each destination's mtime reflects the install time —
+        the UI surfaces that to the user as "Last install: ...".
+        """
+        src = self._script_source_path()
+        if not src.exists():
+            return []
+        written = []
+        for version, dir_ in blender_install_targets():
+            dir_.mkdir(parents=True, exist_ok=True)
+            dst = dir_ / BLENDER_SYNC_SCRIPT
+            shutil.copy(src, dst)
+            written.append((version, dst))
+        return written
+
+    def uninstall_startup_script(self):
+        """Remove the startup script from every Blender version where it exists.
+
+        Returns the list of (version, path) entries that were removed.
+        Iterates over *discovered* versions (not install_targets) so an
+        uninstall after a Blender version dir was deleted manually does
+        not leak orphan files — it only acts on what's actually there.
+        """
+        removed = []
+        for version, dir_ in discover_blender_versions():
+            dst = dir_ / BLENDER_SYNC_SCRIPT
+            try:
+                dst.unlink()
+                removed.append((version, dst))
+            except FileNotFoundError:
+                pass
+        return removed

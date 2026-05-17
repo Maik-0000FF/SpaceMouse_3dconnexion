@@ -40,3 +40,39 @@ SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c627", MODE="066
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c628", MODE="0666", GROUP="input", TAG+="uaccess"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c629", MODE="0666", GROUP="input", TAG+="uaccess"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c62b", MODE="0666", GROUP="input", TAG+="uaccess"
+
+# Suppress the secondary mouse-class HID interface that high-end devices
+# (SpacePilot, SpacePilot Pro, SpaceMouse Pro Wireless, etc.) expose
+# alongside the 6DOF puck. Without this libinput moves the cursor whenever
+# the puck moves, even while a 3D app is focused — bypassing the daemon
+# completely. The ENV{ID_INPUT_MOUSE}=="1" match scopes the rule to the
+# mouse-classified event device only; the 6DOF interface stays untouched.
+#
+# IMPORTANT: VID 046d is Logitech's, not 3Dconnexion's. The 3Dconnexion
+# pucks on that VID are a fixed set of PIDs (c603..c62b); matching on
+# the bare VID would silently disable LIBINPUT for every Logitech mouse
+# on the system. Each PID gets its own rule, mirroring the access-rule
+# block above.
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c603", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c605", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c606", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c621", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c623", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c625", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c626", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c627", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c628", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c629", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c62b", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+# 3Dconnexion's own VID (256f) is exclusive — every product under it is a
+# 3Dconnexion input device, so a single VID-scoped rule is safe (no risk of
+# accidentally disabling unrelated hardware the way bare-VID 046d would).
+# The ID_INPUT_MOUSE==1 match still narrows this to the secondary mouse-
+# class interface; the 6DOF puck interface (ID_INPUT_MOUSE unset) is not
+# affected. Known 256f products that benefit from this rule:
+#   c62e SpaceMouse Wireless (cabled)        c633 SpaceMouse Enterprise
+#   c62f SpaceMouse Wireless receiver        c635 SpaceMouse Compact
+#   c631 SpaceMouse Pro Wireless (cabled)    c636 SpaceMouse Module
+#   c632 SpaceMouse Pro Wireless receiver    c63a SpaceMouse Wireless
+#   c652 Universal Receiver
+SUBSYSTEM=="input", ATTRS{idVendor}=="256f", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"

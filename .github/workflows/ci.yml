@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
   workflow_dispatch:
   schedule:
@@ -37,19 +37,16 @@ jobs:
             bash -n "$f"
           done
 
-  python-syntax:
-    name: lint / python compile
+  ruff:
+    name: lint / ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: |
-          for f in $(find . -name '*.py' -not -path './.git/*' -not -path '*/__pycache__/*'); do
-            echo "compiling $f"
-            python3 -m py_compile "$f"
-          done
+      - run: pip install ruff
+      - run: ruff check .
 
   no-binaries:
     name: lint / no binaries
@@ -71,6 +68,20 @@ jobs:
           fi
           echo 'No binary artefacts tracked.'
 
+  # ─── Format gate ────────────────────────────────────────────────────
+  # Runs the same `make format-check` developers use locally so any
+  # un-formatted commit fails fast. Covers all three languages.
+
+  format-check:
+    name: lint / format-check
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - run: pacman -Sy --noconfirm git make clang ruff shfmt
+      - uses: actions/checkout@v6
+      - run: make format-check
+
   # ─── C build matrix ─────────────────────────────────────────────────
 
   build:
@@ -82,18 +93,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: arch, image: 'archlinux:latest' }
-          - { name: fedora, image: 'fedora:latest' }
-          - { name: debian-12, image: 'debian:bookworm' }
-          - { name: debian-13, image: 'debian:trixie' }
-          - { name: ubuntu-24.04, image: 'ubuntu:24.04' }
-          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest' }
+          - { name: arch, image: 'archlinux:latest', cc: gcc }
+          - { name: arch-clang, image: 'archlinux:latest', cc: clang, extra_pkgs: 'clang' }
+          - { name: fedora, image: 'fedora:latest', cc: gcc }
+          - { name: debian-12, image: 'debian:bookworm', cc: gcc }
+          - { name: debian-13, image: 'debian:trixie', cc: gcc }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04', cc: gcc }
+          - { name: opensuse-tumbleweed, image: 'opensuse/tumbleweed:latest', cc: gcc }
 
     steps:
       - name: Bootstrap (git for checkout)
         run: |
           case "${{ matrix.name }}" in
-            arch)        pacman -Sy --noconfirm git ;;
+            arch*)       pacman -Sy --noconfirm git ;;
             fedora)      dnf install -y git ;;
             debian-*|ubuntu-*) apt-get update && apt-get install -y git ;;
             opensuse-*)  zypper --non-interactive install git ;;
@@ -106,8 +118,8 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           case "${{ matrix.name }}" in
-            arch)
-              pacman -S --noconfirm libspnav json-c dbus gcc make pkgconf
+            arch*)
+              pacman -S --noconfirm libspnav json-c dbus gcc make pkgconf ${{ matrix.extra_pkgs }}
               ;;
             fedora)
               dnf install -y libspnav-devel json-c-devel dbus-devel gcc make pkgconf-pkg-config
@@ -124,7 +136,8 @@ jobs:
               ;;
           esac
 
-      - run: make -C src/
+      - name: Build
+        run: make -C src/ CC=${{ matrix.cc }}
 
       - name: Verify binaries
         run: |
@@ -132,6 +145,9 @@ jobs:
           test -x src/spacemouse-test
           test -x src/spnav_example
           ls -la src/spacemouse-desktop src/spacemouse-test src/spnav_example
+
+      - name: Run unit tests
+        run: make -C src/ test CC=${{ matrix.cc }}
 
   # ─── FreeCAD patcher ────────────────────────────────────────────────
 
@@ -289,3 +305,61 @@ jobs:
               exit 1;
             }
           '
+
+  # ─── Python unit tests ─────────────────────────────────────────────
+  # The pytest suite covers FreeCADConfig (XML round-trip), BlenderConfig
+  # (JSON round-trip + corruption recovery) and the WM-class profile
+  # matcher. None of it touches PySide6 — find_matching_profile lives in
+  # its own module precisely so tests don't need a Qt install.
+
+  python-tests:
+    name: tests / pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install pytest
+      - run: pytest tests/ -v
+
+  # ─── Sanitizers ─────────────────────────────────────────────────────
+  # ASan catches heap/stack overflows, use-after-free, double-free.
+  # UBSan catches signed-int overflow, null deref, shift-overflows,
+  # invalid enum values. Both run the existing C unit tests so any UB
+  # in apply_curve, scroll_acc, env_contains or detect_desktop_env
+  # surfaces with a stack trace. -O1 keeps inlining realistic without
+  # eating the trace; -fno-sanitize-recover=all aborts on first finding.
+
+  sanitizers:
+    name: tests / ASan + UBSan
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - run: pacman -Sy --noconfirm git libspnav json-c dbus gcc make pkgconf
+      - uses: actions/checkout@v6
+      - name: Build + run tests under ASan/UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1:print_stacktrace=1
+          UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
+        run: |
+          make -C src/ test \
+            EXTRA_CFLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g -O1' \
+            EXTRA_LDFLAGS='-fsanitize=address,undefined'
+
+  # ─── clang-tidy ─────────────────────────────────────────────────────
+  # Curated check set lives in .clang-tidy at the repo root. Any new
+  # finding fails the job (WarningsAsErrors='*'). Build with clang
+  # implicitly via the lint-c make target so includes resolve the same
+  # way as the production build.
+
+  clang-tidy:
+    name: lint / clang-tidy
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - run: pacman -Sy --noconfirm git libspnav json-c dbus gcc make pkgconf clang
+      - uses: actions/checkout@v6
+      - run: make -C src/ lint-c

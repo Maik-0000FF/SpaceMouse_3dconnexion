@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# SpaceMouse Driver Uninstall Script
+# SpaceMouse Linux Control — uninstaller
 #
 set -euo pipefail
 
@@ -9,9 +9,9 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "[INFO] $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}   $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+info() { echo -e "[INFO] $*"; }
+ok() { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
 echo -e "${BOLD}SpaceMouse Uninstaller${NC}\n"
 
@@ -71,6 +71,32 @@ for d in "$HOME"/.config/blender/*/scripts/startup; do
 done
 ok "Binaries and GUI removed"
 
+# GNOME Shell extension (bundled focus bridge)
+EXT_UUID="spacemouse-focus@maik-0000ff"
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+if [[ -d "$EXT_DIR" ]]; then
+    if command -v gnome-extensions &>/dev/null; then
+        gnome-extensions disable "$EXT_UUID" 2>/dev/null || true
+    fi
+    # Also strip the UUID from enabled-extensions so a stale gsettings
+    # entry doesn't survive after the files are gone (GNOME logs a
+    # warning on every login for missing UUIDs).
+    if command -v gsettings &>/dev/null; then
+        CURRENT=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+        if [[ "$CURRENT" == *"'$EXT_UUID'"* ]]; then
+            # Remove "'uuid'" along with any neighbouring ", " glue.
+            NEW="${CURRENT/, \'$EXT_UUID\'/}"
+            NEW="${NEW/\'$EXT_UUID\', /}"
+            NEW="${NEW/\'$EXT_UUID\'/}"
+            # Collapse "[]" the cleaner @as [] form GNOME emits.
+            [[ "$NEW" == "[]" ]] && NEW="@as []"
+            gsettings set org.gnome.shell enabled-extensions "$NEW" 2>/dev/null || true
+        fi
+    fi
+    rm -rf "$EXT_DIR"
+    ok "GNOME focus bridge extension removed"
+fi
+
 read -rp "Remove config directory ~/.config/spacemouse/? [y/N] " ans
 if [[ "$ans" == [yY] ]]; then
     rm -rf "$HOME/.config/spacemouse"
@@ -102,13 +128,13 @@ if [[ "$ans" == [yY] ]]; then
                 paru -R --noconfirm spacenavd 2>/dev/null || true
             fi
             ;;
-        *" fedora "*|*" rhel "*|*" centos "*)
+        *" fedora "* | *" rhel "* | *" centos "*)
             sudo dnf remove -y spacenavd 2>/dev/null || true
             ;;
-        *" debian "*|*" ubuntu "*)
+        *" debian "* | *" ubuntu "*)
             sudo apt-get remove -y spacenavd 2>/dev/null || true
             ;;
-        *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*)
+        *" opensuse "* | *" opensuse-tumbleweed "* | *" opensuse-leap "* | *" suse "* | *" sles "*)
             sudo zypper --non-interactive remove spacenavd 2>/dev/null || true
             ;;
     esac

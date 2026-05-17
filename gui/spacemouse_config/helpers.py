@@ -1,17 +1,18 @@
 """Small helpers shared across modules — daemon socket, LED, common widget builders."""
 
 import os
-import socket
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
-from .constants import SOCK_PATH
-
+# Re-export daemon-socket helpers so existing callers keep their import path.
+# The actual implementations live in daemon_socket.py (Qt-free for testing).
+from .daemon_socket import send_daemon_cmd, wait_for_daemon_socket  # noqa: F401
 
 # ── LED control via direct USB HID ────────────────────────────────────
+
 
 def set_spacemouse_led(on):
     """Control SpaceMouse LED directly via USB HID (bypasses libspnav/spacenavd).
@@ -33,23 +34,8 @@ def set_spacemouse_led(on):
     return False
 
 
-# ── Daemon socket ─────────────────────────────────────────────────────
-
-def send_daemon_cmd(cmd):
-    """Send command to spacemouse-desktop daemon via UNIX socket."""
-    try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(1.0)
-        sock.connect(SOCK_PATH)
-        sock.sendall(f"{cmd}\n".encode())
-        response = sock.recv(1024).decode().strip()
-        sock.close()
-        return response
-    except (ConnectionRefusedError, FileNotFoundError, OSError):
-        return None
-
-
 # ── UI helpers ────────────────────────────────────────────────────────
+
 
 def make_card(title=None):
     """Create a styled card frame with optional section title."""
@@ -57,7 +43,8 @@ def make_card(title=None):
     card.setProperty("class", "card")
     card.setObjectName("card")
     card.setStyleSheet(
-        "QFrame#card { background-color: #2a2a3e; border-radius: 8px; padding: 12px; }")
+        "QFrame#card { background-color: #2a2a3e; border-radius: 8px; padding: 12px; }"
+    )
     layout = QVBoxLayout(card)
     layout.setContentsMargins(12, 12, 12, 12)
     layout.setSpacing(8)
@@ -75,7 +62,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     hl.setContentsMargins(0, 0, 0, 0)
 
     slider = QSlider(Qt.Orientation.Horizontal)
-    scale = 10 ** decimals
+    scale = 10**decimals
     slider.setRange(int(minimum * scale), int(maximum * scale))
     slider.setValue(int(value * scale))
     slider.setMinimumWidth(200)
@@ -99,6 +86,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
 
 
 # ── Tray icon pixmap ──────────────────────────────────────────────────
+
 
 def create_tray_icon_pixmap(text="SM"):
     pixmap = QPixmap(64, 64)

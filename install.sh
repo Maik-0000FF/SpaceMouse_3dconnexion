@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# SpaceMouse Driver Installation Script
+# SpaceMouse Linux Control — installer
 # Supports Arch (+ derivatives), Fedora, Debian/Ubuntu, openSUSE
-# Installs spacenavd, configures udev, builds tools, sets up systemd services
+# Installs the upstream driver stack (spacenavd), configures udev, builds
+# this project's control daemon + GUI, sets up systemd user services.
 #
 set -euo pipefail
 
@@ -14,11 +15,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}   $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; }
-step()  { echo -e "\n${BOLD}==> $*${NC}"; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok() { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() { echo -e "${RED}[FAIL]${NC} $*"; }
+step() { echo -e "\n${BOLD}==> $*${NC}"; }
 
 # ── Preflight checks ───────────────────────────────────────────────
 
@@ -41,10 +42,10 @@ fi
 # (Manjaro/EndeavourOS → arch, Linux Mint/Pop_OS → debian, etc.).
 DISTRO_FAMILY=""
 case " $ID ${ID_LIKE:-} " in
-    *" arch "*)        DISTRO_FAMILY="arch" ;;
-    *" fedora "*|*" rhel "*|*" centos "*) DISTRO_FAMILY="fedora" ;;
-    *" debian "*|*" ubuntu "*) DISTRO_FAMILY="debian" ;;
-    *" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*|*" suse "*|*" sles "*) DISTRO_FAMILY="opensuse" ;;
+    *" arch "*) DISTRO_FAMILY="arch" ;;
+    *" fedora "* | *" rhel "* | *" centos "*) DISTRO_FAMILY="fedora" ;;
+    *" debian "* | *" ubuntu "*) DISTRO_FAMILY="debian" ;;
+    *" opensuse "* | *" opensuse-tumbleweed "* | *" opensuse-leap "* | *" suse "* | *" sles "*) DISTRO_FAMILY="opensuse" ;;
 esac
 
 if [[ -z "$DISTRO_FAMILY" ]]; then
@@ -55,12 +56,15 @@ fi
 
 ok "Distribution: $PRETTY_NAME (family: $DISTRO_FAMILY)"
 
-# KDE Plasma detection — driver and 3D-app integration work on any desktop,
-# but window detection and desktop switching are KWin-specific.
+# Desktop-environment detection — the daemon and 3D-app integration
+# work on any desktop. Window detection and desktop switching have
+# native backends per DE; KDE Plasma gets the richest support, GNOME,
+# XFCE, Sway and Hyprland have working backends, others fall back to
+# no-op. Hints for missing pieces (extensions, etc.) print further
+# down per DE.
 if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
-    warn "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
-    warn "Window detection and desktop switching are Plasma-specific and will be inactive."
-    warn "The driver, GUI, Blender and FreeCAD integration will still work."
+    info "Not running KDE Plasma (XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})"
+    info "Auto profile switching uses the per-DE backend; see README for the feature matrix."
 fi
 
 # /run/systemd/system exists only when systemd is PID 1 — service and udev
@@ -76,17 +80,17 @@ fi
 # Helpers route through DISTRO_FAMILY so the rest of the script is generic.
 pkg_installed() {
     case "$DISTRO_FAMILY" in
-        arch)              pacman -Q "$1" &>/dev/null ;;
-        fedora|opensuse)   rpm -q "$1" &>/dev/null ;;
-        debian)            dpkg -s "$1" &>/dev/null ;;
+        arch) pacman -Q "$1" &>/dev/null ;;
+        fedora | opensuse) rpm -q "$1" &>/dev/null ;;
+        debian) dpkg -s "$1" &>/dev/null ;;
     esac
 }
 
 pkg_install() {
     case "$DISTRO_FAMILY" in
-        arch)     sudo pacman -S --needed --noconfirm "$@" ;;
-        fedora)   sudo dnf install -y "$@" ;;
-        debian)   sudo apt-get install -y "$@" ;;
+        arch) sudo pacman -S --needed --noconfirm "$@" ;;
+        fedora) sudo dnf install -y "$@" ;;
+        debian) sudo apt-get install -y "$@" ;;
         opensuse) sudo zypper --non-interactive install "$@" ;;
     esac
 }
@@ -98,7 +102,9 @@ PYSIDE_PIP_FALLBACK=false
 
 case "$DISTRO_FAMILY" in
     arch)
-        OFFICIAL_PKGS=(libspnav json-c dbus pyside6 gcc make pkgconf)
+        # xorg-xprop drives the X11 window-monitor backend (XFCE,
+        # Cinnamon, MATE, LXQt and X11 sessions of KDE/GNOME).
+        OFFICIAL_PKGS=(libspnav json-c dbus pyside6 gcc make pkgconf xorg-xprop)
         AUR_PKGS=(spacenavd)
 
         if command -v yay &>/dev/null; then
@@ -113,13 +119,16 @@ case "$DISTRO_FAMILY" in
         ;;
 
     fedora)
-        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config)
+        # Fedora 40+ ships xprop as its own package; older releases
+        # bundled it in xorg-x11-utils.
+        OFFICIAL_PKGS=(libspnav-devel spacenavd json-c-devel dbus-devel python3-pyside6 gcc make pkgconf-pkg-config xprop)
         ;;
 
     debian)
         # libx11-dev needed because spnav.h pulls in <X11/Xlib.h> and
-        # bookworm doesn't auto-install it as a dependency of libspnav-dev
-        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config)
+        # bookworm doesn't auto-install it as a dependency of libspnav-dev.
+        # x11-utils ships xprop for the X11 window-monitor backend.
+        OFFICIAL_PKGS=(libspnav-dev spacenavd libjson-c-dev libdbus-1-dev libx11-dev gcc make pkg-config x11-utils)
         sudo apt-get update
 
         # PySide6 availability:
@@ -137,8 +146,9 @@ case "$DISTRO_FAMILY" in
         ;;
 
     opensuse)
-        # libspnav-devel on openSUSE pulls in X11 headers via spnav.h
-        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel libX11-devel python3-pyside6 gcc make pkg-config)
+        # libspnav-devel on openSUSE pulls in X11 headers via spnav.h.
+        # xprop drives the X11 window-monitor backend.
+        OFFICIAL_PKGS=(libspnav-devel spacenavd libjson-c-devel dbus-1-devel libX11-devel python3-pyside6 gcc make pkg-config xprop)
         ;;
 esac
 
@@ -283,11 +293,15 @@ step "Installing systemd user service"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SCRIPT_DIR/systemd/spacemouse-desktop.service" "$HOME/.config/systemd/user/"
 
-# When PySide6 lives in a venv, the GUI service must use that interpreter
+# When PySide6 lives in a venv, the GUI service must use that interpreter.
+# $HOME goes into the replacement side of sed, so escape any character
+# that has meaning to sed in that context (\, &, and the chosen delimiter)
+# in case the user's home path is unusual.
 if $PYSIDE_PIP_FALLBACK; then
-    sed "s|^ExecStart=.*|ExecStart=$HOME/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
+    home_escaped=$(printf '%s' "$HOME" | sed 's/[\\&|]/\\&/g')
+    sed "s|^ExecStart=.*|ExecStart=${home_escaped}/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
         "$SCRIPT_DIR/systemd/spacemouse-config.service" \
-        > "$HOME/.config/systemd/user/spacemouse-config.service"
+        >"$HOME/.config/systemd/user/spacemouse-config.service"
 else
     cp "$SCRIPT_DIR/systemd/spacemouse-config.service" "$HOME/.config/systemd/user/"
 fi
@@ -313,11 +327,23 @@ if $HAVE_SYSTEMD; then
         fi
     else
         warn "/dev/uinput not writable. Adding udev rule..."
-        echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null
+        echo 'KERNEL=="uinput", MODE="0666", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null
         sudo udevadm control --reload-rules
         sudo udevadm trigger
         warn "Uinput rule added. Re-login or reboot may be required for it to take effect."
         warn "Then run: systemctl --user restart spacemouse-desktop.service"
+    fi
+
+    # Restart the GUI so an already-running instance picks up the freshly
+    # installed code. `restart` also starts a stopped unit, so this works on
+    # first install too. The GUI does not need /dev/uinput, so it runs
+    # independently of the daemon branch above. Without this, users on a
+    # repeat install keep talking to the old Python process and wonder why
+    # their fix didn't take effect.
+    if systemctl --user restart spacemouse-config.service 2>/dev/null; then
+        ok "spacemouse-config GUI restarted"
+    else
+        warn "spacemouse-config restart failed (no graphical session? safe to ignore on headless installs)"
     fi
 fi
 
@@ -328,6 +354,86 @@ ok "systemd user service installed"
 step "Running diagnostics"
 
 "$HOME/.local/bin/spacemouse-test" --check || true
+
+# ── GNOME setup ─────────────────────────────────────────────────
+#
+# GNOME needs two pieces to reach feature parity with KDE:
+#   * AppIndicator — without it, QSystemTrayIcon apps are invisible
+#     because GNOME ships no StatusNotifierWatcher. Installed from
+#     distro packages; user has to log out and back in once for it
+#     to load.
+#   * SpaceMouse Focus Bridge (Wayland only) — bundled with this
+#     project under gnome-extension/. Publishes the focused window's
+#     wm_class on D-Bus so the GUI can auto-switch profiles when
+#     Blender or FreeCAD gains focus. GNOME-X11 doesn't need it
+#     (xprop works there).
+
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
+    warn "GNOME detected — system tray icons are not visible by default."
+    case "$DISTRO_FAMILY" in
+        fedora) info "Install:  sudo dnf install gnome-shell-extension-appindicator" ;;
+        debian) info "Install:  sudo apt install gnome-shell-extension-appindicator3" ;;
+        arch) info "Install:  yay -S gnome-shell-extension-appindicator" ;;
+        opensuse) info "Install:  sudo zypper install gnome-shell-extension-appindicator" ;;
+    esac
+    info "Then log out and back in. Manual install: https://extensions.gnome.org/extension/615/appindicator-support/"
+
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+        echo ""
+        step "Installing GNOME-Wayland focus bridge extension"
+
+        EXT_UUID="spacemouse-focus@maik-0000ff"
+        EXT_SRC="$SCRIPT_DIR/gnome-extension/$EXT_UUID"
+        EXT_DEST="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+
+        if [[ ! -d "$EXT_SRC" ]]; then
+            warn "Bundled extension not found at $EXT_SRC — skipping (auto profile switch will be unavailable)."
+        else
+            mkdir -p "$(dirname "$EXT_DEST")"
+            rm -rf "$EXT_DEST"
+            cp -r "$EXT_SRC" "$EXT_DEST"
+            ok "Extension installed to $EXT_DEST"
+
+            # Enable the extension. On a fresh install GNOME Shell has
+            # not scanned ~/.local/share/gnome-shell/extensions/ yet, so
+            # `gnome-extensions enable` (which requires the extension to
+            # already be known to the shell) fails. The robust path is
+            # to add the UUID to org.gnome.shell.enabled-extensions
+            # directly: GNOME picks it up on the next shell start. On
+            # repeat installs `gnome-extensions enable` works too.
+            if command -v gnome-extensions &>/dev/null \
+                && gnome-extensions enable "$EXT_UUID" 2>/dev/null; then
+                ok "Extension enabled (active immediately on X11; needs re-login on Wayland)"
+            elif command -v gsettings &>/dev/null; then
+                CURRENT=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
+                if [[ "$CURRENT" != *"'$EXT_UUID'"* ]]; then
+                    # Build a new array literal. gsettings prints arrays as
+                    # @as [] when empty, or ['a','b',...] otherwise.
+                    if [[ "$CURRENT" == "@as []" || "$CURRENT" == "[]" ]]; then
+                        NEW="['$EXT_UUID']"
+                    else
+                        # Strip the closing bracket, append ", 'uuid']".
+                        NEW="${CURRENT%]}, '$EXT_UUID']"
+                    fi
+                    gsettings set org.gnome.shell enabled-extensions "$NEW"
+                    ok "Extension queued for activation (loads on next login)"
+                else
+                    ok "Extension already in enabled-extensions list"
+                fi
+            else
+                warn "Neither gnome-extensions nor gsettings available — enable manually."
+            fi
+
+            # GNOME-Wayland cannot live-reload extensions for security
+            # reasons (Mutter signs them into its process). The extension
+            # only starts answering D-Bus calls after the user logs out
+            # and back in once. After that, every subsequent install just
+            # refreshes the files in place.
+            info "Log out and back in once so GNOME-Wayland loads the new extension."
+            info "Auto profile switching (Blender/FreeCAD focus → profile switch) starts working after that."
+        fi
+    fi
+fi
 
 # ── Summary ──────────────────────────────────────────────────────
 

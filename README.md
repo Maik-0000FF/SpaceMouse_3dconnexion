@@ -1,12 +1,12 @@
-# SpaceMouse Linux Driver
+# SpaceMouse Linux Control
 
 [![CI](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml/badge.svg)](https://github.com/Maik-0000FF/SpaceMouse_3dconnexion/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 ![version](https://img.shields.io/badge/version-0.1.0-blue)
 
 > **Under active development.** Contributions and feedback are welcome.
 
-Use your 3Dconnexion SpaceMouse as a desktop input device on Linux.
-Tilt to scroll, push/pull to zoom, twist to switch virtual desktops — and it works natively inside Blender and FreeCAD for 3D navigation.
+Userspace control daemon and GUI for 3Dconnexion SpaceMouse devices on Linux. Sits on top of the existing driver stack (Linux evdev + spacenavd + libspnav) and turns 6DOF input into desktop actions: tilt to scroll, push/pull to zoom, twist to switch virtual desktops. Blender and FreeCAD continue to use their native 3D navigation — this project does not interfere with that path.
 
 The current version (`0.1.0`) is reported by `spacemouse-desktop --version`, `spacemouse-test --version` and `spacemouse_config.__version__`.
 
@@ -23,23 +23,25 @@ The current version (`0.1.0`) is reported by `spacemouse-desktop --version`, `sp
   | **Debian 12 (bookworm)** / **Ubuntu 24.04 LTS** / **Ubuntu 24.10** | works, but PySide6 isn't in apt — the installer falls back to a pip venv automatically. (`python3-pyside6.qtwidgets` first lands in Ubuntu 25.10.) |
   | **openSUSE Tumbleweed / Leap** | everything from the official repos |
 
-- **A desktop environment.** **KDE Plasma (Wayland)** is the primary target and the only one where the full feature set works. The driver itself is desktop-agnostic — see the table below.
+- **A desktop environment.** **KDE Plasma (Wayland)** is the primary target and the only one where the full feature set works. The control daemon itself is desktop-agnostic — see the table below.
 
 ### Feature support per desktop
 
-The C daemon falls back gracefully when KWin's D-Bus services aren't there, and the GUI's window-detection code does the same with `gdbus` timeouts and a guarded `journalctl` subprocess. So nothing crashes on other desktops; the KWin-bound features just become no-ops.
+The daemon and GUI both fall back gracefully when a backend isn't available, so nothing crashes on other desktops; the affected features just become no-ops.
 
-| Feature | KDE Plasma | GNOME | XFCE 4.18+ | Sway | Hyprland | COSMIC |
-|---|---|---|---|---|---|---|
-| Scroll, zoom (tilt + push/pull) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GUI with system-tray icon | ✓ | ⚠ via [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/) extension | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
-| Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Auto profile switch when Blender / FreeCAD is focused | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Twist → virtual desktop switch | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Left btn → Overview / Right btn → Show Desktop | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Feature | KDE Plasma | GNOME (X11) | GNOME (Wayland) | XFCE 4.18+ | Sway | Hyprland | COSMIC |
+|---|---|---|---|---|---|---|---|
+| Scroll, zoom (tilt + push/pull) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GUI with system-tray icon | ✓ | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
+| Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✓ via bundled focus-bridge extension | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
+| Twist → virtual desktop switch | ✓ KWin D-Bus | ✓ key combo | ✓ key combo | ✓ key combo | ✓ swaymsg | ✓ hyprctl | ✓ key combo |
+| Left btn → Overview / Right btn → Show Desktop | ✓ KGlobalAccel | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo |
 
-**Why the `✗`s:** the auto-switch hooks into `workspace.windowActivated` (KWin Scripting), the desktop switch and the buttons go through `org.kde.KWin` and `org.kde.kglobalaccel` D-Bus interfaces — none of which exist outside KWin. Scroll/zoom work everywhere because `uinput` events are forwarded to the focused application by `libinput` / Xorg / the Wayland compositor regardless of desktop.
+**GNOME-Wayland note:** auto profile switching needs a Shell extension because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The installer ships and enables a small bundled extension (`spacemouse-focus@maik-0000ff`, source under [`gnome-extension/`](gnome-extension/)) that publishes the focused window's `wm_class` on the session bus. The GUI subscribes to a D-Bus signal from that extension — push-based, zero compositor load between focus changes — and switches profiles when Blender or FreeCAD gains focus. **Log out and back in once after install** so GNOME-Wayland loads the new extension — Mutter cannot live-load extensions on Wayland for security reasons. The third-party [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension is also recognised as a fallback for users who already had it installed (polled every 1.5 s, deliberately slow so Mutter's main loop stays free).
+
+> The extension's `shell-version` field in `gnome-extension/spacemouse-focus@maik-0000ff/metadata.json` currently lists GNOME 45–50. When a new major GNOME release ships, append its version number to that array, otherwise GNOME Shell refuses to load the extension.
 
 ## Installation
 
@@ -49,22 +51,18 @@ cd SpaceMouse_3dconnexion
 ./install.sh
 ```
 
-The installer takes care of everything: installing packages, setting up permissions, compiling the driver, and starting the background services. You'll be asked for your password when it needs administrator access.
+The installer takes care of everything: installing packages, setting up permissions, compiling the daemon and tools, and starting the background services. You'll be asked for your password when it needs administrator access.
 
 After installation, **plug in your SpaceMouse** (or unplug and replug it) and it's ready to use.
 
 ## How It Works
 
-Once installed, the SpaceMouse works on your desktop like this:
+After installation the daemon runs in the background but is intentionally idle — all axes and buttons start out unassigned. Open **SpaceMouse Control** from the tray icon and assign actions yourself on the **Desktop** page:
 
-- **Tilt left/right** → horizontal scroll
-- **Tilt forward/back** → vertical scroll
-- **Push down / pull up** → zoom (Ctrl+scroll)
-- **Twist left/right** → switch virtual desktops
-- **Left button** → KDE Overview
-- **Right button** → Show Desktop
+- Axes can be set to horizontal scroll, vertical scroll, zoom (Ctrl+scroll) or virtual-desktop switching
+- Buttons can be set to KDE Overview or Show Desktop
 
-When you switch to **Blender** or **FreeCAD**, the desktop driver steps aside automatically and the app's native 3D navigation takes over — no manual switching needed.
+When you switch to **Blender** or **FreeCAD**, the desktop daemon steps aside automatically and the app's native 3D navigation takes over — no manual switching needed.
 
 A **system tray icon** appears in your taskbar. Click it to open **SpaceMouse Control** — a settings app with three pages:
 
@@ -84,6 +82,11 @@ FreeCAD and Blender connect directly to spacenavd — they don't need the GUI or
 
 Blender works out of the box — no extra setup needed.
 
+> [!IMPORTANT]
+> ### Test before you tweak
+>
+> **Open Blender, focus the 3D viewport, and move the puck.** The camera should respond immediately. If it doesn't, no setting in this GUI will fix it — the issue is upstream of the configuration layer (Blender's NDOF binding disabled, `spacenavd` not running, or a hardware problem). Solve that first; only then tweak sensitivity, deadzone, etc.
+
 To configure Blender's SpaceMouse settings from the GUI:
 
 1. Open **SpaceMouse Control** (tray icon) → **Blender** page
@@ -96,9 +99,14 @@ To configure Blender's SpaceMouse settings from the GUI:
 
 ## FreeCAD
 
+> [!IMPORTANT]
+> ### Test before you tweak
+>
+> **Open FreeCAD, load any document, focus the 3D view, and move the puck.** The model should rotate or pan. If it doesn't, no setting in this GUI will fix it — your FreeCAD build was likely compiled without spnav, `spacenavd` is not running, or the device is not detected at all. Fix the underlying problem first; only then adjust sensitivity, axes, deadzone, etc.
+
 To configure SpaceMouse inside FreeCAD, use the **FreeCAD** page in **SpaceMouse Control** (tray icon → Settings).
 
-FreeCAD on Linux has had several SpaceMouse-related bugs. Most fixes are now in 1.1.1 and the 1.2 development branch, but jerky navigation (PR #28110) is still missing from the 1.1 series, and the reset-button bug (PR #28956) is open. If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the fixes locally — completely separate from the driver here.
+FreeCAD on Linux has had several SpaceMouse-related bugs. Most fixes are now in 1.1.1 and the 1.2 development branch, but jerky navigation (PR #28110) is still missing from the 1.1 series, and the reset-button bug (PR #28956) is open. If you're affected, see [`freecad/`](freecad/) for a patcher and Arch build that apply the fixes locally — completely separate from the control daemon here.
 
 ## Uninstall
 
@@ -122,13 +130,39 @@ sudo systemctl enable --now spacenavd
 
 ### FreeCAD SpaceMouse bugs (jerky navigation, 100% CPU, broken buttons)
 
-These are upstream FreeCAD issues, not driver bugs. See [`freecad/`](freecad/) for the patcher and patched Arch build.
+These are upstream FreeCAD issues, unrelated to this project. See [`freecad/`](freecad/) for the patcher and patched Arch build.
+
+### Choppy 3D navigation in Blender or FreeCAD
+
+If 3D navigation feels stuttery while only one libspnav client is connected
+and goes smooth the moment a second one attaches (e.g. opening
+`spacemouse-test --live`), enable **Smooth 3D nav** in the sidebar of
+SpaceMouse Control. The GUI then keeps a silent second libspnav reader
+(`spacemouse-test --live`, output discarded) attached to spacenavd in the
+background for as long as the toggle is on, regardless of which window is
+focused. Turning the toggle off stops the reader again.
+
+This mitigates an event-pacing quirk in spacenavd that surfaces on some
+GNOME-Wayland setups; KDE Plasma is usually unaffected. Off by default.
 
 ### Tray icon not showing
 
 ```bash
 systemctl --user restart spacemouse-config
 ```
+
+On GNOME the tray icon will not appear at all unless the `AppIndicator and KStatusNotifierItem Support` extension is installed — GNOME has no built-in StatusNotifierWatcher. Install it and log out and back in:
+
+```bash
+sudo dnf install gnome-shell-extension-appindicator        # Fedora
+sudo apt install gnome-shell-extension-appindicator3       # Debian/Ubuntu
+yay -S gnome-shell-extension-appindicator                  # Arch (AUR)
+sudo zypper install gnome-shell-extension-appindicator     # openSUSE
+```
+
+Manual install: https://extensions.gnome.org/extension/615/appindicator-support/
+
+Until the extension is in place, the GUI auto-opens the settings window on every launch so the app stays reachable. The background daemon (profile switching, scroll/zoom) works regardless of whether the tray is visible.
 
 ### Buttons don't respond
 
@@ -158,9 +192,17 @@ Any 6DOF device supported by spacenavd should work. LED control currently only w
 
 ## License
 
-GPLv3 — See [LICENSE](LICENSE) for details.
+GPL-3.0-or-later — see [LICENSE](LICENSE) for the full text. The project links against `libdbus-1` (LGPL), `libspnav` (BSD-3-Clause) and `json-c` (MIT), all compatible with GPL-3.0 distribution.
+
+## Trademarks
+
+*SpaceMouse* and *3Dconnexion* are trademarks of 3Dconnexion GmbH. This project is **not affiliated with, endorsed by, or sponsored by 3Dconnexion**. The name is used only to identify the hardware this software supports.
 
 ## Acknowledgments
 
-- [spacenavd](https://github.com/FreeSpacenav/spacenavd) — Open-source SpaceMouse device daemon
-- [libspnav](https://github.com/FreeSpacenav/libspnav) — Client library for SpaceMouse input
+The actual SpaceMouse driver stack on Linux is the work of [John Tsiombikas](https://nuclear.mutantstargoat.com/) and the FreeSpacenav community — without it none of this would exist:
+
+- [spacenavd](https://github.com/FreeSpacenav/spacenavd) — system daemon that owns the device
+- [libspnav](https://github.com/FreeSpacenav/libspnav) — client library used by spacenavd-aware apps (Blender, FreeCAD, the diagnostic tool here)
+
+This project is a userspace layer on top of that stack: a control daemon that maps 6DOF input to desktop actions, plus a configuration GUI.

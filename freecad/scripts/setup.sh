@@ -22,10 +22,10 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}   $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC} $*"; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok() { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 # ── Locate user.cfg ──────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ fi
 
 info "Patching FreeCAD configuration..."
 
-USER_CFG_PATH="$USER_CFG" python3 << 'PYTHON_PATCH'
+USER_CFG_PATH="$USER_CFG" python3 <<'PYTHON_PATCH'
 import xml.etree.ElementTree as ET
 import os
 

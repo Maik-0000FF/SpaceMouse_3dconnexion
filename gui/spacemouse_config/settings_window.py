@@ -1,27 +1,43 @@
 """SettingsWindow — main settings UI with sidebar + apply/save dialog."""
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow,
-                               QMessageBox, QPushButton, QStackedWidget, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .backends import FreeCADConfig
-from .constants import DARK_THEME
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 
+
 class SettingsWindow(QMainWindow):
     """Main settings window with sidebar navigation."""
+
     window_shown = Signal()
     window_hidden = Signal()
     window_focused = Signal()
     window_unfocused = Signal()
 
-    def __init__(self, config_data, on_save_callback):
+    def __init__(
+        self,
+        config_data,
+        on_save_callback,
+        on_bg_test_change=None,
+        on_actions_change=None,
+    ):
         super().__init__()
         self.on_save = on_save_callback
+        self.on_bg_test_change = on_bg_test_change
+        self.on_actions_change = on_actions_change
         self.setWindowTitle("SpaceMouse Control")
         self.setWindowIcon(QIcon(create_tray_icon_pixmap("SM")))
         self.setMinimumSize(820, 600)
@@ -67,6 +83,42 @@ class SettingsWindow(QMainWindow):
         # General settings at bottom of sidebar
         self.autostart_cb = make_toggle("Autostart")
         sb_layout.addWidget(self.autostart_cb)
+
+        # Mirror of the tray Enable/Disable action. Toggle ON = SpaceMouse
+        # desktop actions active (scroll, zoom, workspace switching). OFF
+        # = daemon stays on _passthrough so 3D apps still receive events
+        # but no desktop input is generated. Immediate-effect — clicking
+        # flips the daemon state without needing Apply.
+        self.actions_cb = make_toggle("Actions")
+        self.actions_cb.setToolTip(
+            "Enable or disable SpaceMouse desktop actions (scroll, zoom, "
+            "workspace switching). Mirrors the tray Enable/Disable menu "
+            "item. 3D apps keep receiving events either way."
+        )
+        self.actions_cb.stateChanged.connect(
+            lambda state: self.on_actions_change and self.on_actions_change(state == 1)
+        )
+        sb_layout.addWidget(self.actions_cb)
+
+        # Workaround for spacenavd's single-client event-pacing on some
+        # GNOME-Wayland setups: spawn a silent second libspnav reader
+        # (spacemouse-test --live) while Blender or FreeCAD is focused.
+        # Off by default; turn on if 3D navigation feels choppy with only
+        # one app open and goes smooth as soon as a second client appears.
+        # Immediate-effect — clicking flips the spawn without Apply.
+        self.bg_test_cb = make_toggle("Smooth 3D nav")
+        self.bg_test_cb.setToolTip(
+            "Keep a second libspnav reader alive while Blender or FreeCAD "
+            "is focused. Mitigates choppy SpaceMouse navigation caused by "
+            "spacenavd's event pacing when only one libspnav client is "
+            "connected (often seen on GNOME-Wayland). Off by default."
+        )
+        bg_cb = self.on_bg_test_change
+        if bg_cb is not None:
+            # Bind bg_cb as a default arg so Pyright keeps the narrowed
+            # not-None type inside the lambda body.
+            self.bg_test_cb.stateChanged.connect(lambda state, cb=bg_cb: cb(state == 1))
+        sb_layout.addWidget(self.bg_test_cb)
 
         top.addWidget(sidebar)
 
@@ -162,24 +214,29 @@ class SettingsWindow(QMainWindow):
         elif page_idx == 1:
             # FreeCAD
             if FreeCADConfig.is_running():
-                QMessageBox.warning(self, "FreeCAD Running",
+                QMessageBox.warning(
+                    self,
+                    "FreeCAD Running",
                     "FreeCAD is running and will overwrite user.cfg on exit.\n"
-                    "Please close FreeCAD first.")
+                    "Please close FreeCAD first.",
+                )
                 return
             if self.freecad_page.apply_settings():
-                QMessageBox.information(self, "Applied",
+                QMessageBox.information(
+                    self,
+                    "Applied",
                     "FreeCAD settings saved to user.cfg.\n"
-                    "Restart FreeCAD for changes to take effect.")
+                    "Restart FreeCAD for changes to take effect.",
+                )
             else:
-                QMessageBox.warning(self, "Error",
-                    "Could not write FreeCAD user.cfg.")
+                QMessageBox.warning(self, "Error", "Could not write FreeCAD user.cfg.")
 
         elif page_idx == 2:
             # Blender
             self.blender_page.apply_settings()
-            QMessageBox.information(self, "Applied",
-                "Blender NDOF settings saved.\n"
-                "Restart Blender to apply.")
+            QMessageBox.information(
+                self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
+            )
 
         self._dirty = False
         self.setWindowTitle("SpaceMouse Control")
@@ -200,6 +257,9 @@ class SettingsWindow(QMainWindow):
 
     def sync_settings(self, settings_state):
         self.autostart_cb.setChecked(settings_state.get("autostart", True))
+        self.bg_test_cb.setChecked(settings_state.get("bg_test", False))
+        if "disabled" in settings_state:
+            self.actions_cb.setChecked(not settings_state["disabled"])
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -224,9 +284,10 @@ class SettingsWindow(QMainWindow):
             msg.setText("You have unsaved changes.")
             msg.setInformativeText("Do you want to save before closing?")
             msg.setStandardButtons(
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel)
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel
+            )
             msg.setDefaultButton(QMessageBox.StandardButton.Save)
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
