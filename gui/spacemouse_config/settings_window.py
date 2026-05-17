@@ -100,6 +100,26 @@ class SettingsWindow(QMainWindow):
         )
         sb_layout.addWidget(self.actions_cb)
 
+        # Workaround for spacenavd's single-client event-pacing on some
+        # GNOME-Wayland setups: spawn a silent second libspnav reader
+        # (spacemouse-test --live) while Blender or FreeCAD is focused.
+        # Off by default; turn on if 3D navigation feels choppy with only
+        # one app open and goes smooth as soon as a second client appears.
+        # Immediate-effect — clicking flips the spawn without Apply.
+        self.bg_test_cb = make_toggle("Smooth 3D nav")
+        self.bg_test_cb.setToolTip(
+            "Keep a second libspnav reader alive while Blender or FreeCAD "
+            "is focused. Mitigates choppy SpaceMouse navigation caused by "
+            "spacenavd's event pacing when only one libspnav client is "
+            "connected (often seen on GNOME-Wayland). Off by default."
+        )
+        bg_cb = self.on_bg_test_change
+        if bg_cb is not None:
+            # Bind bg_cb as a default arg so Pyright keeps the narrowed
+            # not-None type inside the lambda body.
+            self.bg_test_cb.stateChanged.connect(lambda state, cb=bg_cb: cb(state == 1))
+        sb_layout.addWidget(self.bg_test_cb)
+
         top.addWidget(sidebar)
 
         # Content stack
@@ -118,12 +138,6 @@ class SettingsWindow(QMainWindow):
         self.blender_page = BlenderPage()
         self.blender_page.changed.connect(self._mark_dirty)
         self.blender_page.changed.connect(self._sync_deadzones)
-        # Immediate-effect path for the experimental bg_test toggle so the
-        # user can flip it during a test without hitting Apply. The Blender
-        # Apply branch still re-sends the value for consistency — the app
-        # callback no-ops when the value is unchanged.
-        if self.on_bg_test_change is not None:
-            self.blender_page.bg_test_changed.connect(self.on_bg_test_change)
         self.stack.addWidget(self.blender_page)
 
         # Content wrapper with padding
@@ -220,11 +234,6 @@ class SettingsWindow(QMainWindow):
         elif page_idx == 2:
             # Blender
             self.blender_page.apply_settings()
-            # bg_test toggle lives on this page (Blender-specific workaround)
-            # but persists to config.json since it's an app/daemon setting,
-            # not a Blender NDOF preference.
-            if self.on_bg_test_change is not None:
-                self.on_bg_test_change(self.blender_page.get_bg_test())
             QMessageBox.information(
                 self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
             )
@@ -248,7 +257,7 @@ class SettingsWindow(QMainWindow):
 
     def sync_settings(self, settings_state):
         self.autostart_cb.setChecked(settings_state.get("autostart", True))
-        self.blender_page.set_bg_test(settings_state.get("bg_test", False))
+        self.bg_test_cb.setChecked(settings_state.get("bg_test", False))
         if "disabled" in settings_state:
             self.actions_cb.setChecked(not settings_state["disabled"])
 

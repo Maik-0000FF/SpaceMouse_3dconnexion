@@ -30,7 +30,7 @@ from .constants import (
     FREECAD_ORBIT_STYLES,
 )
 from .helpers import make_card, make_slider
-from .widgets import AxesCard, ToggleSwitch, make_toggle
+from .widgets import AxesCard, ToggleSwitch
 
 # ── DesktopPage ───────────────────────────────────────────────────────
 
@@ -560,9 +560,6 @@ class BlenderPage(QWidget):
     """Blender NDOF settings editor."""
 
     changed = Signal()
-    # bg_test toggle is a quick experimental switch — fires immediately
-    # on click so the user can test the workaround without hitting Apply.
-    bg_test_changed = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -657,29 +654,6 @@ class BlenderPage(QWidget):
         info.setStyleSheet("color: #a6adc8; font-style: italic; background: transparent;")
         info.setWordWrap(True)
         cl.addWidget(info)
-        layout.addWidget(card)
-
-        # ── Card 5: GPU WORKAROUND ──
-        # On NVIDIA setups Blender stutters during SpaceMouse navigation
-        # when no other GPU-active workload runs, because the adaptive
-        # PowerMizer downclocks the GPU between events and each first
-        # frame after idle waits for re-clocking. When this toggle is on,
-        # the app locks PowerMizer to "prefer maximum performance" via
-        # `nvidia-settings -a [gpu:0]/GPUPowerMizerMode=1` while Blender
-        # is the focused window, and restores the adaptive default the
-        # moment focus moves away. NVIDIA-only; silently no-op on
-        # AMD/Intel. Storage lives in config.json (app/daemon setting);
-        # only the UI sits here because the workaround is Blender-specific.
-        card, cl = make_card("GPU WORKAROUND (EXPERIMENTAL)")
-        self.bg_test_cb = make_toggle("GPU keep-alive (NVIDIA)")
-        self.bg_test_cb.setToolTip(
-            "Lock NVIDIA PowerMizer to maximum performance while Blender "
-            "is the focused window. Mitigates the adaptive-clock stutter "
-            "on the first frame after each idle gap. NVIDIA-only; "
-            "silently no-op on AMD/Intel. Off by default."
-        )
-        self.bg_test_cb.stateChanged.connect(lambda state: self.bg_test_changed.emit(state == 1))
-        cl.addWidget(self.bg_test_cb)
         layout.addWidget(card)
 
         layout.addStretch()
@@ -835,9 +809,3 @@ class BlenderPage(QWidget):
     def apply_settings(self):
         """Write settings to blender-ndof.json."""
         self._bc.write(self.get_settings())
-
-    def get_bg_test(self):
-        return self.bg_test_cb.isChecked()
-
-    def set_bg_test(self, enabled):
-        self.bg_test_cb.setChecked(enabled)

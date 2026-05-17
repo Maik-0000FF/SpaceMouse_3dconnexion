@@ -55,7 +55,7 @@ class SpaceMouseApp:
         settings = self.config.get("settings", {})
         self._autostart = settings.get("autostart", True)
         self._bg_test_enabled = settings.get("bg_test", False)
-        self._powermizer_locked = False
+        self._bg_test_proc = None
         self._paused = settings.get("disabled", False)
 
         self.settings_window = SettingsWindow(
@@ -147,8 +147,12 @@ class SpaceMouseApp:
         # Window monitor (also needed when disabled for LED control)
         self._start_window_monitor()
 
-        # Optional NVIDIA PowerMizer lock while Blender is focused —
-        # experimental GPU-keep-alive workaround, off by default.
+        # Optional second libspnav reader (spacemouse-test --live) while a
+        # 3D app is focused. spacenavd's event-pacing behaves erratically
+        # with a single client on some GNOME-Wayland setups, causing visible
+        # stutter in Blender/FreeCAD; a second reader keeps the pipeline
+        # warm and makes the navigation smooth. Off by default, opt-in via
+        # the sidebar toggle.
         self._apply_bg_test_state()
 
         signal.signal(signal.SIGTERM, self._sigterm_handler)
@@ -226,16 +230,12 @@ class SpaceMouseApp:
         self._cleaned_up = True
         self.spnav_reader.stop()
         self._stop_window_monitor()
-        if self._powermizer_locked:
-            # Don't leave the GPU pinned at max performance after quit.
-            self._set_powermizer(0)
-            self._powermizer_locked = False
+        self._stop_bg_test_proc()
 
     def _on_bg_test_change(self, enabled):
-        # Persist Blender-page bg_test toggle to config.json without
+        # Persist the sidebar "Smooth 3D nav" toggle to config.json without
         # touching the profiles dict (Desktop page owns those). Skipped if
-        # the value did not actually flip — avoids redundant disk writes
-        # when Apply is hit only for the NDOF settings.
+        # the value did not actually flip — avoids redundant disk writes.
         if enabled == self._bg_test_enabled:
             return
         self._bg_test_enabled = enabled
@@ -246,39 +246,54 @@ class SpaceMouseApp:
         self._apply_bg_test_state()
 
     def _apply_bg_test_state(self):
-        # NVIDIA's adaptive PowerMizer downclocks the GPU between SpaceMouse
-        # events when Blender is the only workload, which produces visible
-        # stutter on the first frame after each idle gap. While Blender is
-        # focused (and the toggle is on, and the GUI itself isn't taking
-        # focus), lock the GPU to "prefer maximum performance" so no
-        # downclocking happens. Restore the default once Blender loses
-        # focus so the rest of the system isn't burning power.
-        should_lock = (
-            self._bg_test_enabled and not self._gui_has_focus and self._saved_profile == "blender"
+        # On some GNOME-Wayland setups spacenavd's event pacing degrades when
+        # only one libspnav client is connected — the lone client (Blender or
+        # FreeCAD) gets choppy SpaceMouse input. A second silent reader on the
+        # same socket keeps the pipeline warm and the navigation smooth. The
+        # workaround is opt-in (sidebar toggle) because not every system
+        # exhibits the problem.
+        should_run = (
+            self._bg_test_enabled
+            and not self._gui_has_focus
+            and self._saved_profile in ("blender", "freecad")
         )
-        if should_lock and not self._powermizer_locked:
-            if self._set_powermizer(1):
-                self._powermizer_locked = True
-        elif not should_lock and self._powermizer_locked:
-            self._set_powermizer(0)
-            self._powermizer_locked = False
+        if should_run and self._bg_test_proc is None:
+            self._start_bg_test_proc()
+        elif not should_run and self._bg_test_proc is not None:
+            self._stop_bg_test_proc()
 
-    @staticmethod
-    def _set_powermizer(mode):
-        # NVIDIA-only. Fails quietly (returncode != 0 or FileNotFoundError)
-        # on AMD/Intel or when nvidia-settings isn't installed — the
-        # caller treats failure as "leave state unchanged".
+    def _start_bg_test_proc(self):
+        # spacemouse-test --live is just a libspnav reader that prints axis
+        # values to stdout. We discard the output and only need the side
+        # effect of having a second client attached to spacenavd. Falling
+        # back silently if the binary isn't on PATH — the toggle is best-
+        # effort, no need to scare the user with a popup.
         try:
-            result = subprocess.run(
-                ["nvidia-settings", "-a", f"[gpu:0]/GPUPowerMizerMode={mode}"],
+            self._bg_test_proc = subprocess.Popen(
+                ["spacemouse-test", "--live"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                timeout=2,
             )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+        except (OSError, FileNotFoundError):
+            self._bg_test_proc = None
+
+    def _stop_bg_test_proc(self):
+        if self._bg_test_proc is None:
+            return
+        proc = self._bg_test_proc
+        self._bg_test_proc = None
+        try:
+            proc.terminate()
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=1)
+            except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+                pass
+        except (OSError, ProcessLookupError):
+            pass
 
     def _sigterm_handler(self, signum, frame):
         self._cleanup()
