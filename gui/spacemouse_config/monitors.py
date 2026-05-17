@@ -591,8 +591,17 @@ class GnomeWaylandWindowMonitor(QThread):
     def _probe_endpoint(cls, dest, path, method):
         try:
             result = subprocess.run(
-                ["gdbus", "call", "--session", "--dest", dest,
-                 "--object-path", path, "--method", method],
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    dest,
+                    "--object-path",
+                    path,
+                    "--method",
+                    method,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=2,
@@ -614,8 +623,17 @@ class GnomeWaylandWindowMonitor(QThread):
             dest, path, method = ep
             try:
                 result = subprocess.run(
-                    ["gdbus", "call", "--session", "--dest", dest,
-                     "--object-path", path, "--method", method],
+                    [
+                        "gdbus",
+                        "call",
+                        "--session",
+                        "--dest",
+                        dest,
+                        "--object-path",
+                        path,
+                        "--method",
+                        method,
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=2,
