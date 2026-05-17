@@ -86,6 +86,11 @@ FreeCAD and Blender connect directly to spacenavd — they don't need the GUI or
 
 Blender works out of the box — no extra setup needed.
 
+> [!IMPORTANT]
+> ### Test before you tweak
+>
+> **Open Blender, focus the 3D viewport, and move the puck.** The camera should respond immediately. If it doesn't, no setting in this GUI will fix it — the issue is upstream of the configuration layer (Blender's NDOF binding disabled, `spacenavd` not running, or a hardware problem). Solve that first; only then tweak sensitivity, deadzone, etc.
+
 To configure Blender's SpaceMouse settings from the GUI:
 
 1. Open **SpaceMouse Control** (tray icon) → **Blender** page
@@ -97,6 +102,11 @@ To configure Blender's SpaceMouse settings from the GUI:
 > **Tip:** If pitch/tilt doesn't work in Blender, make sure **Lock Horizon** is OFF (Blender enables it by default, which blocks the pitch axis).
 
 ## FreeCAD
+
+> [!IMPORTANT]
+> ### Test before you tweak
+>
+> **Open FreeCAD, load any document, focus the 3D view, and move the puck.** The model should rotate or pan. If it doesn't, no setting in this GUI will fix it — your FreeCAD build was likely compiled without spnav, `spacenavd` is not running, or the device is not detected at all. Fix the underlying problem first; only then adjust sensitivity, axes, deadzone, etc.
 
 To configure SpaceMouse inside FreeCAD, use the **FreeCAD** page in **SpaceMouse Control** (tray icon → Settings).
 
