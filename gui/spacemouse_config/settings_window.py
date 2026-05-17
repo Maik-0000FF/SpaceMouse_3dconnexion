@@ -27,9 +27,10 @@ class SettingsWindow(QMainWindow):
     window_focused = Signal()
     window_unfocused = Signal()
 
-    def __init__(self, config_data, on_save_callback):
+    def __init__(self, config_data, on_save_callback, on_bg_test_change=None):
         super().__init__()
         self.on_save = on_save_callback
+        self.on_bg_test_change = on_bg_test_change
         self.setWindowTitle("SpaceMouse Control")
         self.setWindowIcon(QIcon(create_tray_icon_pixmap("SM")))
         self.setMinimumSize(820, 600)
@@ -190,6 +191,11 @@ class SettingsWindow(QMainWindow):
         elif page_idx == 2:
             # Blender
             self.blender_page.apply_settings()
+            # bg_test toggle lives on this page (Blender-specific workaround)
+            # but persists to config.json since it's an app/daemon setting,
+            # not a Blender NDOF preference.
+            if self.on_bg_test_change is not None:
+                self.on_bg_test_change(self.blender_page.get_bg_test())
             QMessageBox.information(
                 self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
             )
@@ -213,6 +219,7 @@ class SettingsWindow(QMainWindow):
 
     def sync_settings(self, settings_state):
         self.autostart_cb.setChecked(settings_state.get("autostart", True))
+        self.blender_page.set_bg_test(settings_state.get("bg_test", False))
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -54,9 +54,13 @@ class SpaceMouseApp:
 
         settings = self.config.get("settings", {})
         self._autostart = settings.get("autostart", True)
+        self._bg_test_enabled = settings.get("bg_test", False)
+        self._bg_test_proc = None
 
-        self.settings_window = SettingsWindow(self.config, self._on_save)
-        self.settings_window.sync_settings({"autostart": self._autostart})
+        self.settings_window = SettingsWindow(self.config, self._on_save, self._on_bg_test_change)
+        self.settings_window.sync_settings(
+            {"autostart": self._autostart, "bg_test": self._bg_test_enabled}
+        )
 
         # System tray
         self.tray = QSystemTrayIcon()
@@ -140,6 +144,10 @@ class SpaceMouseApp:
         # Window monitor (also needed when disabled for LED control)
         self._start_window_monitor()
 
+        # Optional headless spacemouse-test --live subprocess (experimental
+        # GPU-keep-alive workaround, off by default).
+        self._apply_bg_test_state()
+
         signal.signal(signal.SIGTERM, self._sigterm_handler)
         signal.signal(signal.SIGINT, self._sigterm_handler)
         atexit.register(self._cleanup)
@@ -215,6 +223,52 @@ class SpaceMouseApp:
         self._cleaned_up = True
         self.spnav_reader.stop()
         self._stop_window_monitor()
+        self._stop_bg_test()
+
+    def _on_bg_test_change(self, enabled):
+        # Persist Blender-page bg_test toggle to config.json without
+        # touching the profiles dict (Desktop page owns those). Skipped if
+        # the value did not actually flip — avoids redundant disk writes
+        # when Apply is hit only for the NDOF settings.
+        if enabled == self._bg_test_enabled:
+            return
+        self._bg_test_enabled = enabled
+        self.config.setdefault("settings", {})["bg_test"] = enabled
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(self.config, f, indent=2)
+        self._apply_bg_test_state()
+
+    def _apply_bg_test_state(self):
+        # Only run while Blender is the focused app (and the GUI is not the
+        # active window itself) — keeps the workaround scoped to the one
+        # case that needs it instead of burning resources permanently.
+        should_run = (
+            self._bg_test_enabled and not self._gui_has_focus and self._saved_profile == "blender"
+        )
+        if should_run and self._bg_test_proc is None:
+            try:
+                self._bg_test_proc = subprocess.Popen(
+                    ["spacemouse-test", "--live"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                )
+            except FileNotFoundError:
+                self._bg_test_proc = None
+        elif not should_run:
+            self._stop_bg_test()
+
+    def _stop_bg_test(self):
+        if self._bg_test_proc is None:
+            return
+        try:
+            self._bg_test_proc.terminate()
+            self._bg_test_proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._bg_test_proc.kill()
+        finally:
+            self._bg_test_proc = None
 
     def _sigterm_handler(self, signum, frame):
         self._cleanup()
@@ -362,12 +416,15 @@ class SpaceMouseApp:
             set_spacemouse_led(True)
             self.tray.setToolTip(f"SpaceMouse: {profile_name} ({wm_class})")
 
+        self._apply_bg_test_state()
+
     def _on_gui_shown(self):
         """GUI window shown — take spnav for live preview, daemon to passthrough."""
         self._gui_has_focus = True
         send_daemon_cmd("PROFILE _passthrough")
         self.spnav_reader.set_suspended(False)
         self.settings_window._status_timer.start(3000)
+        self._apply_bg_test_state()
 
     def _on_gui_hidden(self):
         """GUI window hidden — release spnav, restore daemon profile if enabled."""
@@ -376,12 +433,14 @@ class SpaceMouseApp:
         self.settings_window._status_timer.stop()
         if not self._paused:
             send_daemon_cmd(f"PROFILE {self._saved_profile}")
+        self._apply_bg_test_state()
 
     def _on_gui_focused(self):
         """GUI got activation — take spnav for live preview, daemon to passthrough."""
         self._gui_has_focus = True
         send_daemon_cmd("PROFILE _passthrough")
         self.spnav_reader.set_suspended(False)
+        self._apply_bg_test_state()
 
     def _on_gui_unfocused(self):
         """GUI lost activation — restore the saved profile so the daemon resumes
@@ -391,6 +450,7 @@ class SpaceMouseApp:
         self._gui_has_focus = False
         if not self._paused:
             send_daemon_cmd(f"PROFILE {self._saved_profile}")
+        self._apply_bg_test_state()
 
     def _quit(self):
         self._cleanup()

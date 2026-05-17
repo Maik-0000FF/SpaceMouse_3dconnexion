@@ -30,7 +30,7 @@ from .constants import (
     FREECAD_ORBIT_STYLES,
 )
 from .helpers import make_card, make_slider
-from .widgets import AxesCard, ToggleSwitch
+from .widgets import AxesCard, ToggleSwitch, make_toggle
 
 # ── DesktopPage ───────────────────────────────────────────────────────
 
@@ -656,6 +656,26 @@ class BlenderPage(QWidget):
         cl.addWidget(info)
         layout.addWidget(card)
 
+        # ── Card 5: GPU WORKAROUND ──
+        # Experimental: on some NVIDIA setups Blender stutters during
+        # SpaceMouse navigation when no other GPU-active workload runs,
+        # because the driver downclocks the GPU between events. When the
+        # toggle is on, the app spawns a headless spacemouse-test --live
+        # process for the duration that Blender is focused — probing
+        # whether sustained spnav traffic alone (with no extra rendering)
+        # is enough to keep the GPU clocked up. Storage lives in
+        # config.json (app/daemon setting), only the UI sits here because
+        # the workaround is Blender-specific.
+        card, cl = make_card("GPU WORKAROUND (EXPERIMENTAL)")
+        self.bg_test_cb = make_toggle("Background spacemouse-test while Blender is focused")
+        self.bg_test_cb.setToolTip(
+            "Run spacemouse-test --live as a headless background process "
+            "while Blender is the active window. Mitigates GPU "
+            "power-state stutter on some NVIDIA setups. Off by default."
+        )
+        cl.addWidget(self.bg_test_cb)
+        layout.addWidget(card)
+
         layout.addStretch()
         scroll.setWidget(content)
 
@@ -809,3 +829,9 @@ class BlenderPage(QWidget):
     def apply_settings(self):
         """Write settings to blender-ndof.json."""
         self._bc.write(self.get_settings())
+
+    def get_bg_test(self):
+        return self.bg_test_cb.isChecked()
+
+    def set_bg_test(self, enabled):
+        self.bg_test_cb.setChecked(enabled)
