@@ -55,6 +55,7 @@ def blender_install_targets():
         return discovered
     return [(BLENDER_DEFAULT_VERSION, _version_startup_dir(BLENDER_DEFAULT_VERSION))]
 
+
 AXIS_ACTIONS = [
     "none",
     "scroll_h",

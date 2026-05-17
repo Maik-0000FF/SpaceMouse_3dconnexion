@@ -336,22 +336,26 @@ class BlenderConfig:
         for version, dir_ in targets:
             dst = dir_ / BLENDER_SYNC_SCRIPT
             if not dst.exists():
-                per_version.append({
-                    "version": version,
-                    "path": dst,
-                    "installed": False,
-                    "up_to_date": False,
-                    "mtime": None,
-                })
+                per_version.append(
+                    {
+                        "version": version,
+                        "path": dst,
+                        "installed": False,
+                        "up_to_date": False,
+                        "mtime": None,
+                    }
+                )
                 continue
             up_to_date = src.exists() and filecmp.cmp(src, dst, shallow=False)
-            per_version.append({
-                "version": version,
-                "path": dst,
-                "installed": True,
-                "up_to_date": up_to_date,
-                "mtime": dst.stat().st_mtime,
-            })
+            per_version.append(
+                {
+                    "version": version,
+                    "path": dst,
+                    "installed": True,
+                    "up_to_date": up_to_date,
+                    "mtime": dst.stat().st_mtime,
+                }
+            )
 
         installed_entries = [v for v in per_version if v["installed"]]
         return {
