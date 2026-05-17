@@ -39,7 +39,7 @@ The daemon and GUI both fall back gracefully when a backend isn't available, so 
 | Twist → virtual desktop switch | ✓ KWin D-Bus | ✓ key combo | ✓ key combo | ✓ key combo | ✓ swaymsg | ✓ hyprctl | ✓ key combo |
 | Left btn → Overview / Right btn → Show Desktop | ✓ KGlobalAccel | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo |
 
-**GNOME-Wayland note:** auto profile switching needs a Shell extension because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The installer ships and enables a small bundled extension (`spacemouse-focus@maik-0000ff`, source under [`gnome-extension/`](gnome-extension/)) that publishes the focused window's `wm_class` on the session bus. The GUI polls it every 400 ms and switches profiles when Blender or FreeCAD gains focus. **Log out and back in once after install** so GNOME-Wayland loads the new extension — Mutter cannot live-load extensions on Wayland for security reasons. The third-party [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension is also recognised as a fallback for users who already had it installed.
+**GNOME-Wayland note:** auto profile switching needs a Shell extension because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The installer ships and enables a small bundled extension (`spacemouse-focus@maik-0000ff`, source under [`gnome-extension/`](gnome-extension/)) that publishes the focused window's `wm_class` on the session bus. The GUI subscribes to a D-Bus signal from that extension — push-based, zero compositor load between focus changes — and switches profiles when Blender or FreeCAD gains focus. **Log out and back in once after install** so GNOME-Wayland loads the new extension — Mutter cannot live-load extensions on Wayland for security reasons. The third-party [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension is also recognised as a fallback for users who already had it installed (polled every 1.5 s, deliberately slow so Mutter's main loop stays free).
 
 > The extension's `shell-version` field in `gnome-extension/spacemouse-focus@maik-0000ff/metadata.json` currently lists GNOME 45–50. When a new major GNOME release ships, append its version number to that array, otherwise GNOME Shell refuses to load the extension.
 
@@ -57,14 +57,10 @@ After installation, **plug in your SpaceMouse** (or unplug and replug it) and it
 
 ## How It Works
 
-Once installed, the SpaceMouse works on your desktop like this:
+After installation the daemon runs in the background but is intentionally idle — all axes and buttons start out unassigned. Open **SpaceMouse Control** from the tray icon and assign actions yourself on the **Desktop** page:
 
-- **Tilt left/right** → horizontal scroll
-- **Tilt forward/back** → vertical scroll
-- **Push down / pull up** → zoom (Ctrl+scroll)
-- **Twist left/right** → switch virtual desktops
-- **Left button** → KDE Overview
-- **Right button** → Show Desktop
+- Axes can be set to horizontal scroll, vertical scroll, zoom (Ctrl+scroll) or virtual-desktop switching
+- Buttons can be set to KDE Overview or Show Desktop
 
 When you switch to **Blender** or **FreeCAD**, the desktop daemon steps aside automatically and the app's native 3D navigation takes over — no manual switching needed.
 
