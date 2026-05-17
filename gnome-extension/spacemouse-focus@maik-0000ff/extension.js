@@ -85,13 +85,23 @@ export default class SpaceMouseFocusExtension extends Extension {
         for (const actor of global.get_window_actors()) {
             const w = actor.get_meta_window();
             if (!w) continue;
+            const pid = w.get_pid();
+            const workspace = w.get_workspace();
             result.push({
                 wm_class: w.get_wm_class(),
                 wm_class_instance: w.get_wm_class_instance(),
                 focus: w.has_focus(),
-                pid: w.get_pid(),
+                // X11 clients without _NET_WM_PID and override-redirect
+                // windows return -1; normalise to null so consumers can
+                // distinguish "unknown" from a real pid.
+                pid: pid > 0 ? pid : null,
                 id: w.get_id(),
-                in_current_workspace: w.get_workspace() === activeWorkspace,
+                // Sticky windows have no workspace (get_workspace()
+                // returns null); treat them as present in every workspace
+                // so a consumer filtering by in_current_workspace still
+                // sees them.
+                in_current_workspace: w.is_on_all_workspaces()
+                    || workspace === activeWorkspace,
             });
         }
         return JSON.stringify(result);
