@@ -684,6 +684,7 @@ class BlenderPage(QWidget):
 
         # Installed — show timestamp + content match against bundled source.
         from datetime import datetime
+
         when = datetime.fromtimestamp(st["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
         path = str(st["path"])
         if st["up_to_date"]:
@@ -739,9 +740,7 @@ class BlenderPage(QWidget):
             # File was already gone — refresh the status anyway so the
             # UI matches reality.
             self._update_script_status()
-            QMessageBox.warning(
-                self, "Nothing to remove", "The startup script was not present."
-            )
+            QMessageBox.warning(self, "Nothing to remove", "The startup script was not present.")
 
     def _load_settings(self):
         s = self._bc.read()
