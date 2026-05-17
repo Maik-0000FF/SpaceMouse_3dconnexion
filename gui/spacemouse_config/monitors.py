@@ -148,6 +148,13 @@ class SpnavReader(QThread):
 
 
 # ── Window Monitor Thread ─────────────────────────────────────────────
+#
+# wm_class strings emitted via window_changed travel verbatim from the
+# compositor (KWin print(), xprop output, swaymsg JSON, Hyprland socket2,
+# gdbus signal payload) into D-Bus signals and config-lookup keys. They
+# MUST NOT be passed to any shell, os.system(), or subprocess invocation
+# without explicit allow-listing — a malicious application can set its
+# own wm_class to arbitrary bytes.
 
 
 class KWinWindowMonitor(QThread):

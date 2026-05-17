@@ -41,6 +41,8 @@ The daemon and GUI both fall back gracefully when a backend isn't available, so 
 
 **GNOME-Wayland note:** auto profile switching needs a Shell extension because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The installer ships and enables a small bundled extension (`spacemouse-focus@maik-0000ff`, source under [`gnome-extension/`](gnome-extension/)) that publishes the focused window's `wm_class` on the session bus. The GUI polls it every 400 ms and switches profiles when Blender or FreeCAD gains focus. **Log out and back in once after install** so GNOME-Wayland loads the new extension — Mutter cannot live-load extensions on Wayland for security reasons. The third-party [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension is also recognised as a fallback for users who already had it installed.
 
+> The extension's `shell-version` field in `gnome-extension/spacemouse-focus@maik-0000ff/metadata.json` currently lists GNOME 45–50. When a new major GNOME release ships, append its version number to that array, otherwise GNOME Shell refuses to load the extension.
+
 ## Installation
 
 ```bash
