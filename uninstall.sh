@@ -71,6 +71,32 @@ for d in "$HOME"/.config/blender/*/scripts/startup; do
 done
 ok "Binaries and GUI removed"
 
+# GNOME Shell extension (bundled focus bridge)
+EXT_UUID="spacemouse-focus@maik-0000ff"
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+if [[ -d "$EXT_DIR" ]]; then
+    if command -v gnome-extensions &>/dev/null; then
+        gnome-extensions disable "$EXT_UUID" 2>/dev/null || true
+    fi
+    # Also strip the UUID from enabled-extensions so a stale gsettings
+    # entry doesn't survive after the files are gone (GNOME logs a
+    # warning on every login for missing UUIDs).
+    if command -v gsettings &>/dev/null; then
+        CURRENT=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || true)
+        if [[ "$CURRENT" == *"'$EXT_UUID'"* ]]; then
+            # Remove "'uuid'" along with any neighbouring ", " glue.
+            NEW="${CURRENT/, \'$EXT_UUID\'/}"
+            NEW="${NEW/\'$EXT_UUID\', /}"
+            NEW="${NEW/\'$EXT_UUID\'/}"
+            # Collapse "[]" the cleaner @as [] form GNOME emits.
+            [[ "$NEW" == "[]" ]] && NEW="@as []"
+            gsettings set org.gnome.shell enabled-extensions "$NEW" 2>/dev/null || true
+        fi
+    fi
+    rm -rf "$EXT_DIR"
+    ok "GNOME focus bridge extension removed"
+fi
+
 read -rp "Remove config directory ~/.config/spacemouse/? [y/N] " ans
 if [[ "$ans" == [yY] ]]; then
     rm -rf "$HOME/.config/spacemouse"

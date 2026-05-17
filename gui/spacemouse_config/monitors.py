@@ -533,23 +533,46 @@ class HyprlandWindowMonitor(QThread):
 
 
 class GnomeWaylandWindowMonitor(QThread):
-    """Monitors active window on GNOME-Wayland via the Window Calls extension.
+    """Monitors active window on GNOME-Wayland via a Shell extension.
 
     GNOME-Wayland exposes no portable window-listing protocol, so this
-    backend depends on the user-installed `Window Calls` Shell extension
-    (extensions.gnome.org/extension/4974). It publishes
-    `org.gnome.Shell.Extensions.Windows.List` on the session bus,
-    returning a JSON string with every window's wm_class and focus
-    flag. There is no focus-change signal, so we poll on a fixed
-    interval — 400 ms is a good trade-off between latency and CPU.
+    backend depends on a Shell extension that publishes the focused
+    window's wm_class on D-Bus. Two endpoints are supported:
+
+      * the project's bundled `spacemouse-focus@maik-0000ff` extension
+        (preferred, shipped under `gnome-extension/`); and
+      * the third-party `Window Calls` extension
+        (extensions.gnome.org/extension/4974) as a fallback for users
+        who already had it installed.
+
+    Both return JSON with the same schema, so parse_window_calls_list
+    handles either payload. There is no focus-change signal — we poll
+    on a fixed interval — 400 ms is a good trade-off between latency
+    and CPU.
     """
 
     window_changed = Signal(str, str)
 
-    _DBUS_DEST = "org.gnome.Shell"
-    _DBUS_PATH = "/org/gnome/Shell/Extensions/Windows"
-    _DBUS_METHOD = "org.gnome.Shell.Extensions.Windows.List"
+    # Ordered: bundled extension first, third-party fallback second.
+    # Each entry is (dest, path, method).
+    _ENDPOINTS = (
+        (
+            "org.gnome.Shell",
+            "/io/github/maik_0000ff/SpaceMouseFocus",
+            "io.github.maik_0000ff.SpaceMouseFocus.List",
+        ),
+        (
+            "org.gnome.Shell",
+            "/org/gnome/Shell/Extensions/Windows",
+            "org.gnome.Shell.Extensions.Windows.List",
+        ),
+    )
     _POLL_INTERVAL_MS = 400
+    # When no extension answers, back off to this slower cadence so a
+    # missing/loading extension only costs ~0.2 gdbus calls/sec instead
+    # of 2.5/sec. The monitor flips back to the fast cadence the moment
+    # any endpoint replies.
+    _SLOW_POLL_INTERVAL_MS = 5000
 
     def __init__(self, profiles):
         super().__init__()
@@ -557,6 +580,7 @@ class GnomeWaylandWindowMonitor(QThread):
         self._profiles = profiles
         self._last_profile = ""
         self._last_class = None
+        self._endpoint = None  # pinned after first successful probe
 
     def update_profiles(self, profiles):
         self._profiles = profiles
@@ -564,21 +588,11 @@ class GnomeWaylandWindowMonitor(QThread):
         self._last_class = None
 
     @classmethod
-    def probe(cls):
-        """Return True if the Window Calls extension is reachable on D-Bus."""
+    def _probe_endpoint(cls, dest, path, method):
         try:
             result = subprocess.run(
-                [
-                    "gdbus",
-                    "call",
-                    "--session",
-                    "--dest",
-                    cls._DBUS_DEST,
-                    "--object-path",
-                    cls._DBUS_PATH,
-                    "--method",
-                    cls._DBUS_METHOD,
-                ],
+                ["gdbus", "call", "--session", "--dest", dest,
+                 "--object-path", path, "--method", method],
                 capture_output=True,
                 text=True,
                 timeout=2,
@@ -587,36 +601,43 @@ class GnomeWaylandWindowMonitor(QThread):
             return False
         return result.returncode == 0
 
+    @classmethod
+    def probe(cls):
+        """Return True if any supported extension is reachable on D-Bus."""
+        return any(cls._probe_endpoint(*ep) for ep in cls._ENDPOINTS)
+
     def _query(self):
-        try:
-            result = subprocess.run(
-                [
-                    "gdbus",
-                    "call",
-                    "--session",
-                    "--dest",
-                    self._DBUS_DEST,
-                    "--object-path",
-                    self._DBUS_PATH,
-                    "--method",
-                    self._DBUS_METHOD,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        # Pin the first endpoint that answers; re-probe lazily if it
+        # disappears (extension toggled off, reload, etc.).
+        endpoints = (self._endpoint,) if self._endpoint else self._ENDPOINTS
+        for ep in endpoints:
+            dest, path, method = ep
+            try:
+                result = subprocess.run(
+                    ["gdbus", "call", "--session", "--dest", dest,
+                     "--object-path", path, "--method", method],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+            if result.returncode != 0:
+                continue
+            self._endpoint = ep
+            # gdbus wraps the returned string in Python-tuple syntax:
+            # ('[{"wm_class": "firefox", ...}]',)
+            try:
+                value = ast.literal_eval(result.stdout.strip())
+            except (SyntaxError, ValueError):
+                return None
+            if isinstance(value, tuple) and value and isinstance(value[0], str):
+                return value[0]
             return None
-        if result.returncode != 0:
-            return None
-        # gdbus wraps the returned string in Python-tuple syntax:
-        # ('[{"wm_class": "firefox", ...}]',)
-        try:
-            value = ast.literal_eval(result.stdout.strip())
-        except (SyntaxError, ValueError):
-            return None
-        if isinstance(value, tuple) and value and isinstance(value[0], str):
-            return value[0]
+        # No endpoint answered — drop the pin so the next tick re-tries
+        # all known endpoints (covers the post-login window where the
+        # extension is loading).
+        self._endpoint = None
         return None
 
     def run(self):
@@ -630,7 +651,12 @@ class GnomeWaylandWindowMonitor(QThread):
                     if profile_name != self._last_profile:
                         self._last_profile = profile_name
                         self.window_changed.emit(wm_class, profile_name)
-            self.msleep(self._POLL_INTERVAL_MS)
+            interval = (
+                self._POLL_INTERVAL_MS
+                if self._endpoint is not None
+                else self._SLOW_POLL_INTERVAL_MS
+            )
+            self.msleep(interval)
 
     def stop(self):
         self._running = False
@@ -657,6 +683,10 @@ def make_window_monitor(profiles):
         return SwayWindowMonitor(profiles)
     if backend == HYPRLAND:
         return HyprlandWindowMonitor(profiles)
-    if backend == GNOME_WAYLAND and GnomeWaylandWindowMonitor.probe():
+    if backend == GNOME_WAYLAND:
+        # Always start the monitor even if no endpoint is reachable
+        # right now — the bundled extension may finish loading after
+        # the user's first login post-install. The monitor's run-loop
+        # backs off to slow polling while no endpoint answers.
         return GnomeWaylandWindowMonitor(profiles)
     return None

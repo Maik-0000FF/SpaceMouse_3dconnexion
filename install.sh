@@ -351,16 +351,18 @@ step "Running diagnostics"
 
 "$HOME/.local/bin/spacemouse-test" --check || true
 
-# ── GNOME extension hints ────────────────────────────────────────
+# ── GNOME setup ─────────────────────────────────────────────────
 #
-# GNOME needs two extensions to reach feature parity with KDE:
+# GNOME needs two pieces to reach feature parity with KDE:
 #   * AppIndicator — without it, QSystemTrayIcon apps are invisible
-#     because GNOME ships no StatusNotifierWatcher.
-#   * Window Calls (Wayland only) — exposes the active-window list on
-#     D-Bus, which the GUI polls to auto-switch profiles when Blender
-#     or FreeCAD gains focus. GNOME-X11 doesn't need it (xprop works).
-# Both extensions are optional: the daemon and manual switching keep
-# working without them.
+#     because GNOME ships no StatusNotifierWatcher. Installed from
+#     distro packages; user has to log out and back in once for it
+#     to load.
+#   * SpaceMouse Focus Bridge (Wayland only) — bundled with this
+#     project under gnome-extension/. Publishes the focused window's
+#     wm_class on D-Bus so the GUI can auto-switch profiles when
+#     Blender or FreeCAD gains focus. GNOME-X11 doesn't need it
+#     (xprop works there).
 
 if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
     warn "GNOME detected — system tray icons are not visible by default."
@@ -374,9 +376,58 @@ if [[ "${XDG_CURRENT_DESKTOP:-}" == *"GNOME"* ]]; then
 
     if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
         echo ""
-        warn "GNOME-Wayland: auto profile switching for Blender / FreeCAD needs the Window Calls extension."
-        info "Install from: https://extensions.gnome.org/extension/4974/window-calls/"
-        info "Without it, the daemon stays on its default profile — manual switching via the tray still works."
+        step "Installing GNOME-Wayland focus bridge extension"
+
+        EXT_UUID="spacemouse-focus@maik-0000ff"
+        EXT_SRC="$SCRIPT_DIR/gnome-extension/$EXT_UUID"
+        EXT_DEST="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+
+        if [[ ! -d "$EXT_SRC" ]]; then
+            warn "Bundled extension not found at $EXT_SRC — skipping (auto profile switch will be unavailable)."
+        else
+            mkdir -p "$(dirname "$EXT_DEST")"
+            rm -rf "$EXT_DEST"
+            cp -r "$EXT_SRC" "$EXT_DEST"
+            ok "Extension installed to $EXT_DEST"
+
+            # Enable the extension. On a fresh install GNOME Shell has
+            # not scanned ~/.local/share/gnome-shell/extensions/ yet, so
+            # `gnome-extensions enable` (which requires the extension to
+            # already be known to the shell) fails. The robust path is
+            # to add the UUID to org.gnome.shell.enabled-extensions
+            # directly: GNOME picks it up on the next shell start. On
+            # repeat installs `gnome-extensions enable` works too.
+            if command -v gnome-extensions &>/dev/null \
+                && gnome-extensions enable "$EXT_UUID" 2>/dev/null; then
+                ok "Extension enabled (active immediately on X11; needs re-login on Wayland)"
+            elif command -v gsettings &>/dev/null; then
+                CURRENT=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
+                if [[ "$CURRENT" != *"'$EXT_UUID'"* ]]; then
+                    # Build a new array literal. gsettings prints arrays as
+                    # @as [] when empty, or ['a','b',...] otherwise.
+                    if [[ "$CURRENT" == "@as []" || "$CURRENT" == "[]" ]]; then
+                        NEW="['$EXT_UUID']"
+                    else
+                        # Strip the closing bracket, append ", 'uuid']".
+                        NEW="${CURRENT%]}, '$EXT_UUID']"
+                    fi
+                    gsettings set org.gnome.shell enabled-extensions "$NEW"
+                    ok "Extension queued for activation (loads on next login)"
+                else
+                    ok "Extension already in enabled-extensions list"
+                fi
+            else
+                warn "Neither gnome-extensions nor gsettings available — enable manually."
+            fi
+
+            # GNOME-Wayland cannot live-reload extensions for security
+            # reasons (Mutter signs them into its process). The extension
+            # only starts answering D-Bus calls after the user logs out
+            # and back in once. After that, every subsequent install just
+            # refreshes the files in place.
+            info "Log out and back in once so GNOME-Wayland loads the new extension."
+            info "Auto profile switching (Blender/FreeCAD focus → profile switch) starts working after that."
+        fi
     fi
 fi
 

@@ -35,11 +35,11 @@ The daemon and GUI both fall back gracefully when a backend isn't available, so 
 | Blender / FreeCAD native 3D navigation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | GUI with system-tray icon | ✓ | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ⚠ via [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/) | ✓ | ✓ via swaybar | ⚠ needs waybar / eww | ✓ via COSMIC panel applet |
 | Manual profile switching from the GUI | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✓ via [Window Calls extension](https://extensions.gnome.org/extension/4974/window-calls/) | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
+| Auto profile switch when Blender / FreeCAD is focused | ✓ KWin script | ✓ xprop | ✓ via bundled focus-bridge extension | ✓ xprop | ✓ swaymsg | ✓ socket2 | ✗ no portable API |
 | Twist → virtual desktop switch | ✓ KWin D-Bus | ✓ key combo | ✓ key combo | ✓ key combo | ✓ swaymsg | ✓ hyprctl | ✓ key combo |
 | Left btn → Overview / Right btn → Show Desktop | ✓ KGlobalAccel | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo | ✓ key combo |
 
-**GNOME-Wayland note:** auto profile switching needs the [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension, because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The extension publishes the active window list on the session bus; the GUI polls it every 400 ms and switches profiles when Blender or FreeCAD gains focus. Without the extension, manual switching from the tray still works — everything else is unaffected.
+**GNOME-Wayland note:** auto profile switching needs a Shell extension because GNOME exposes no portable window-listing protocol and `org.gnome.Shell.Eval` has been policy-disabled since GNOME 41. The installer ships and enables a small bundled extension (`spacemouse-focus@maik-0000ff`, source under [`gnome-extension/`](gnome-extension/)) that publishes the focused window's `wm_class` on the session bus. The GUI polls it every 400 ms and switches profiles when Blender or FreeCAD gains focus. **Log out and back in once after install** so GNOME-Wayland loads the new extension — Mutter cannot live-load extensions on Wayland for security reasons. The third-party [Window Calls](https://extensions.gnome.org/extension/4974/window-calls/) extension is also recognised as a fallback for users who already had it installed.
 
 ## Installation
 
