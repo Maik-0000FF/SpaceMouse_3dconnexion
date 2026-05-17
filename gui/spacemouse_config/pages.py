@@ -21,8 +21,6 @@ from .constants import (
     AXIS_ACTION_LABELS,
     AXIS_ACTIONS,
     AXIS_KEYS,
-    BLENDER_STARTUP_DIR,
-    BLENDER_SYNC_SCRIPT,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
     FREECAD_BTN_COMMANDS,
@@ -671,57 +669,74 @@ class BlenderPage(QWidget):
 
     def _update_script_status(self):
         st = self._bc.script_status()
-        # Uninstall only makes sense when something is actually installed.
-        self.uninstall_btn.setVisible(st["installed"])
+        # Uninstall only makes sense when at least one copy is actually
+        # on disk.
+        self.uninstall_btn.setVisible(st["any_installed"])
 
-        if not st["installed"]:
+        if not st["any_installed"]:
+            target_versions = ", ".join(v["version"] for v in st["versions"])
             self.script_status.setText(
-                "Startup script not installed. Blender won't pick up settings until you install it."
+                "Startup script not installed. Blender won't pick up settings until you install it.\n"
+                f"Install target: Blender {target_versions}"
             )
             self.script_status.setStyleSheet("color: #f9e2af; background: transparent;")
             self.install_btn.setText("Install Startup Script")
             return
 
-        # Installed — show timestamp + content match against bundled source.
         from datetime import datetime
 
-        when = datetime.fromtimestamp(st["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
-        path = str(st["path"])
-        if st["up_to_date"]:
-            self.script_status.setText(
-                f"Startup script installed and up to date.\n{path}\nLast install: {when}"
-            )
-            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
-            self.install_btn.setText("Reinstall Startup Script")
-        else:
-            self.script_status.setText(
-                "Startup script installed but differs from the bundled version.\n"
-                f"{path}\nLast install: {when}\n"
-                "Click below to overwrite it with the current version."
-            )
+        installed = [v for v in st["versions"] if v["installed"]]
+        missing = [v for v in st["versions"] if not v["installed"]]
+        outdated = [v for v in installed if not v["up_to_date"]]
+
+        def _fmt(v):
+            when = datetime.fromtimestamp(v["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
+            tag = "outdated" if not v["up_to_date"] else "up to date"
+            return f"  Blender {v['version']}: {tag}  ({when})\n    {v['path']}"
+
+        lines = [_fmt(v) for v in installed]
+        if missing:
+            lines.append("Missing in: " + ", ".join(f"Blender {v['version']}" for v in missing))
+
+        body = "\n".join(lines)
+        if outdated or missing:
+            # Yellow-orange: partial install or stale copy. "Update"
+            # makes the action sound non-destructive on the up-to-date
+            # versions (it's a re-copy, but with the exact same bytes).
+            self.script_status.setText(f"Startup script status:\n{body}")
             self.script_status.setStyleSheet("color: #fab387; background: transparent;")
             self.install_btn.setText("Update Startup Script")
+        else:
+            self.script_status.setText(f"Startup script installed and up to date.\n{body}")
+            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
+            self.install_btn.setText("Reinstall Startup Script")
 
     def _install_script(self):
-        if self._bc.install_startup_script():
-            self._update_script_status()
-            QMessageBox.information(
-                self,
-                "Installed",
-                f"Script installed to:\n{BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT}\n\n"
-                "Restart Blender for the new version to take effect.",
-            )
-        else:
+        written = self._bc.install_startup_script()
+        if not written:
             QMessageBox.warning(
                 self, "Error", "Could not find blender_spacemouse_sync.py next to this script."
             )
+            return
+        self._update_script_status()
+        targets = "\n".join(f"  Blender {v}: {p}" for v, p in written)
+        QMessageBox.information(
+            self,
+            "Installed",
+            f"Script installed for {len(written)} Blender version(s):\n{targets}\n\n"
+            "Restart Blender for the new version to take effect.",
+        )
 
     def _uninstall_script(self):
-        path = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
+        # Show the user exactly which copies will go away.
+        st = self._bc.script_status()
+        installed = [v for v in st["versions"] if v["installed"]]
+        targets = "\n".join(f"  Blender {v['version']}: {v['path']}" for v in installed)
         confirm = QMessageBox.question(
             self,
             "Uninstall Startup Script",
-            f"Remove the startup script from Blender?\n\n{path}\n\n"
+            f"Remove the startup script from {len(installed)} Blender version(s)?\n\n"
+            f"{targets}\n\n"
             "Blender will fall back to its own NDOF defaults on the next start "
             "and stop picking up settings made here.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -729,17 +744,17 @@ class BlenderPage(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        if self._bc.uninstall_startup_script():
-            self._update_script_status()
+        removed = self._bc.uninstall_startup_script()
+        self._update_script_status()
+        if removed:
+            removed_list = "\n".join(f"  Blender {v}: {p}" for v, p in removed)
             QMessageBox.information(
                 self,
                 "Uninstalled",
-                "Startup script removed.\nRestart Blender to drop the previously applied settings.",
+                f"Startup script removed from {len(removed)} Blender version(s):\n{removed_list}\n\n"
+                "Restart Blender to drop the previously applied settings.",
             )
         else:
-            # File was already gone — refresh the status anyway so the
-            # UI matches reality.
-            self._update_script_status()
             QMessageBox.warning(self, "Nothing to remove", "The startup script was not present.")
 
     def _load_settings(self):

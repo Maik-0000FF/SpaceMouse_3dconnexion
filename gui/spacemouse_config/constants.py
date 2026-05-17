@@ -1,6 +1,7 @@
 """Static configuration constants — shared by all modules."""
 
 import os
+import re
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "spacemouse"
@@ -8,8 +9,51 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 BLENDER_NDOF_PATH = CONFIG_DIR / "blender-ndof.json"
 SOCK_PATH = f"/run/user/{os.getuid()}/spacemouse-cmd.sock"
 
-BLENDER_STARTUP_DIR = Path.home() / ".config" / "blender" / "5.0" / "scripts" / "startup"
+BLENDER_CONFIG_ROOT = Path.home() / ".config" / "blender"
+# Fallback target when no Blender version dir exists yet — the user
+# hasn't run Blender once, but we still want the install button to
+# leave something Blender will pick up on first launch.
+BLENDER_DEFAULT_VERSION = "5.0"
 BLENDER_SYNC_SCRIPT = "spacemouse_sync.py"
+
+_BLENDER_VERSION_RE = re.compile(r"\d+\.\d+")
+
+
+def _version_startup_dir(version):
+    return BLENDER_CONFIG_ROOT / version / "scripts" / "startup"
+
+
+def discover_blender_versions():
+    """Return [(version, startup_dir), ...] for every installed Blender.
+
+    Blender creates ~/.config/blender/N.N/ on first launch, so the
+    directory's existence is a strong signal that the user runs that
+    version. Non-version subdirs (addons, snap_archives, ...) are
+    skipped via the strict N.N regex.
+    """
+    if not BLENDER_CONFIG_ROOT.is_dir():
+        return []
+    found = []
+    for entry in sorted(BLENDER_CONFIG_ROOT.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not _BLENDER_VERSION_RE.fullmatch(entry.name):
+            continue
+        found.append((entry.name, _version_startup_dir(entry.name)))
+    return found
+
+
+def blender_install_targets():
+    """Where the startup script should be written.
+
+    Existing version dirs if any (so Blender 4.5 + 5.0 both get the
+    script), otherwise a single default target so a fresh-Blender
+    install still picks up the sync script on first launch.
+    """
+    discovered = discover_blender_versions()
+    if discovered:
+        return discovered
+    return [(BLENDER_DEFAULT_VERSION, _version_startup_dir(BLENDER_DEFAULT_VERSION))]
 
 AXIS_ACTIONS = [
     "none",

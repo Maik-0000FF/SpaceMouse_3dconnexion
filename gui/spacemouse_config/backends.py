@@ -7,7 +7,13 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .constants import BLENDER_NDOF_PATH, BLENDER_STARTUP_DIR, BLENDER_SYNC_SCRIPT, CONFIG_DIR
+from .constants import (
+    BLENDER_NDOF_PATH,
+    BLENDER_SYNC_SCRIPT,
+    CONFIG_DIR,
+    blender_install_targets,
+    discover_blender_versions,
+)
 
 
 class FreeCADConfig:
@@ -291,63 +297,104 @@ class BlenderConfig:
             json.dump(settings, f, indent=2)
 
     def is_script_installed(self):
-        return (BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT).exists()
+        """True if any detected Blender version has the script."""
+        for _, dir_ in discover_blender_versions():
+            if (dir_ / BLENDER_SYNC_SCRIPT).exists():
+                return True
+        return False
 
     def _script_source_path(self):
         return Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
 
     def script_status(self):
-        """Inspect the installed startup script.
+        """Inspect the installed startup script across all Blender versions.
 
-        Returns a dict with the real state so the UI can distinguish
-        between "not installed", "installed and matches the GUI's
-        bundled source", and "installed but out of date" (would happen
-        e.g. after a GUI upgrade brings a newer script).
+        Returns a dict with per-version status plus aggregate flags so
+        the UI can render mixed states (e.g. installed for 5.0 but
+        missing in 4.5, or installed everywhere but one copy out of
+        date after a GUI upgrade).
+
+        Schema:
+            {
+              "source_exists": bool,
+              "any_installed": bool,
+              "all_installed_up_to_date": bool,
+              "versions": [
+                {"version": "5.0", "path": Path, "installed": bool,
+                 "up_to_date": bool, "mtime": float | None},
+                ...
+              ],
+            }
+
+        When no Blender version dir exists yet, versions[] reflects the
+        default install target so the UI can still show a target path.
         """
         src = self._script_source_path()
-        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
-        if not dst.exists():
-            return {
-                "installed": False,
-                "up_to_date": False,
+        targets = blender_install_targets()
+
+        per_version = []
+        for version, dir_ in targets:
+            dst = dir_ / BLENDER_SYNC_SCRIPT
+            if not dst.exists():
+                per_version.append({
+                    "version": version,
+                    "path": dst,
+                    "installed": False,
+                    "up_to_date": False,
+                    "mtime": None,
+                })
+                continue
+            up_to_date = src.exists() and filecmp.cmp(src, dst, shallow=False)
+            per_version.append({
+                "version": version,
                 "path": dst,
-                "mtime": None,
-                "source_exists": src.exists(),
-            }
-        up_to_date = src.exists() and filecmp.cmp(src, dst, shallow=False)
+                "installed": True,
+                "up_to_date": up_to_date,
+                "mtime": dst.stat().st_mtime,
+            })
+
+        installed_entries = [v for v in per_version if v["installed"]]
         return {
-            "installed": True,
-            "up_to_date": up_to_date,
-            "path": dst,
-            "mtime": dst.stat().st_mtime,
             "source_exists": src.exists(),
+            "any_installed": bool(installed_entries),
+            "all_installed_up_to_date": bool(installed_entries)
+            and all(v["up_to_date"] for v in installed_entries),
+            "versions": per_version,
         }
 
     def install_startup_script(self):
-        """Copy blender_spacemouse_sync.py to Blender's startup dir.
+        """Copy blender_spacemouse_sync.py to every Blender version's startup dir.
 
-        Uses plain copy (not copy2) so the destination mtime reflects
-        the install time, not the source file's mtime — that way the
-        UI can show the user *when* they last installed.
+        Returns the list of (version, path) entries that were written
+        (empty if the bundled source is missing). Uses plain copy (not
+        copy2) so each destination's mtime reflects the install time —
+        the UI surfaces that to the user as "Last install: ...".
         """
-        BLENDER_STARTUP_DIR.mkdir(parents=True, exist_ok=True)
         src = self._script_source_path()
-        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
-        if src.exists():
+        if not src.exists():
+            return []
+        written = []
+        for version, dir_ in blender_install_targets():
+            dir_.mkdir(parents=True, exist_ok=True)
+            dst = dir_ / BLENDER_SYNC_SCRIPT
             shutil.copy(src, dst)
-            return True
-        return False
+            written.append((version, dst))
+        return written
 
     def uninstall_startup_script(self):
-        """Remove the startup script from Blender's startup dir.
+        """Remove the startup script from every Blender version where it exists.
 
-        Returns True if the file existed and was removed (or vanished
-        between the existence check and the unlink). Blender will fall
-        back to its own NDOF defaults on the next start.
+        Returns the list of (version, path) entries that were removed.
+        Iterates over *discovered* versions (not install_targets) so an
+        uninstall after a Blender version dir was deleted manually does
+        not leak orphan files — it only acts on what's actually there.
         """
-        dst = BLENDER_STARTUP_DIR / BLENDER_SYNC_SCRIPT
-        try:
-            dst.unlink()
-            return True
-        except FileNotFoundError:
-            return False
+        removed = []
+        for version, dir_ in discover_blender_versions():
+            dst = dir_ / BLENDER_SYNC_SCRIPT
+            try:
+                dst.unlink()
+                removed.append((version, dst))
+            except FileNotFoundError:
+                pass
+        return removed
