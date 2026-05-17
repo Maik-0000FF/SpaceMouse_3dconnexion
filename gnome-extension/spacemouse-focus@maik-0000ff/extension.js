@@ -38,12 +38,26 @@ export default class SpaceMouseFocusExtension extends Extension {
         this._dbus.export(Gio.DBus.session, IFACE_PATH);
 
         // Mutter notifies on focus changes via the `focus-window`
-        // property on global.display. Connecting here is cheap — the
-        // handler only fires on actual focus changes, not on a timer.
+        // property on global.display. The handler is stored as an
+        // instance property (not an inline arrow) so disable() can
+        // drop the reference and let GC collect it deterministically;
+        // a lingering closure would let a late-firing focus event run
+        // handler code on a disabled extension.
+        this._focusHandler = this._onFocusChanged.bind(this);
         this._focusHandlerId = global.display.connect(
             'notify::focus-window',
-            () => this._onFocusChanged()
+            this._focusHandler
         );
+        if (!this._focusHandlerId) {
+            // Older Mutter builds may not expose the signal under this
+            // name. Surface the failure so the user knows auto profile
+            // switching will not work, instead of appearing to succeed.
+            console.warn(
+                'spacemouse-focus: notify::focus-window not available on this GNOME Shell; ' +
+                'auto profile switching will not work'
+            );
+            return;
+        }
         // Emit the current state so a subscriber that connected before
         // the first user focus change still gets a value.
         this._onFocusChanged();
@@ -54,6 +68,7 @@ export default class SpaceMouseFocusExtension extends Extension {
             global.display.disconnect(this._focusHandlerId);
             this._focusHandlerId = null;
         }
+        this._focusHandler = null;
         if (this._dbus) {
             this._dbus.unexport();
             this._dbus = null;

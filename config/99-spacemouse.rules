@@ -64,5 +64,15 @@ SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c627", ENV{ID_IN
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c628", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c629", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
 SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c62b", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-# 3Dconnexion's own VID is exclusive, so a single VID-scoped rule is safe.
+# 3Dconnexion's own VID (256f) is exclusive — every product under it is a
+# 3Dconnexion input device, so a single VID-scoped rule is safe (no risk of
+# accidentally disabling unrelated hardware the way bare-VID 046d would).
+# The ID_INPUT_MOUSE==1 match still narrows this to the secondary mouse-
+# class interface; the 6DOF puck interface (ID_INPUT_MOUSE unset) is not
+# affected. Known 256f products that benefit from this rule:
+#   c62e SpaceMouse Wireless (cabled)        c633 SpaceMouse Enterprise
+#   c62f SpaceMouse Wireless receiver        c635 SpaceMouse Compact
+#   c631 SpaceMouse Pro Wireless (cabled)    c636 SpaceMouse Module
+#   c632 SpaceMouse Pro Wireless receiver    c63a SpaceMouse Wireless
+#   c652 Universal Receiver
 SUBSYSTEM=="input", ATTRS{idVendor}=="256f", ENV{ID_INPUT_MOUSE}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"

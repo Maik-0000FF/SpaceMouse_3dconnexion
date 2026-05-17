@@ -293,9 +293,13 @@ step "Installing systemd user service"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SCRIPT_DIR/systemd/spacemouse-desktop.service" "$HOME/.config/systemd/user/"
 
-# When PySide6 lives in a venv, the GUI service must use that interpreter
+# When PySide6 lives in a venv, the GUI service must use that interpreter.
+# $HOME goes into the replacement side of sed, so escape any character
+# that has meaning to sed in that context (\, &, and the chosen delimiter)
+# in case the user's home path is unusual.
 if $PYSIDE_PIP_FALLBACK; then
-    sed "s|^ExecStart=.*|ExecStart=$HOME/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
+    home_escaped=$(printf '%s' "$HOME" | sed 's/[\\&|]/\\&/g')
+    sed "s|^ExecStart=.*|ExecStart=${home_escaped}/.local/share/spacemouse-venv/bin/python3 %h/.local/bin/spacemouse-config.py|" \
         "$SCRIPT_DIR/systemd/spacemouse-config.service" \
         >"$HOME/.config/systemd/user/spacemouse-config.service"
 else

@@ -26,6 +26,30 @@ from .window_backend import (
     select_backend,
 )
 
+
+def _terminate_proc(proc):
+    """Terminate a subprocess and reap it so we never leave a zombie.
+
+    Qt thread teardown does not guarantee the OS reaps child processes,
+    and terminate() is fire-and-forget — wait() must follow. If the
+    child ignores SIGTERM within 1s we escalate to SIGKILL.
+    """
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+    except (OSError, ProcessLookupError):
+        return
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=1)
+        except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+            pass
+
+
 # ── libspnav ctypes bindings ──────────────────────────────────────────
 
 
@@ -290,31 +314,33 @@ class KWinWindowMonitor(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                bufsize=1,
             )
         except FileNotFoundError:
             return
-        self._install_kwin_script()
-        stdout = self._proc.stdout
-        if not stdout:
-            return
-        while self._running:
-            line = stdout.readline()
-            if not line:
-                break
-            if not line.startswith("SPACEMOUSE_WM:"):
-                continue
-            wm_class = line.strip().split(":", 1)[1]
-            profile_name = self._find_matching_profile(wm_class)
-            if profile_name != self._last_profile:
-                self._last_profile = profile_name
-                self.window_changed.emit(wm_class, profile_name)
-        if self._proc:
-            self._proc.terminate()
+        try:
+            self._install_kwin_script()
+            stdout = self._proc.stdout
+            if not stdout:
+                return
+            while self._running:
+                line = stdout.readline()
+                if not line:
+                    break
+                if not line.startswith("SPACEMOUSE_WM:"):
+                    continue
+                wm_class = line.strip().split(":", 1)[1]
+                profile_name = self._find_matching_profile(wm_class)
+                if profile_name != self._last_profile:
+                    self._last_profile = profile_name
+                    self.window_changed.emit(wm_class, profile_name)
+        finally:
+            _terminate_proc(self._proc)
+            self._proc = None
 
     def stop(self):
         self._running = False
-        if self._proc:
-            self._proc.terminate()
+        _terminate_proc(self._proc)
         self._uninstall_kwin_script()
         self.wait(2000)
 
@@ -367,34 +393,36 @@ class X11WindowMonitor(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                bufsize=1,
             )
         except FileNotFoundError:
             return
-        stdout = self._proc.stdout
-        if not stdout:
-            return
-        while self._running:
-            line = stdout.readline()
-            if not line:
-                break
-            wid = parse_xprop_active_window(line)
-            if not wid or wid == self._last_wid:
-                continue
-            self._last_wid = wid
-            wm_class = self._wm_class_for(wid)
-            if not wm_class:
-                continue
-            profile_name = find_matching_profile(wm_class, self._profiles)
-            if profile_name != self._last_profile:
-                self._last_profile = profile_name
-                self.window_changed.emit(wm_class, profile_name)
-        if self._proc:
-            self._proc.terminate()
+        try:
+            stdout = self._proc.stdout
+            if not stdout:
+                return
+            while self._running:
+                line = stdout.readline()
+                if not line:
+                    break
+                wid = parse_xprop_active_window(line)
+                if not wid or wid == self._last_wid:
+                    continue
+                self._last_wid = wid
+                wm_class = self._wm_class_for(wid)
+                if not wm_class:
+                    continue
+                profile_name = find_matching_profile(wm_class, self._profiles)
+                if profile_name != self._last_profile:
+                    self._last_profile = profile_name
+                    self.window_changed.emit(wm_class, profile_name)
+        finally:
+            _terminate_proc(self._proc)
+            self._proc = None
 
     def stop(self):
         self._running = False
-        if self._proc:
-            self._proc.terminate()
+        _terminate_proc(self._proc)
         self.wait(2000)
 
 
@@ -429,34 +457,36 @@ class SwayWindowMonitor(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                bufsize=1,
             )
         except FileNotFoundError:
             return
-        stdout = self._proc.stdout
-        if not stdout:
-            return
-        while self._running:
-            line = stdout.readline()
-            if not line:
-                break
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            wm_class = parse_sway_focus_event(obj)
-            if not wm_class:
-                continue
-            profile_name = find_matching_profile(wm_class, self._profiles)
-            if profile_name != self._last_profile:
-                self._last_profile = profile_name
-                self.window_changed.emit(wm_class, profile_name)
-        if self._proc:
-            self._proc.terminate()
+        try:
+            stdout = self._proc.stdout
+            if not stdout:
+                return
+            while self._running:
+                line = stdout.readline()
+                if not line:
+                    break
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                wm_class = parse_sway_focus_event(obj)
+                if not wm_class:
+                    continue
+                profile_name = find_matching_profile(wm_class, self._profiles)
+                if profile_name != self._last_profile:
+                    self._last_profile = profile_name
+                    self.window_changed.emit(wm_class, profile_name)
+        finally:
+            _terminate_proc(self._proc)
+            self._proc = None
 
     def stop(self):
         self._running = False
-        if self._proc:
-            self._proc.terminate()
+        _terminate_proc(self._proc)
         self.wait(2000)
 
 
@@ -503,29 +533,32 @@ class HyprlandWindowMonitor(QThread):
             self._sock = None
             return
 
-        buf = b""
-        while self._running:
-            try:
-                chunk = self._sock.recv(4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            buf += chunk
-            while b"\n" in buf:
-                line, buf = buf.split(b"\n", 1)
-                wm_class = parse_hyprland_event(line.decode("utf-8", errors="replace"))
-                if not wm_class:
-                    continue
-                profile_name = find_matching_profile(wm_class, self._profiles)
-                if profile_name != self._last_profile:
-                    self._last_profile = profile_name
-                    self.window_changed.emit(wm_class, profile_name)
-        if self._sock:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
+        try:
+            buf = b""
+            while self._running:
+                try:
+                    chunk = self._sock.recv(4096)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    wm_class = parse_hyprland_event(line.decode("utf-8", errors="replace"))
+                    if not wm_class:
+                        continue
+                    profile_name = find_matching_profile(wm_class, self._profiles)
+                    if profile_name != self._last_profile:
+                        self._last_profile = profile_name
+                        self.window_changed.emit(wm_class, profile_name)
+        finally:
+            if self._sock:
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
+                self._sock = None
 
     def stop(self):
         self._running = False
@@ -690,18 +723,19 @@ class GnomeWaylandWindowMonitor(QThread):
             )
         except FileNotFoundError:
             return
-        stdout = self._proc.stdout
-        if not stdout:
-            return
-        while self._running:
-            line = stdout.readline()
-            if not line:
-                break
-            m = self._SIGNAL_LINE_RE.search(line)
-            if m:
-                self._handle_class(m.group(1))
-        if self._proc:
-            self._proc.terminate()
+        try:
+            stdout = self._proc.stdout
+            if not stdout:
+                return
+            while self._running:
+                line = stdout.readline()
+                if not line:
+                    break
+                m = self._SIGNAL_LINE_RE.search(line)
+                if m:
+                    self._handle_class(m.group(1))
+        finally:
+            _terminate_proc(self._proc)
             self._proc = None
 
     def _run_window_calls_poll_loop(self):
@@ -736,8 +770,7 @@ class GnomeWaylandWindowMonitor(QThread):
 
     def stop(self):
         self._running = False
-        if self._proc:
-            self._proc.terminate()
+        _terminate_proc(self._proc)
         self.wait(2000)
 
 

@@ -21,7 +21,8 @@ TEST_BINS = \
 	tests/test_key_lookup \
 	tests/test_de_detect \
 	tests/test_scroll_acc \
-	tests/test_kinput_state
+	tests/test_kinput_state \
+	tests/test_command_socket
 
 all: $(TARGETS)
 
@@ -74,6 +75,15 @@ tests/test_%: tests/test_%.c spacemouse-core.o spacemouse-core.h
 tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o kernel_input.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< kernel_input.o $(EXTRA_LDFLAGS)
 
+# Specific override: this test exercises command_socket.c and uses
+# the profile globals defined in config.c. spacemouse-core.o is pulled
+# in because config.c calls lookup_key() at link time.
+tests/test_command_socket: tests/test_command_socket.c command_socket.o config.o spacemouse-core.o \
+                            command_socket.h config.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) -I. -o $@ $< \
+		command_socket.o config.o spacemouse-core.o \
+		-lm $(JSON_LIBS) $(EXTRA_LDFLAGS)
+
 test: $(TEST_BINS)
 	@fail=0; \
 	for t in $(TEST_BINS); do \
@@ -102,7 +112,8 @@ C_SOURCES = spacemouse-desktop.c spacemouse-core.c spacemouse-core.h config.c co
             uinput.c uinput.h dbus_actions.c dbus_actions.h \
             desktop_actions.c desktop_actions.h \
             tests/test_curve.c tests/test_key_lookup.c tests/test_de_detect.c \
-            tests/test_scroll_acc.c tests/test_kinput_state.c
+            tests/test_scroll_acc.c tests/test_kinput_state.c \
+            tests/test_command_socket.c
 
 format-check:
 	clang-format --dry-run --Werror $(C_SOURCES)

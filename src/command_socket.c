@@ -81,11 +81,20 @@ void cmd_handle_client(int listen_fd)
 
 	if (strncmp(buf, "PROFILE ", 8) == 0) {
 		const char *name = buf + 8;
+		/* buf is zero-initialised and `read()` is capped at CMD_BUF_SIZE-1,
+		 * so the final byte is always NUL — but bound the lookup explicitly
+		 * so a future refactor that drops either invariant cannot turn
+		 * strcasecmp into an out-of-bounds read. An empty name falls
+		 * through to the "unknown profile" branch as intended.
+		 */
+		size_t name_len = strnlen(name, CMD_BUF_SIZE - 8);
 		int found = -1;
-		for (int i = 0; i < g_profile_count; i++) {
-			if (strcasecmp(g_profiles[i].name, name) == 0) {
-				found = i;
-				break;
+		if (name_len > 0) {
+			for (int i = 0; i < g_profile_count; i++) {
+				if (strcasecmp(g_profiles[i].name, name) == 0) {
+					found = i;
+					break;
+				}
 			}
 		}
 		if (found >= 0) {
