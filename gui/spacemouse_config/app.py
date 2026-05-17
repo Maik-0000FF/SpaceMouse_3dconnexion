@@ -375,7 +375,9 @@ class SpaceMouseApp:
             self._show_settings()
 
     def _show_settings(self):
-        self.settings_window.sync_settings({"autostart": self._autostart})
+        self.settings_window.sync_settings(
+            {"autostart": self._autostart, "bg_test": self._bg_test_enabled}
+        )
         # Clear any minimised state — on Wayland the window can come back
         # invisible after a previous close+show cycle if WindowMinimized was
         # left set, since the compositor decides where to put it.
