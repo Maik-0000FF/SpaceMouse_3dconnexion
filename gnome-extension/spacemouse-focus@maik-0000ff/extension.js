@@ -1,11 +1,16 @@
 // SpaceMouse Focus Bridge — minimal GNOME Shell extension that exposes
 // the focused window's wm_class on the session bus. The SpaceMouse
-// desktop daemon polls this to switch profiles when Blender or FreeCAD
-// gains focus. Output schema is intentionally identical to the
-// `Window Calls` extension's List() method so the GUI's poller treats
-// either backend identically — see gui/spacemouse_config/monitors.py.
+// desktop daemon listens for the FocusChanged signal to switch profiles
+// when Blender or FreeCAD gains focus — push-based, so the compositor
+// is not woken on a polling cadence (Blender otherwise stutters because
+// Mutter has to serialise the window list every poll tick).
+//
+// List() is kept for compatibility with the third-party Window Calls
+// extension (same JSON schema, same return type) and also serves as the
+// initial-state query for clients that subscribe after a focus change.
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const IFACE_NAME = 'io.github.maik_0000ff.SpaceMouseFocus';
@@ -17,20 +22,60 @@ const IFACE_XML = `
     <method name="List">
       <arg type="s" direction="out" name="windows"/>
     </method>
+    <method name="GetFocused">
+      <arg type="s" direction="out" name="wm_class"/>
+    </method>
+    <signal name="FocusChanged">
+      <arg type="s" name="wm_class"/>
+    </signal>
   </interface>
 </node>`;
 
 export default class SpaceMouseFocusExtension extends Extension {
     enable() {
+        this._lastClass = '';
         this._dbus = Gio.DBusExportedObject.wrapJSObject(IFACE_XML, this);
         this._dbus.export(Gio.DBus.session, IFACE_PATH);
+
+        // Mutter notifies on focus changes via the `focus-window`
+        // property on global.display. Connecting here is cheap — the
+        // handler only fires on actual focus changes, not on a timer.
+        this._focusHandlerId = global.display.connect(
+            'notify::focus-window',
+            () => this._onFocusChanged()
+        );
+        // Emit the current state so a subscriber that connected before
+        // the first user focus change still gets a value.
+        this._onFocusChanged();
     }
 
     disable() {
+        if (this._focusHandlerId) {
+            global.display.disconnect(this._focusHandlerId);
+            this._focusHandlerId = null;
+        }
         if (this._dbus) {
             this._dbus.unexport();
             this._dbus = null;
         }
+        this._lastClass = '';
+    }
+
+    _onFocusChanged() {
+        const w = global.display.focus_window;
+        const cls = w ? (w.get_wm_class() || '') : '';
+        if (cls === this._lastClass) return;
+        this._lastClass = cls;
+        if (this._dbus) {
+            this._dbus.emit_signal(
+                'FocusChanged',
+                new GLib.Variant('(s)', [cls])
+            );
+        }
+    }
+
+    GetFocused() {
+        return this._lastClass;
     }
 
     List() {

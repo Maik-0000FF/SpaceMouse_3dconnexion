@@ -4,6 +4,7 @@ import ast
 import ctypes
 import json
 import os
+import re
 import select
 import socket
 import subprocess
@@ -536,43 +537,49 @@ class GnomeWaylandWindowMonitor(QThread):
     """Monitors active window on GNOME-Wayland via a Shell extension.
 
     GNOME-Wayland exposes no portable window-listing protocol, so this
-    backend depends on a Shell extension that publishes the focused
-    window's wm_class on D-Bus. Two endpoints are supported:
+    backend depends on a Shell extension. Two endpoints are supported:
 
       * the project's bundled `spacemouse-focus@maik-0000ff` extension
-        (preferred, shipped under `gnome-extension/`); and
+        (preferred, shipped under `gnome-extension/`) — push-based via
+        a FocusChanged D-Bus signal, zero compositor load between
+        focus changes; and
       * the third-party `Window Calls` extension
         (extensions.gnome.org/extension/4974) as a fallback for users
-        who already had it installed.
+        who already had it installed — pull-based polling (no signal),
+        deliberately slow (1.5 s) to keep Mutter's main loop free.
 
-    Both return JSON with the same schema, so parse_window_calls_list
-    handles either payload. There is no focus-change signal — we poll
-    on a fixed interval — 400 ms is a good trade-off between latency
-    and CPU.
+    Polling on a tight cadence used to cause visible stutter inside
+    Blender because every gdbus call forces Mutter to serialise the
+    window list on the compositor thread — see commit history for the
+    move from 400 ms polling to signal subscription.
     """
 
     window_changed = Signal(str, str)
 
-    # Ordered: bundled extension first, third-party fallback second.
-    # Each entry is (dest, path, method).
-    _ENDPOINTS = (
-        (
-            "org.gnome.Shell",
-            "/io/github/maik_0000ff/SpaceMouseFocus",
-            "io.github.maik_0000ff.SpaceMouseFocus.List",
-        ),
-        (
-            "org.gnome.Shell",
-            "/org/gnome/Shell/Extensions/Windows",
-            "org.gnome.Shell.Extensions.Windows.List",
-        ),
-    )
-    _POLL_INTERVAL_MS = 400
-    # When no extension answers, back off to this slower cadence so a
-    # missing/loading extension only costs ~0.2 gdbus calls/sec instead
-    # of 2.5/sec. The monitor flips back to the fast cadence the moment
-    # any endpoint replies.
+    # Bundled extension — push-based via D-Bus signal.
+    _BUNDLED = {
+        "dest": "org.gnome.Shell",
+        "path": "/io/github/maik_0000ff/SpaceMouseFocus",
+        "iface": "io.github.maik_0000ff.SpaceMouseFocus",
+        "signal": "FocusChanged",
+        "get_method": "io.github.maik_0000ff.SpaceMouseFocus.GetFocused",
+    }
+    # Third-party Window Calls — poll-based (no signal exposed).
+    _WINDOW_CALLS = {
+        "dest": "org.gnome.Shell",
+        "path": "/org/gnome/Shell/Extensions/Windows",
+        "method": "org.gnome.Shell.Extensions.Windows.List",
+    }
+    # Polling cadence for the Window Calls fallback. Kept large because
+    # every call walks Mutter's window list on the compositor thread.
+    _POLL_INTERVAL_MS = 1500
+    # While no endpoint is reachable (extension loading after first
+    # login), retry slowly so we don't spam gdbus.
     _SLOW_POLL_INTERVAL_MS = 5000
+
+    # gdbus monitor output looks like:
+    #   /io/github/maik_0000ff/SpaceMouseFocus: io.github.maik_0000ff.SpaceMouseFocus.FocusChanged ('blender',)
+    _SIGNAL_LINE_RE = re.compile(r"FocusChanged\s+\(\s*'([^']*)'\s*,?\s*\)")
 
     def __init__(self, profiles):
         super().__init__()
@@ -580,7 +587,7 @@ class GnomeWaylandWindowMonitor(QThread):
         self._profiles = profiles
         self._last_profile = ""
         self._last_class = None
-        self._endpoint = None  # pinned after first successful probe
+        self._proc = None
 
     def update_profiles(self, profiles):
         self._profiles = profiles
@@ -588,9 +595,9 @@ class GnomeWaylandWindowMonitor(QThread):
         self._last_class = None
 
     @classmethod
-    def _probe_endpoint(cls, dest, path, method):
+    def _gdbus_call(cls, dest, path, method, timeout=2):
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 [
                     "gdbus",
                     "call",
@@ -604,80 +611,126 @@ class GnomeWaylandWindowMonitor(QThread):
                 ],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=timeout,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
-        return result.returncode == 0
+            return None
+
+    @classmethod
+    def _bundled_reachable(cls):
+        r = cls._gdbus_call(cls._BUNDLED["dest"], cls._BUNDLED["path"], cls._BUNDLED["get_method"])
+        return r is not None and r.returncode == 0
+
+    @classmethod
+    def _window_calls_reachable(cls):
+        r = cls._gdbus_call(
+            cls._WINDOW_CALLS["dest"], cls._WINDOW_CALLS["path"], cls._WINDOW_CALLS["method"]
+        )
+        return r is not None and r.returncode == 0
 
     @classmethod
     def probe(cls):
         """Return True if any supported extension is reachable on D-Bus."""
-        return any(cls._probe_endpoint(*ep) for ep in cls._ENDPOINTS)
+        return cls._bundled_reachable() or cls._window_calls_reachable()
 
-    def _query(self):
-        # Pin the first endpoint that answers; re-probe lazily if it
-        # disappears (extension toggled off, reload, etc.).
-        endpoints = (self._endpoint,) if self._endpoint else self._ENDPOINTS
-        for ep in endpoints:
-            dest, path, method = ep
-            try:
-                result = subprocess.run(
-                    [
-                        "gdbus",
-                        "call",
-                        "--session",
-                        "--dest",
-                        dest,
-                        "--object-path",
-                        path,
-                        "--method",
-                        method,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                continue
-            if result.returncode != 0:
-                continue
-            self._endpoint = ep
-            # gdbus wraps the returned string in Python-tuple syntax:
-            # ('[{"wm_class": "firefox", ...}]',)
-            try:
-                value = ast.literal_eval(result.stdout.strip())
-            except (SyntaxError, ValueError):
-                return None
-            if isinstance(value, tuple) and value and isinstance(value[0], str):
-                return value[0]
+    def _handle_class(self, wm_class):
+        if not wm_class or wm_class == self._last_class:
+            return
+        self._last_class = wm_class
+        profile_name = find_matching_profile(wm_class, self._profiles)
+        if profile_name != self._last_profile:
+            self._last_profile = profile_name
+            self.window_changed.emit(wm_class, profile_name)
+
+    def _query_bundled_focus(self):
+        # GetFocused returns the wm_class as a bare string: ('blender',)
+        r = self._gdbus_call(
+            self._BUNDLED["dest"], self._BUNDLED["path"], self._BUNDLED["get_method"]
+        )
+        if r is None or r.returncode != 0:
             return None
-        # No endpoint answered — drop the pin so the next tick re-tries
-        # all known endpoints (covers the post-login window where the
-        # extension is loading).
-        self._endpoint = None
+        try:
+            value = ast.literal_eval(r.stdout.strip())
+        except (SyntaxError, ValueError):
+            return None
+        if isinstance(value, tuple) and value and isinstance(value[0], str):
+            return value[0]
         return None
 
-    def run(self):
-        while self._running:
-            payload = self._query()
-            if payload is not None:
-                wm_class = parse_window_calls_list(payload)
-                if wm_class and wm_class != self._last_class:
-                    self._last_class = wm_class
-                    profile_name = find_matching_profile(wm_class, self._profiles)
-                    if profile_name != self._last_profile:
-                        self._last_profile = profile_name
-                        self.window_changed.emit(wm_class, profile_name)
-            interval = (
-                self._POLL_INTERVAL_MS
-                if self._endpoint is not None
-                else self._SLOW_POLL_INTERVAL_MS
+    def _run_bundled_signal_loop(self):
+        # Initial state — the extension only emits FocusChanged when the
+        # focus actually changes, so without this the daemon stays on
+        # its boot profile until the user alt-tabs.
+        initial = self._query_bundled_focus()
+        if initial:
+            self._handle_class(initial)
+
+        try:
+            self._proc = subprocess.Popen(
+                [
+                    "gdbus",
+                    "monitor",
+                    "--session",
+                    "--dest",
+                    self._BUNDLED["dest"],
+                    "--object-path",
+                    self._BUNDLED["path"],
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,  # line-buffered so readline() unblocks promptly
             )
-            self.msleep(interval)
+        except FileNotFoundError:
+            return
+        stdout = self._proc.stdout
+        if not stdout:
+            return
+        while self._running:
+            line = stdout.readline()
+            if not line:
+                break
+            m = self._SIGNAL_LINE_RE.search(line)
+            if m:
+                self._handle_class(m.group(1))
+        if self._proc:
+            self._proc.terminate()
+            self._proc = None
+
+    def _run_window_calls_poll_loop(self):
+        while self._running:
+            r = self._gdbus_call(
+                self._WINDOW_CALLS["dest"], self._WINDOW_CALLS["path"], self._WINDOW_CALLS["method"]
+            )
+            if r is not None and r.returncode == 0:
+                try:
+                    value = ast.literal_eval(r.stdout.strip())
+                except (SyntaxError, ValueError):
+                    value = None
+                if isinstance(value, tuple) and value and isinstance(value[0], str):
+                    wm_class = parse_window_calls_list(value[0])
+                    if wm_class:
+                        self._handle_class(wm_class)
+            self.msleep(self._POLL_INTERVAL_MS)
+
+    def run(self):
+        # Wait until at least one endpoint is reachable. After a fresh
+        # install the user has to log out and back in once; until that
+        # happens, no endpoint answers and we wait quietly.
+        while self._running:
+            if self._bundled_reachable():
+                self._run_bundled_signal_loop()
+                # If the monitor returns (extension toggled off, etc.)
+                # fall through to the outer loop to re-probe.
+            elif self._window_calls_reachable():
+                self._run_window_calls_poll_loop()
+            else:
+                self.msleep(self._SLOW_POLL_INTERVAL_MS)
 
     def stop(self):
         self._running = False
+        if self._proc:
+            self._proc.terminate()
         self.wait(2000)
 
 
