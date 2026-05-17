@@ -298,10 +298,7 @@ class BlenderConfig:
 
     def is_script_installed(self):
         """True if any detected Blender version has the script."""
-        for _, dir_ in discover_blender_versions():
-            if (dir_ / BLENDER_SYNC_SCRIPT).exists():
-                return True
-        return False
+        return any((dir_ / BLENDER_SYNC_SCRIPT).exists() for _, dir_ in discover_blender_versions())
 
     def _script_source_path(self):
         return Path(__file__).resolve().parent.parent / "blender_spacemouse_sync.py"
