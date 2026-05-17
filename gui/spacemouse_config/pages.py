@@ -660,21 +660,23 @@ class BlenderPage(QWidget):
         layout.addWidget(card)
 
         # ── Card 5: GPU WORKAROUND ──
-        # Experimental: on some NVIDIA setups Blender stutters during
-        # SpaceMouse navigation when no other GPU-active workload runs,
-        # because the driver downclocks the GPU between events. When the
-        # toggle is on, the app spawns a headless spacemouse-test --live
-        # process for the duration that Blender is focused — probing
-        # whether sustained spnav traffic alone (with no extra rendering)
-        # is enough to keep the GPU clocked up. Storage lives in
-        # config.json (app/daemon setting), only the UI sits here because
-        # the workaround is Blender-specific.
+        # On NVIDIA setups Blender stutters during SpaceMouse navigation
+        # when no other GPU-active workload runs, because the adaptive
+        # PowerMizer downclocks the GPU between events and each first
+        # frame after idle waits for re-clocking. When this toggle is on,
+        # the app locks PowerMizer to "prefer maximum performance" via
+        # `nvidia-settings -a [gpu:0]/GPUPowerMizerMode=1` while Blender
+        # is the focused window, and restores the adaptive default the
+        # moment focus moves away. NVIDIA-only; silently no-op on
+        # AMD/Intel. Storage lives in config.json (app/daemon setting);
+        # only the UI sits here because the workaround is Blender-specific.
         card, cl = make_card("GPU WORKAROUND (EXPERIMENTAL)")
-        self.bg_test_cb = make_toggle("Background spacemouse-test while Blender is focused")
+        self.bg_test_cb = make_toggle("GPU keep-alive (NVIDIA)")
         self.bg_test_cb.setToolTip(
-            "Run spacemouse-test --live as a headless background process "
-            "while Blender is the active window. Mitigates GPU "
-            "power-state stutter on some NVIDIA setups. Off by default."
+            "Lock NVIDIA PowerMizer to maximum performance while Blender "
+            "is the focused window. Mitigates the adaptive-clock stutter "
+            "on the first frame after each idle gap. NVIDIA-only; "
+            "silently no-op on AMD/Intel. Off by default."
         )
         self.bg_test_cb.stateChanged.connect(lambda state: self.bg_test_changed.emit(state == 1))
         cl.addWidget(self.bg_test_cb)

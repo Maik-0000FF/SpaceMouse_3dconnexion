@@ -55,7 +55,7 @@ class SpaceMouseApp:
         settings = self.config.get("settings", {})
         self._autostart = settings.get("autostart", True)
         self._bg_test_enabled = settings.get("bg_test", False)
-        self._bg_test_proc = None
+        self._powermizer_locked = False
         self._paused = settings.get("disabled", False)
 
         self.settings_window = SettingsWindow(
@@ -147,8 +147,8 @@ class SpaceMouseApp:
         # Window monitor (also needed when disabled for LED control)
         self._start_window_monitor()
 
-        # Optional headless spacemouse-test --live subprocess (experimental
-        # GPU-keep-alive workaround, off by default).
+        # Optional NVIDIA PowerMizer lock while Blender is focused —
+        # experimental GPU-keep-alive workaround, off by default.
         self._apply_bg_test_state()
 
         signal.signal(signal.SIGTERM, self._sigterm_handler)
@@ -226,7 +226,10 @@ class SpaceMouseApp:
         self._cleaned_up = True
         self.spnav_reader.stop()
         self._stop_window_monitor()
-        self._stop_bg_test()
+        if self._powermizer_locked:
+            # Don't leave the GPU pinned at max performance after quit.
+            self._set_powermizer(0)
+            self._powermizer_locked = False
 
     def _on_bg_test_change(self, enabled):
         # Persist Blender-page bg_test toggle to config.json without
@@ -243,35 +246,39 @@ class SpaceMouseApp:
         self._apply_bg_test_state()
 
     def _apply_bg_test_state(self):
-        # Only run while Blender is the focused app (and the GUI is not the
-        # active window itself) — keeps the workaround scoped to the one
-        # case that needs it instead of burning resources permanently.
-        should_run = (
+        # NVIDIA's adaptive PowerMizer downclocks the GPU between SpaceMouse
+        # events when Blender is the only workload, which produces visible
+        # stutter on the first frame after each idle gap. While Blender is
+        # focused (and the toggle is on, and the GUI itself isn't taking
+        # focus), lock the GPU to "prefer maximum performance" so no
+        # downclocking happens. Restore the default once Blender loses
+        # focus so the rest of the system isn't burning power.
+        should_lock = (
             self._bg_test_enabled and not self._gui_has_focus and self._saved_profile == "blender"
         )
-        if should_run and self._bg_test_proc is None:
-            try:
-                self._bg_test_proc = subprocess.Popen(
-                    ["spacemouse-test", "--live"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                )
-            except FileNotFoundError:
-                self._bg_test_proc = None
-        elif not should_run:
-            self._stop_bg_test()
+        if should_lock and not self._powermizer_locked:
+            if self._set_powermizer(1):
+                self._powermizer_locked = True
+        elif not should_lock and self._powermizer_locked:
+            self._set_powermizer(0)
+            self._powermizer_locked = False
 
-    def _stop_bg_test(self):
-        if self._bg_test_proc is None:
-            return
+    @staticmethod
+    def _set_powermizer(mode):
+        # NVIDIA-only. Fails quietly (returncode != 0 or FileNotFoundError)
+        # on AMD/Intel or when nvidia-settings isn't installed — the
+        # caller treats failure as "leave state unchanged".
         try:
-            self._bg_test_proc.terminate()
-            self._bg_test_proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            self._bg_test_proc.kill()
-        finally:
-            self._bg_test_proc = None
+            result = subprocess.run(
+                ["nvidia-settings", "-a", f"[gpu:0]/GPUPowerMizerMode={mode}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                timeout=2,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
 
     def _sigterm_handler(self, signum, frame):
         self._cleanup()
