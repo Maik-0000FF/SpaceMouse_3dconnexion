@@ -115,6 +115,10 @@ int main(void)
 	 * terminator. */
 	char big[CMD_BUF_SIZE * 2];
 	memset(big, 'x', sizeof(big));
+	/* Deliberately no NUL terminator — the wire protocol is length-delimited
+	 * via the read() return value, not C-string semantics. clang-tidy's
+	 * bugprone-not-null-terminated-result does not know that, so silence it. */
+	/* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
 	memcpy(big, "PROFILE ", 8);
 	roundtrip(big, sizeof(big), resp, sizeof(resp));
 	assert(strncmp(resp, "OK ", 3) == 0 || strncmp(resp, "ERR ", 4) == 0);
