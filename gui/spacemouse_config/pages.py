@@ -71,7 +71,6 @@ class DesktopPage(QWidget):
         cl.addWidget(intro)
 
         self.wm_class_chips = ChipList()
-        self.wm_class_chips.changed.connect(self._emit_changed)
         cl.addWidget(self.wm_class_chips)
 
         btn_row = QHBoxLayout()

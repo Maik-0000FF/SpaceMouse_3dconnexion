@@ -1,12 +1,9 @@
 """Catalog of well-known applications and their WM class strings.
 
-Used by the Add Application dialog so users can pick from a friendly list
-instead of having to type cryptic WM class names. The matcher itself is
-case-insensitive and matches via equal/prefix/substring, so a single
-canonical entry typically covers all casing variants of an app.
-
-Categories drive the layout in the dialog. Add new entries here whenever
-a common app's WM class becomes known.
+Used by ``display_name_for`` to turn a raw WM class string into a
+human-friendly chip label. The Manage 3D Apps dialog itself scans XDG
+``.desktop`` files for its installed-apps list; this catalog only fills
+in display names when a WM class happens to match one of the known apps.
 """
 
 APP_CATALOG = {
@@ -85,9 +82,3 @@ def display_name_for(wm_class):
                 if c.lower() == wm_lower:
                     return name
     return wm_class
-
-
-def app_owns_class(app_classes, wm_class):
-    """True if wm_class is one of app_classes (case-insensitive)."""
-    wm_lower = wm_class.lower()
-    return any(c.lower() == wm_lower for c in app_classes)

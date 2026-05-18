@@ -4,8 +4,6 @@ Pure-logic helper extracted from monitors.WindowMonitor so it can be unit
 tested without pulling in PySide6.
 """
 
-PASSTHROUGH_PROFILE = "_passthrough"
-
 
 def _wm_class_matches(wm_lower, candidate):
     cand_lower = candidate.lower()

@@ -5,7 +5,7 @@ renders as a read-only pill ("chip") with the app's friendly name; wraps
 via a custom FlowLayout (Qt ships none).
 """
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -120,7 +120,6 @@ class Chip(QFrame):
 
     def __init__(self, display, wm_classes, parent=None):
         super().__init__(parent)
-        self._wm_classes = list(wm_classes)
         self.setStyleSheet(self._STYLE)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
@@ -143,12 +142,10 @@ class Chip(QFrame):
 class ChipList(QWidget):
     """Manages an ordered, de-duplicated list of WM class strings as chips.
 
-    Use ``set_values`` / ``get_values`` to read/write the underlying list,
-    ``add`` / ``add_many`` to extend, and ``remove`` to drop entries.
-    Emits ``changed`` whenever the contents are mutated.
+    The list is replaced wholesale via ``set_values``; callers nudge any
+    cascading "changed" signal themselves after editing. ``get_values``
+    returns a copy of the current list.
     """
-
-    changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -162,30 +159,6 @@ class ChipList(QWidget):
 
     def get_values(self):
         return list(self._values)
-
-    def add(self, wm_class):
-        if not wm_class or wm_class in self._values:
-            return
-        self._values.append(wm_class)
-        self._rebuild()
-        self.changed.emit()
-
-    def add_many(self, wm_classes):
-        any_added = False
-        for w in wm_classes:
-            if w and w not in self._values:
-                self._values.append(w)
-                any_added = True
-        if any_added:
-            self._rebuild()
-            self.changed.emit()
-
-    def remove(self, wm_class):
-        if wm_class not in self._values:
-            return
-        self._values.remove(wm_class)
-        self._rebuild()
-        self.changed.emit()
 
     def _rebuild(self):
         while self._layout.count():
