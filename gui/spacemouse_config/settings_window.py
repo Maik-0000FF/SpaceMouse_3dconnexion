@@ -184,10 +184,10 @@ class SettingsWindow(QMainWindow):
         self.setWindowTitle("SpaceMouse Control *")
 
     def _live_apply_desktop(self):
-        """Save+RELOAD immediately for invert toggles. Resets the dirty flag
-        that the cascading changed-signal just set."""
+        """Save+RELOAD immediately for dropdowns and invert toggles. Resets the
+        dirty flag that the cascading changed-signal just set."""
         config = self.desktop_page.get_all_config()
-        config["settings"] = {"autostart": self.autostart_cb.isChecked()}
+        config.setdefault("settings", {})["autostart"] = self.autostart_cb.isChecked()
         self.on_save(config)
         self._dirty = False
         self.setWindowTitle("SpaceMouse Control")
@@ -218,7 +218,7 @@ class SettingsWindow(QMainWindow):
         if page_idx == 0:
             # Desktop: save daemon config
             config = self.desktop_page.get_all_config()
-            config["settings"] = {"autostart": self.autostart_cb.isChecked()}
+            config.setdefault("settings", {})["autostart"] = self.autostart_cb.isChecked()
             self.on_save(config)
 
         elif page_idx == 1:
