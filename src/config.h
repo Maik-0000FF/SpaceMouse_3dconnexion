@@ -10,7 +10,7 @@
 /* ── Sizing ─────────────────────────────────────────────────────────── */
 
 #define MAX_PROFILES 32
-#define MAX_WM_CLASSES 8
+#define MAX_WM_CLASSES 32
 
 /* ── Defaults (also used by event loop for thresholds) ──────────────── */
 
