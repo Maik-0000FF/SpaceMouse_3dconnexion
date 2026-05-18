@@ -97,6 +97,11 @@ class ToggleSwitch(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         y_offset = (self.height() - self._track_h) // 2
+        # Toggles without a label (AxesCard rows) center the pill inside
+        # their widget bounds so the spacing reads symmetric on both
+        # sides. Labeled toggles (sidebar Autostart/Actions/…) keep the
+        # pill at x=0 with the label rendered to its right.
+        x_offset = 0 if self._label_text else (self.width() - self._track_w) // 2
 
         # Track colors
         off_color = QColor(0x45, 0x47, 0x5A)
@@ -113,12 +118,12 @@ class ToggleSwitch(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track_color)
         p.drawRoundedRect(
-            0, y_offset, self._track_w, self._track_h, self._track_h / 2, self._track_h / 2
+            x_offset, y_offset, self._track_w, self._track_h, self._track_h / 2, self._track_h / 2
         )
 
         # Draw knob (white circle)
         knob_travel = self._track_w - self._knob_size - 2 * self._knob_margin
-        knob_x = self._knob_margin + self._knob_x * knob_travel
+        knob_x = x_offset + self._knob_margin + self._knob_x * knob_travel
         knob_y = y_offset + self._knob_margin
 
         # Subtle shadow
@@ -214,8 +219,8 @@ class AxesCard(QWidget):
         if show_action:
             h = QLabel("Action")
             h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
-            h.setMinimumWidth(160)
-            header.addWidget(h, 1)
+            h.setFixedWidth(220)
+            header.addWidget(h)
         if show_enable:
             h = QLabel("Enable")
             h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
@@ -246,8 +251,8 @@ class AxesCard(QWidget):
                 combo = NoScrollComboBox()
                 combo.addItems(action_items or [])
                 combo.currentIndexChanged.connect(self._emit_changed)
-                combo.setMinimumWidth(160)
-                row.addWidget(combo, 1)
+                combo.setFixedWidth(220)
+                row.addWidget(combo)
                 self.action_combos.append(combo)
 
             if show_enable:
