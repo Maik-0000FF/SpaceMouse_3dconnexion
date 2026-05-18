@@ -39,6 +39,7 @@ class DesktopPage(QWidget):
     """Daemon profile editor — switches between all daemon profiles."""
 
     changed = Signal()
+    live_apply_requested = Signal()
 
     PROTECTED_PROFILES = {"default"}  # cannot be deleted
 
@@ -147,6 +148,12 @@ class DesktopPage(QWidget):
             ],
         )
         self.axes_card.changed.connect(self._emit_changed)
+        # Per-axis invert toggles apply immediately — no Apply click needed.
+        for inv in self.axes_card.invert_toggles:
+            inv.stateChanged.connect(self._on_invert_toggled)
+        # Extra scroll-invert toggles also apply immediately.
+        for ex in self.axes_card.extra_toggle_widgets:
+            ex.stateChanged.connect(self._on_invert_toggled)
         layout.addWidget(self.axes_card)
 
         # ── Card 4: BUTTONS ──
@@ -191,6 +198,11 @@ class DesktopPage(QWidget):
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
+
+    def _on_invert_toggled(self):
+        if self._building:
+            return
+        self.live_apply_requested.emit()
 
     def _refresh_profile_combo(self):
         profiles = self._config.get("profiles", {})
@@ -298,10 +310,10 @@ class DesktopPage(QWidget):
         for i, key in enumerate(AXIS_KEYS):
             self.axes_card.deadzone_sliders[i].setValue(adz.get(key, 0))
 
-        # Invert toggles (axes card has no per-axis invert in config yet,
-        # but the toggle is there for future use — default all off)
-        for toggle in self.axes_card.invert_toggles:
-            toggle.setChecked(False)
+        # Per-axis invert toggles
+        ainv = data.get("axis_invert", {})
+        for i, key in enumerate(AXIS_KEYS):
+            self.axes_card.invert_toggles[i].setChecked(bool(ainv.get(key, False)))
 
         # Extra toggles: [0] = Invert H Scroll, [1] = Invert V Scroll
         self.axes_card.extra_toggle_widgets[0].setChecked(data.get("invert_scroll_x", False))
@@ -338,6 +350,10 @@ class DesktopPage(QWidget):
         data["axis_deadzone"] = {}
         for i, key in enumerate(AXIS_KEYS):
             data["axis_deadzone"][key] = self.axes_card.deadzone_sliders[i].value()
+
+        data["axis_invert"] = {}
+        for i, key in enumerate(AXIS_KEYS):
+            data["axis_invert"][key] = self.axes_card.invert_toggles[i].isChecked()
 
         data["button_mapping"] = {}
         for i in range(2):

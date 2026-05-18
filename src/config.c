@@ -200,6 +200,16 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 		}
 	}
 
+	struct json_object *ainv;
+	if (json_object_object_get_ex(obj, "axis_invert", &ainv)) {
+		struct json_object *iv;
+		const char *inv_keys[] = {"tx", "ty", "tz", "rx", "ry", "rz"};
+		for (int i = 0; i < 6; i++) {
+			if (json_object_object_get_ex(ainv, inv_keys[i], &iv))
+				c->axis_invert[i] = json_object_get_boolean(iv) ? 1 : 0;
+		}
+	}
+
 	struct json_object *amap;
 	if (json_object_object_get_ex(obj, "axis_mapping", &amap)) {
 		struct json_object *ax;

@@ -325,6 +325,8 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->scroll_speed) *
 							      c->sensitivity;
+							if (c->axis_invert[i])
+								val = -val;
 							if (c->invert_scroll_x)
 								val = -val;
 							sacc.acc_x += val;
@@ -334,6 +336,8 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->scroll_speed) *
 							      c->sensitivity;
+							if (c->axis_invert[i])
+								val = -val;
 							if (c->invert_scroll_y)
 								val = -val;
 							sacc.acc_y -= val;
@@ -343,6 +347,8 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->zoom_speed) *
 							      c->sensitivity;
+							if (c->axis_invert[i])
+								val = -val;
 							sacc.acc_z += val;
 							break;
 						case ACT_DESKTOP_SWITCH: {

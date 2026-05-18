@@ -128,6 +128,7 @@ class SettingsWindow(QMainWindow):
         self.desktop_page = DesktopPage(config_data)
         self.desktop_page.changed.connect(self._mark_dirty)
         self.desktop_page.changed.connect(self._sync_deadzones)
+        self.desktop_page.live_apply_requested.connect(self._live_apply_desktop)
         self.stack.addWidget(self.desktop_page)
 
         self.freecad_page = FreeCADPage()
@@ -181,6 +182,15 @@ class SettingsWindow(QMainWindow):
     def _mark_dirty(self):
         self._dirty = True
         self.setWindowTitle("SpaceMouse Control *")
+
+    def _live_apply_desktop(self):
+        """Save+RELOAD immediately for invert toggles. Resets the dirty flag
+        that the cascading changed-signal just set."""
+        config = self.desktop_page.get_all_config()
+        config["settings"] = {"autostart": self.autostart_cb.isChecked()}
+        self.on_save(config)
+        self._dirty = False
+        self.setWindowTitle("SpaceMouse Control")
 
     def _sync_deadzones(self):
         """Push current page's deadzone values to the live preview bar."""

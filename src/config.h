@@ -66,6 +66,7 @@ struct config {
 	int dswitch_threshold;
 	int dswitch_cooldown_ms;
 	enum axis_action axis_map[6];
+	int axis_invert[6]; /* per-axis direction flip, applied to scroll_h/scroll_v/zoom */
 	int axis_key_neg[6]; /* keycode for negative direction (ACT_KEY_PAIR only) */
 	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[16];
