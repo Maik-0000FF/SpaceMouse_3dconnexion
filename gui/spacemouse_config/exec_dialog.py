@@ -6,13 +6,12 @@ shlex into argv (which is what the daemon stores and what ``execvp``
 consumes), and offers a "From installed app…" shortcut that scans the
 XDG ``.desktop`` files.
 
-The dialog is self-contained: it doesn't touch the parent page's state
-directly. Callers pass the current cmdline in and read the parsed argv
-out via :meth:`ExecConfigDialog.argv`. Cancel returns ``None`` so the
-caller can leave the row unchanged.
+The pure parse/format helpers live in :mod:`cmdline` so the pytest
+job can exercise them without a PySide6 install. The dialog itself
+is self-contained: callers pass the current argv in and read the
+parsed argv out via :meth:`ExecConfigDialog.argv`. Cancel leaves the
+row unchanged.
 """
-
-import shlex
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -27,48 +26,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .cmdline import format_cmdline, parse_cmdline, parse_xdg_exec
 from .constants import COLOR_ERROR, COLOR_TEXT_DIM, COLOR_TEXT_MUTED
 from .helpers import NoScrollComboBox
 from .installed_apps import group_by_category, scan_installed_apps
 
-# XDG field codes per the Desktop Entry Spec — the daemon launches
-# without any file/url context, so they would arrive as literal
-# "%f" / "%u" arguments and confuse the target program. Strip them.
-_XDG_FIELD_CODES = {"%f", "%F", "%u", "%U", "%d", "%D", "%n", "%N", "%i", "%c", "%k", "%v", "%m"}
-
-
-def parse_cmdline(text):
-    """shlex-split a user-typed command line into argv.
-
-    Returns the argv list, or an empty list on parse failure. The
-    return is what the daemon will receive in JSON as ``cmd``.
-    """
-    text = (text or "").strip()
-    if not text:
-        return []
-    try:
-        return shlex.split(text)
-    except ValueError:
-        return []
-
-
-def parse_xdg_exec(exec_value):
-    """Convert an XDG ``Exec=`` value into argv, stripping field codes.
-
-    XDG quoting is shlex-compatible in 99% of real-world entries.
-    Field codes (``%f``, ``%U`` etc.) are dropped because there's no
-    file/URL context when a button triggers an app launch.
-    """
-    try:
-        tokens = shlex.split(exec_value or "")
-    except ValueError:
-        return []
-    return [t for t in tokens if t not in _XDG_FIELD_CODES]
-
-
-def format_cmdline(argv):
-    """Quote argv back into a single-line command string for display."""
-    return " ".join(shlex.quote(a) for a in argv) if argv else ""
+# Re-export the pure helpers so existing callers (pages.py, tests
+# touching the dialog) keep working with `from .exec_dialog import …`.
+__all__ = ["ExecConfigDialog", "format_cmdline", "parse_cmdline", "parse_xdg_exec"]
 
 
 class ExecConfigDialog(QDialog):
