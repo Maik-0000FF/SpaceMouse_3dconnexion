@@ -9,7 +9,6 @@ Categories drive the layout in the dialog. Add new entries here whenever
 a common app's WM class becomes known.
 """
 
-
 APP_CATALOG = {
     "3D & CAD": {
         "Blender": ["blender"],

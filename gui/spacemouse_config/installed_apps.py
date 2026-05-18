@@ -15,7 +15,6 @@ import configparser
 import os
 from pathlib import Path
 
-
 _XDG_DIRS = [
     Path.home() / ".local" / "share" / "applications",
     Path("/usr/local/share/applications"),

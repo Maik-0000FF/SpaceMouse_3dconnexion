@@ -1,7 +1,7 @@
 """Visual chip list widget for managing string sets in the GUI.
 
 Replaces comma-separated QLineEdits in the MATCH APPS card. Each entry
-renders as a removable pill ("chip") with a × button; wraps across rows
+renders as a read-only pill ("chip") with the app's friendly name; wraps
 via a custom FlowLayout (Qt ships none).
 """
 
@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
 )
 
 from .app_catalog import display_name_for
-
 
 # ── FlowLayout (wraps items to next line when row fills) ──────────────
 
@@ -96,7 +95,7 @@ class FlowLayout(QLayout):
         return y + line_h - rect.y() + margins.bottom()
 
 
-# ── Chip (single pill with × button) ──────────────────────────────────
+# ── Chip (single pill, read-only) ─────────────────────────────────────
 
 
 class Chip(QFrame):

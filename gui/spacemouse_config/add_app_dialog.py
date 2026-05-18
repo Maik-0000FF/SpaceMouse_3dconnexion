@@ -42,9 +42,7 @@ class AddAppDialog(QDialog):
 
         # Scan once — both tabs read the same list.
         self._installed_apps = scan_installed_apps()
-        self._installed_wm_lower = {
-            a["wm_class"].lower() for a in self._installed_apps
-        }
+        self._installed_wm_lower = {a["wm_class"].lower() for a in self._installed_apps}
 
         self._installed_checkboxes = []  # list of (QCheckBox, wm_class)
         self._custom_existing_checkboxes = []  # list of (QCheckBox, wm_class)
@@ -108,8 +106,7 @@ class AddAppDialog(QDialog):
             for category, cat_apps in grouped.items():
                 cat_label = QLabel(category)
                 cat_label.setStyleSheet(
-                    "color: #89b4fa; font-weight: bold; font-size: 12px; "
-                    "padding: 2px 0;"
+                    "color: #89b4fa; font-weight: bold; font-size: 12px; padding: 2px 0;"
                 )
                 layout.addWidget(cat_label)
 
@@ -146,15 +143,10 @@ class AddAppDialog(QDialog):
         layout.setSpacing(12)
 
         # Current entries that aren't detected as installed apps.
-        existing_custom = [
-            w for w in self._current
-            if w.lower() not in self._installed_wm_lower
-        ]
+        existing_custom = [w for w in self._current if w.lower() not in self._installed_wm_lower]
         if existing_custom:
             section = QLabel("In list (custom entries — uncheck to remove):")
-            section.setStyleSheet(
-                "color: #89b4fa; font-weight: bold; font-size: 12px;"
-            )
+            section.setStyleSheet("color: #89b4fa; font-weight: bold; font-size: 12px;")
             layout.addWidget(section)
             for wm in existing_custom:
                 cb = QCheckBox(wm)

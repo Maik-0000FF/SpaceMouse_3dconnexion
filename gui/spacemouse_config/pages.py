@@ -670,9 +670,7 @@ class BlenderPage(QWidget):
             "Blender will fall back to its own NDOF defaults on the next start "
             "and stop picking up settings made here."
         )
-        msg.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         msg.setDefaultButton(QMessageBox.StandardButton.No)
         msg.button(QMessageBox.StandardButton.Yes).setText("Yes")
         msg.button(QMessageBox.StandardButton.No).setText("No")

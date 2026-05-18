@@ -4,17 +4,12 @@ Pure-logic helper extracted from monitors.WindowMonitor so it can be unit
 tested without pulling in PySide6.
 """
 
-
 PASSTHROUGH_PROFILE = "_passthrough"
 
 
 def _wm_class_matches(wm_lower, candidate):
     cand_lower = candidate.lower()
-    return (
-        cand_lower == wm_lower
-        or wm_lower.startswith(cand_lower)
-        or cand_lower in wm_lower
-    )
+    return cand_lower == wm_lower or wm_lower.startswith(cand_lower) or cand_lower in wm_lower
 
 
 def find_matching_profile(wm_class, profiles):
