@@ -126,10 +126,20 @@ class SettingsWindow(QMainWindow):
         self.stack = QStackedWidget()
 
         self.desktop_page = DesktopPage(config_data)
-        self.desktop_page.changed.connect(self._mark_dirty)
+        # Desktop is fully live-apply: every change writes config.json and
+        # triggers a daemon RELOAD. No Apply button, no dirty state.
+        self.desktop_page.changed.connect(self._save_desktop)
         self.desktop_page.changed.connect(self._sync_deadzones)
+        # Drag-time preview: redraw the red deadzone band in the live bar
+        # while the slider moves, without writing to disk / RELOADing the
+        # daemon. The save path is sliderReleased and runs separately.
+        self.desktop_page.deadzone_s.valueChanged.connect(self._sync_deadzones)
+        for s in self.desktop_page.axes_card.deadzone_sliders:
+            s.valueChanged.connect(self._sync_deadzones)
         self.stack.addWidget(self.desktop_page)
 
+        # FreeCAD / Blender keep the manual Apply flow: edits mark dirty,
+        # Apply commits the page's settings to its backend (user.cfg / JSON).
         self.freecad_page = FreeCADPage()
         self.freecad_page.changed.connect(self._mark_dirty)
         self.freecad_page.changed.connect(self._sync_deadzones)
@@ -147,7 +157,8 @@ class SettingsWindow(QMainWindow):
         cw_layout.setSpacing(8)
         cw_layout.addWidget(self.stack, 1)
 
-        # Apply button
+        # Apply button — visible only on FreeCAD/Blender pages.
+        # Desktop is live-apply, so the button would be a no-op there.
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self.apply_btn = QPushButton("Apply")
@@ -163,10 +174,15 @@ class SettingsWindow(QMainWindow):
         self.live_bar = LivePreviewBar()
         main_layout.addWidget(self.live_bar)
 
+        # Autostart is part of the daemon config — push it through the
+        # same live-apply path as the rest of the Desktop page.
+        self.autostart_cb.stateChanged.connect(self._save_desktop)
+
         # Select first page
         self._page_buttons[0].setChecked(True)
         self.stack.setCurrentIndex(0)
         self._sync_deadzones()
+        self._refresh_apply_button()
 
         # Status timer (stopped by default — started when window becomes visible)
         self._status_timer = QTimer()
@@ -177,10 +193,23 @@ class SettingsWindow(QMainWindow):
     def _switch_page(self, idx):
         self.stack.setCurrentIndex(idx)
         self._sync_deadzones()
+        self._refresh_apply_button()
+
+    def _refresh_apply_button(self):
+        """Apply only makes sense on FreeCAD (0=Desktop is live-apply)
+        and Blender pages. Hide it on Desktop so it doesn't tease a
+        no-op action."""
+        self.apply_btn.setVisible(self.stack.currentIndex() != 0)
 
     def _mark_dirty(self):
         self._dirty = True
         self.setWindowTitle("SpaceMouse Control *")
+
+    def _save_desktop(self):
+        """Persist desktop-page widget state + autostart on every change."""
+        config = self.desktop_page.get_all_config()
+        config.setdefault("settings", {})["autostart"] = self.autostart_cb.isChecked()
+        self.on_save(config)
 
     def _sync_deadzones(self):
         """Push current page's deadzone values to the live preview bar."""
@@ -203,16 +232,11 @@ class SettingsWindow(QMainWindow):
             self.live_bar.set_deadzones([global_dz] * 6)
 
     def _apply(self):
+        """Commit the FreeCAD or Blender page. Desktop is live-apply, so
+        the Apply button is hidden there and this method is unreachable."""
         page_idx = self.stack.currentIndex()
 
-        if page_idx == 0:
-            # Desktop: save daemon config
-            config = self.desktop_page.get_all_config()
-            config["settings"] = {"autostart": self.autostart_cb.isChecked()}
-            self.on_save(config)
-
-        elif page_idx == 1:
-            # FreeCAD
+        if page_idx == 1:
             if FreeCADConfig.is_running():
                 QMessageBox.warning(
                     self,
@@ -232,7 +256,6 @@ class SettingsWindow(QMainWindow):
                 QMessageBox.warning(self, "Error", "Could not write FreeCAD user.cfg.")
 
         elif page_idx == 2:
-            # Blender
             self.blender_page.apply_settings()
             QMessageBox.information(
                 self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
@@ -289,6 +312,9 @@ class SettingsWindow(QMainWindow):
                 | QMessageBox.StandardButton.Cancel
             )
             msg.setDefaultButton(QMessageBox.StandardButton.Save)
+            msg.button(QMessageBox.StandardButton.Save).setText("Save")
+            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
+            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
                 self._apply()

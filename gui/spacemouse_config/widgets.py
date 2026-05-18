@@ -1,17 +1,25 @@
 """Custom widgets: ToggleSwitch, AxesCard, AxisBar, LivePreviewBar."""
 
-from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
+from PySide6.QtCore import (
+    Property,
+    QEasingCurve,
+    QLineF,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
-from .helpers import make_card
+from .helpers import NoScrollComboBox, NoScrollSlider, make_card
 
 # ── ToggleSwitch (Apple-style pill) ───────────────────────────────────
 
@@ -89,6 +97,11 @@ class ToggleSwitch(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         y_offset = (self.height() - self._track_h) // 2
+        # Toggles without a label (AxesCard rows) center the pill inside
+        # their widget bounds so the spacing reads symmetric on both
+        # sides. Labeled toggles (sidebar Autostart/Actions/…) keep the
+        # pill at x=0 with the label rendered to its right.
+        x_offset = 0 if self._label_text else (self.width() - self._track_w) // 2
 
         # Track colors
         off_color = QColor(0x45, 0x47, 0x5A)
@@ -105,12 +118,12 @@ class ToggleSwitch(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track_color)
         p.drawRoundedRect(
-            0, y_offset, self._track_w, self._track_h, self._track_h / 2, self._track_h / 2
+            x_offset, y_offset, self._track_w, self._track_h, self._track_h / 2, self._track_h / 2
         )
 
         # Draw knob (white circle)
         knob_travel = self._track_w - self._knob_size - 2 * self._knob_margin
-        knob_x = self._knob_margin + self._knob_x * knob_travel
+        knob_x = x_offset + self._knob_margin + self._knob_x * knob_travel
         knob_y = y_offset + self._knob_margin
 
         # Subtle shadow
@@ -206,8 +219,8 @@ class AxesCard(QWidget):
         if show_action:
             h = QLabel("Action")
             h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
-            h.setMinimumWidth(160)
-            header.addWidget(h, 1)
+            h.setFixedWidth(220)
+            header.addWidget(h)
         if show_enable:
             h = QLabel("Enable")
             h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
@@ -235,11 +248,11 @@ class AxesCard(QWidget):
             row.addWidget(name_lbl)
 
             if show_action:
-                combo = QComboBox()
+                combo = NoScrollComboBox()
                 combo.addItems(action_items or [])
                 combo.currentIndexChanged.connect(self._emit_changed)
-                combo.setMinimumWidth(160)
-                row.addWidget(combo, 1)
+                combo.setFixedWidth(220)
+                row.addWidget(combo)
                 self.action_combos.append(combo)
 
             if show_enable:
@@ -257,11 +270,15 @@ class AxesCard(QWidget):
                 self.invert_toggles.append(inv)
 
             if show_deadzone:
-                dz_container = QWidget()
+                dz_container = QFrame()
+                dz_container.setObjectName("slider-box")
+                dz_container.setStyleSheet(
+                    "QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }"
+                )
                 dz_hl = QHBoxLayout(dz_container)
-                dz_hl.setContentsMargins(0, 0, 0, 0)
-                dz_hl.setSpacing(4)
-                dz_slider = QSlider(Qt.Orientation.Horizontal)
+                dz_hl.setContentsMargins(12, 4, 12, 4)
+                dz_hl.setSpacing(8)
+                dz_slider = NoScrollSlider(Qt.Orientation.Horizontal)
                 dz_slider.setRange(0, deadzone_max)
                 dz_slider.setValue(0)
                 dz_slider.setMinimumWidth(80)
@@ -269,7 +286,7 @@ class AxesCard(QWidget):
                 dz_lbl.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 28px;")
                 dz_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 dz_slider.valueChanged.connect(lambda v, lbl=dz_lbl: lbl.setText(str(v)))
-                dz_slider.valueChanged.connect(self._emit_changed)
+                dz_slider.sliderReleased.connect(self._emit_changed)
                 if not deadzone_enabled:
                     dz_slider.setEnabled(False)
                     dz_slider.setStyleSheet(DISABLED_SLIDER_STYLE)
@@ -351,17 +368,20 @@ class AxisBar(QWidget):
         p.setBrush(QColor(0x31, 0x32, 0x44))
         p.drawRoundedRect(0, 0, w, h, 3, 3)
 
-        # Deadzone region (centered, visible red-tinted area)
+        # Deadzone region (centered, visible red-tinted area). Float geometry
+        # via QRectF/QLineF — antialiased Qt rendering keeps the two edges
+        # subpixel-symmetric around center, where int() truncation would have
+        # left the band visibly off-center by 1px for fractional dz_half.
         if self._deadzone > 0:
             dz_half = (self._deadzone / self._AXIS_RANGE) * (w / 2.0)
             p.setBrush(QColor(0xF3, 0x8B, 0xA8, 50))
-            p.drawRoundedRect(int(center - dz_half), 0, int(dz_half * 2), h, 3, 3)
+            p.drawRect(QRectF(center - dz_half, 0, dz_half * 2, h))
             # Deadzone edge lines
             pen = QPen(QColor(0xF3, 0x8B, 0xA8, 120))
             pen.setWidthF(1.0)
             p.setPen(pen)
-            p.drawLine(int(center - dz_half), 0, int(center - dz_half), h)
-            p.drawLine(int(center + dz_half), 0, int(center + dz_half), h)
+            p.drawLine(QLineF(center - dz_half, 0, center - dz_half, h))
+            p.drawLine(QLineF(center + dz_half, 0, center + dz_half, h))
             p.setPen(Qt.PenStyle.NoPen)
 
         # Value bar (from center)
@@ -375,9 +395,9 @@ class AxisBar(QWidget):
             p.setBrush(color)
             val_x = center + (self._value / self._AXIS_RANGE) * (w / 2.0)
             if val_x > center:
-                p.drawRoundedRect(int(center), 0, int(val_x - center), h, 2, 2)
+                p.drawRect(QRectF(center, 0, val_x - center, h))
             else:
-                p.drawRoundedRect(int(val_x), 0, int(center - val_x), h, 2, 2)
+                p.drawRect(QRectF(val_x, 0, center - val_x, h))
 
         p.end()
 
@@ -426,7 +446,7 @@ class LivePreviewBar(QWidget):
 
         layout.addSpacing(12)
 
-        self.profile_label = QLabel("Profile: default")
+        self.profile_label = QLabel("Profile: Desktop")
         self.profile_label.setStyleSheet("color: #5294e2; font-weight: bold; font-size: 11px;")
         layout.addWidget(self.profile_label)
 
@@ -456,7 +476,11 @@ class LivePreviewBar(QWidget):
                 self.btn_labels[bnum].setStyleSheet("font-size: 14px; color: #45475a;")
 
     def set_profile(self, name):
-        self.profile_label.setText(f"Profile: {name}")
+        # Display-only alias for the catch-all profile — the config file
+        # still stores it as "default" so the daemon's fallback path keeps
+        # working. Other profile names pass through unchanged.
+        display = "Desktop" if name == "default" else name
+        self.profile_label.setText(f"Profile: {display}")
 
     def set_daemon_status(self, connected):
         if connected:

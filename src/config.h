@@ -10,7 +10,7 @@
 /* ── Sizing ─────────────────────────────────────────────────────────── */
 
 #define MAX_PROFILES 32
-#define MAX_WM_CLASSES 8
+#define MAX_WM_CLASSES 32
 
 /* ── Defaults (also used by event loop for thresholds) ──────────────── */
 
@@ -37,8 +37,7 @@ enum axis_action {
 	ACT_ZOOM,
 	ACT_DESKTOP_SWITCH,
 	ACT_VOLUME,
-	ACT_KEY_PAIR,
-	ACT_SEEK_AUTO
+	ACT_KEY_PAIR
 };
 
 enum btn_action {
@@ -51,8 +50,7 @@ enum btn_action {
 	BTNACT_PLAY_PAUSE,
 	BTNACT_NEXT_TRACK,
 	BTNACT_PREV_TRACK,
-	BTNACT_KEY,
-	BTNACT_PLAY_PAUSE_AUTO
+	BTNACT_KEY
 };
 
 /* ── Per-profile config ─────────────────────────────────────────────── */
@@ -66,12 +64,11 @@ struct config {
 	int dswitch_threshold;
 	int dswitch_cooldown_ms;
 	enum axis_action axis_map[6];
+	int axis_invert[6];  /* per-axis direction flip, applied to scroll_h/scroll_v/zoom */
 	int axis_key_neg[6]; /* keycode for negative direction (ACT_KEY_PAIR only) */
 	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[16];
 	int btn_key[16]; /* keycode (BTNACT_KEY only) */
-	int invert_scroll_x;
-	int invert_scroll_y;
 	double sensitivity;
 };
 
@@ -80,8 +77,7 @@ struct profile {
 	char *wm_classes[MAX_WM_CLASSES];
 	int wm_class_count;
 	struct config cfg;
-	int passthrough;  /* 1 if all axes+buttons are none → skip event processing */
-	int browser_keys; /* 1 if smart actions should send Space/Arrow keys */
+	int passthrough; /* 1 if all axes+buttons are none → skip event processing */
 };
 
 /* ── Profile table (owned by config.c, shared with the event loop) ──── */

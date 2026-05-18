@@ -325,7 +325,7 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->scroll_speed) *
 							      c->sensitivity;
-							if (c->invert_scroll_x)
+							if (c->axis_invert[i])
 								val = -val;
 							sacc.acc_x += val;
 							break;
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->scroll_speed) *
 							      c->sensitivity;
-							if (c->invert_scroll_y)
+							if (c->axis_invert[i])
 								val = -val;
 							sacc.acc_y -= val;
 							break;
@@ -343,6 +343,8 @@ int main(int argc, char **argv)
 									  c->scroll_exponent,
 									  c->zoom_speed) *
 							      c->sensitivity;
+							if (c->axis_invert[i])
+								val = -val;
 							sacc.acc_z += val;
 							break;
 						case ACT_DESKTOP_SWITCH: {
@@ -406,26 +408,6 @@ int main(int argc, char **argv)
 							}
 							break;
 						}
-						case ACT_SEEK_AUTO: {
-							long long now = time_ms();
-							long long elapsed = now - last_keypair[i];
-							int val = abs(axes[i]);
-							if (val > KEY_PAIR_THRESHOLD &&
-							    elapsed > c->dswitch_cooldown_ms) {
-								int forward = axes[i] > 0;
-								int code;
-								if (g_profiles[g_active_profile]
-									    .browser_keys)
-									code = forward ? KEY_RIGHT
-										       : KEY_LEFT;
-								else
-									code = forward ? KEY_FASTFORWARD
-										       : KEY_REWIND;
-								emit_key_tap(g_uinput_fd, code);
-								last_keypair[i] = now;
-							}
-							break;
-						}
 						case ACT_NONE:
 						default:
 							break;
@@ -475,13 +457,6 @@ int main(int argc, char **argv)
 					case BTNACT_KEY:
 						if (c->btn_key[bnum])
 							emit_key_tap(g_uinput_fd, c->btn_key[bnum]);
-						break;
-					case BTNACT_PLAY_PAUSE_AUTO:
-						emit_key_tap(
-							g_uinput_fd,
-							g_profiles[g_active_profile].browser_keys
-								? KEY_SPACE
-								: KEY_PLAYPAUSE);
 						break;
 					case BTNACT_NONE:
 					default:

@@ -4,20 +4,20 @@ from spacemouse_config.profile_match import find_matching_profile
 
 PROFILES = {
     "default": {"match_wm_class": []},
-    "blender": {"match_wm_class": ["blender", "Blender"]},
-    "freecad": {"match_wm_class": ["org.freecad.FreeCAD", "FreeCAD"]},
     "browser": {"match_wm_class": ["firefox", "chromium"]},
-    "filemanager": {"match_wm_class": ["org.kde.dolphin"]},
+    "passthrough": {"match_wm_class": ["blender", "FreeCAD", "openscad"]},
 }
 
 
 def test_exact_match():
-    assert find_matching_profile("blender", PROFILES) == "blender"
+    assert find_matching_profile("blender", PROFILES) == "passthrough"
+    assert find_matching_profile("firefox", PROFILES) == "browser"
 
 
 def test_case_insensitive():
-    assert find_matching_profile("BLENDER", PROFILES) == "blender"
     assert find_matching_profile("Firefox", PROFILES) == "browser"
+    assert find_matching_profile("CHROMIUM", PROFILES) == "browser"
+    assert find_matching_profile("BLENDER", PROFILES) == "passthrough"
 
 
 def test_substring_match():
@@ -26,24 +26,27 @@ def test_substring_match():
 
 
 def test_prefix_match():
-    # The FreeCAD WM class on Wayland is org.freecad.FreeCAD; the profile
-    # also lists the bare "FreeCAD" string which should match windows
-    # that start with that.
-    assert find_matching_profile("FreeCAD-1.1", PROFILES) == "freecad"
+    # FreeCAD Wayland reports org.freecad.FreeCAD; the bare "FreeCAD"
+    # entry should match windows that start with it.
+    assert find_matching_profile("FreeCAD-1.1", PROFILES) == "passthrough"
 
 
 def test_default_fallback():
+    # Anything no profile claims falls to default — the catch-all for
+    # ordinary desktop apps. Whether actions actually fire depends on
+    # default's axis/button mappings (daemon decides).
     assert find_matching_profile("totally-unknown-app", PROFILES) == "default"
+    assert find_matching_profile("libreoffice-writer", PROFILES) == "default"
 
 
 def test_default_profile_is_skipped_as_match_source():
     # Even if someone accidentally adds match_wm_class to "default",
     # the matcher must skip it — default is the fallback, not a target.
     profiles = {
-        "default": {"match_wm_class": ["blender"]},
-        "blender": {"match_wm_class": ["blender"]},
+        "default": {"match_wm_class": ["firefox"]},
+        "browser": {"match_wm_class": ["firefox"]},
     }
-    assert find_matching_profile("blender", profiles) == "blender"
+    assert find_matching_profile("firefox", profiles) == "browser"
 
 
 def test_profile_without_match_wm_class():
