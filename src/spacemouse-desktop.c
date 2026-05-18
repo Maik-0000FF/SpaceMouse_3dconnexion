@@ -36,6 +36,7 @@
 #include "config.h"
 #include "dbus_actions.h"
 #include "desktop_actions.h"
+#include "device.h"
 #include "kernel_input.h"
 #include "spacemouse-core.h"
 #include "uinput.h"
@@ -294,6 +295,7 @@ int main(int argc, char **argv)
 				"spacemouse-desktop: kernel input disconnected, will reconnect\n");
 			close(g_kinput_fd);
 			g_kinput_fd = -1;
+			device_clear_cache();
 			last_kinput_retry = time_ms();
 			scroll_acc_reset(&sacc);
 			continue;
@@ -426,7 +428,7 @@ int main(int argc, char **argv)
 					if (!ev.button.press)
 						continue;
 					int bnum = ev.button.bnum;
-					if (bnum < 0 || bnum >= 16)
+					if (bnum < 0 || bnum >= MAX_BUTTONS)
 						continue;
 
 					switch (c->btn_map[bnum]) {

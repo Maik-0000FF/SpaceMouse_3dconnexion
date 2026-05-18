@@ -4,6 +4,7 @@ from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -22,6 +23,7 @@ from .constants import (
     AXIS_KEYS,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
+    COLOR_ACCENT,
     COLOR_BG_ERROR,
     COLOR_BG_WARN,
     COLOR_ERROR,
@@ -29,11 +31,13 @@ from .constants import (
     COLOR_TEXT_DIM,
     COLOR_WARN,
     COLOR_WARN_ALT,
+    DEFAULT_BUTTON_ROWS,
     FREECAD_BTN_COMMANDS,
     FREECAD_BTN_LABELS,
     FREECAD_NAV_LABELS,
     FREECAD_NAV_STYLES,
     FREECAD_ORBIT_STYLES,
+    MAX_BUTTONS,
 )
 from .helpers import NoScrollComboBox, make_card, make_slider
 from .widgets import AxesCard
@@ -51,6 +55,11 @@ class DesktopPage(QWidget):
         super().__init__()
         self._building = True
         self._config = config_data
+        # Tracks the connected device's hardware button count so we
+        # only flag bnums beyond it as orphans (and offer a Remove
+        # affordance for those). 0 = unknown device → fall back to
+        # offering Remove on every non-default row.
+        self._device_button_count = 0
         self._setup_ui()
         self._load_state()
         self._building = False
@@ -140,16 +149,27 @@ class DesktopPage(QWidget):
 
         # ── Card 4: BUTTONS ──
         card, cl = make_card("BUTTONS")
-        fl = QFormLayout()
-        fl.setSpacing(8)
-        self.btn_combos = []
-        for i in range(2):
-            combo = NoScrollComboBox()
-            combo.addItems(BTN_ACTION_LABELS)
-            combo.currentIndexChanged.connect(self._emit_changed)
-            fl.addRow(f"Button {i + 1}:", combo)
-            self.btn_combos.append(combo)
-        cl.addLayout(fl)
+        hint = QLabel(
+            "Press a button on the SpaceMouse to detect it. Bound buttons "
+            "appear here automatically — assign an action from the dropdown."
+        )
+        hint.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px; padding-bottom: 4px;")
+        hint.setWordWrap(True)
+        cl.addWidget(hint)
+
+        self.btn_rows_layout = QGridLayout()
+        self.btn_rows_layout.setHorizontalSpacing(6)
+        self.btn_rows_layout.setVerticalSpacing(8)
+        # Two button-row blocks per grid row. Each block uses 3 cols:
+        # label / combo / remove. Column 3 is a fixed gap between the
+        # two blocks, column 7 absorbs the trailing slack so the filled
+        # cells stay compact instead of stretching to the card width.
+        self.btn_rows_layout.setColumnMinimumWidth(3, 24)
+        self.btn_rows_layout.setColumnStretch(7, 1)
+        cl.addLayout(self.btn_rows_layout)
+        # bnum → {label, combo, remove_btn, container} for active rows only.
+        self.btn_rows = {}
+        self._highlight_timers = {}
         layout.addWidget(card)
 
         # ── Card 5: DESKTOP SWITCHING ──
@@ -177,6 +197,203 @@ class DesktopPage(QWidget):
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
+
+    # ── Button rows ──
+    #
+    # Each row is a QHBoxLayout, not a wrapper QWidget. The DARK_THEME
+    # has a `QWidget { background-color: … }` rule, so a wrapper widget
+    # would paint its own panel-coloured rectangle behind the controls,
+    # breaking the visual match with AxesCard (which also uses bare
+    # HBoxes inside its card).
+    def _reset_button_rows(self):
+        for timer in self._highlight_timers.values():
+            timer.stop()
+        self._highlight_timers.clear()
+        for bnum in list(self.btn_rows):
+            self._discard_row_widgets(self.btn_rows[bnum])
+        self.btn_rows.clear()
+
+    @staticmethod
+    def _discard_row_widgets(row):
+        for key in ("label", "combo", "remove_btn"):
+            w = row.get(key)
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
+    def _add_button_row(self, bnum, action="none"):
+        """Add (or return existing) row for `bnum`. Rows are laid out
+        as a two-column grid sorted by bnum — adding triggers a
+        relayout so the order stays stable."""
+        if bnum in self.btn_rows:
+            return self.btn_rows[bnum]
+        if not (0 <= bnum < MAX_BUTTONS):
+            return None
+
+        label = QLabel(f"Button {bnum + 1}")
+        label.setFixedWidth(72)
+        combo = NoScrollComboBox()
+        combo.addItems(BTN_ACTION_LABELS)
+        idx = BTN_ACTIONS.index(action) if action in BTN_ACTIONS else 0
+        combo.setCurrentIndex(idx)
+        combo.setFixedWidth(160)
+        combo.currentIndexChanged.connect(self._emit_changed)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(lambda _, b=bnum: self._remove_button_row(b))
+
+        self.btn_rows[bnum] = {
+            "label": label,
+            "combo": combo,
+            "remove_btn": remove_btn,
+        }
+        self._update_remove_visibility(bnum)
+        self._relayout_buttons()
+        return self.btn_rows[bnum]
+
+    def _is_orphan(self, bnum):
+        """A row is an orphan iff its bnum is not on the connected
+        device. Default rows are never orphans. With an unknown device
+        (button_count == 0) anything outside the defaults is treated
+        as orphan so the user has a way to clean it up."""
+        if bnum in DEFAULT_BUTTON_ROWS:
+            return False
+        if self._device_button_count <= 0:
+            return True
+        return bnum >= self._device_button_count
+
+    def _update_remove_visibility(self, bnum=None):
+        targets = (bnum,) if bnum is not None else tuple(self.btn_rows)
+        for b in targets:
+            row = self.btn_rows.get(b)
+            if row is None:
+                continue
+            orphan = self._is_orphan(b)
+            row["remove_btn"].setVisible(orphan)
+            if not orphan:
+                continue
+            if self._device_button_count > 0:
+                row["remove_btn"].setToolTip(
+                    "Remove this orphaned button row — the connected device "
+                    "does not expose this button"
+                )
+            else:
+                row["remove_btn"].setToolTip(
+                    "Device unknown — verify the button exists on your "
+                    "hardware before removing this row"
+                )
+
+    def _remove_button_row(self, bnum):
+        row = self.btn_rows.get(bnum)
+        if row is None or bnum in DEFAULT_BUTTON_ROWS:
+            return
+        self._discard_row_widgets(row)
+        timer = self._highlight_timers.pop(bnum, None)
+        if timer:
+            timer.stop()
+        del self.btn_rows[bnum]
+        self._relayout_buttons()
+        self._emit_changed()
+
+    def _relayout_buttons(self):
+        """Re-pack the two-column grid sorted by bnum so add/remove
+        does not leave holes.
+
+        Each visible button row claims 3 grid columns (label, combo,
+        remove). Two button rows share one grid row → 6 grid columns
+        total. takeAt() releases the layout items without destroying
+        their widgets so we can re-place them sorted.
+        """
+        for i in reversed(range(self.btn_rows_layout.count())):
+            self.btn_rows_layout.takeAt(i)
+        for idx, bnum in enumerate(sorted(self.btn_rows)):
+            row = self.btn_rows[bnum]
+            grid_row = idx // 2
+            # Left block: cols 0..2. Right block: cols 4..6 (col 3 is the gap).
+            base_col = 0 if idx % 2 == 0 else 4
+            self.btn_rows_layout.addWidget(row["label"], grid_row, base_col)
+            self.btn_rows_layout.addWidget(row["combo"], grid_row, base_col + 1)
+            self.btn_rows_layout.addWidget(row["remove_btn"], grid_row, base_col + 2)
+
+    def ensure_button_rows(self, count):
+        """Reconcile button rows with the connected device's button count.
+
+        Adds rows for bnums 0..count-1 so the user does not have to
+        press each button once before seeing it. Trims rows beyond
+        ``count`` that are still unassigned (action == ``none``) — but
+        keeps user-configured rows even when they overshoot, so a
+        temporary device swap does not silently destroy mappings.
+        ``DEFAULT_BUTTON_ROWS`` are always preserved regardless.
+        Also records the count so the Remove affordance only shows on
+        bnums the connected device does not expose.
+        """
+        if count <= 0:
+            return
+        count = min(count, MAX_BUTTONS)
+        self._device_button_count = count
+        # Suppress per-edit emit and fire once at the end.
+        was_building = self._building
+        self._building = True
+        try:
+            changed = False
+            for bnum in range(count):
+                if bnum not in self.btn_rows:
+                    self._add_button_row(bnum, "none")
+                    changed = True
+            for bnum in sorted(self.btn_rows, reverse=True):
+                if bnum < count or bnum in DEFAULT_BUTTON_ROWS:
+                    continue
+                row = self.btn_rows[bnum]
+                if BTN_ACTIONS[row["combo"].currentIndex()] != "none":
+                    continue
+                self._remove_button_row(bnum)
+                changed = True
+        finally:
+            self._building = was_building
+        # Count changed → revisit every row so orphan markers stay
+        # accurate after device hot-plug.
+        self._update_remove_visibility()
+        if changed:
+            self._emit_changed()
+
+    def on_button_press(self, bnum, pressed):
+        """Called from settings_window when a SpaceMouse button event arrives.
+
+        Pressed events on unknown buttons add a new row. Both press and
+        release events refresh the visual highlight on the matching combo.
+        """
+        if not pressed or not (0 <= bnum < MAX_BUTTONS):
+            return
+        was_new = bnum not in self.btn_rows
+        row = self._add_button_row(bnum)
+        if row is None:
+            return
+        if was_new:
+            self._emit_changed()
+        self._flash_row(bnum)
+
+    def _flash_row(self, bnum):
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        combo = row["combo"]
+        combo.setStyleSheet(
+            f"QComboBox {{ border: 2px solid {COLOR_ACCENT}; border-radius: 4px; }}"
+        )
+        prev = self._highlight_timers.pop(bnum, None)
+        if prev:
+            prev.stop()
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda b=bnum: self._unflash_row(b))
+        timer.start(700)
+        self._highlight_timers[bnum] = timer
+
+    def _unflash_row(self, bnum):
+        self._highlight_timers.pop(bnum, None)
+        row = self.btn_rows.get(bnum)
+        if row is not None:
+            row["combo"].setStyleSheet("")
 
     def _on_manage_apps(self):
         dlg = AddAppDialog(self.wm_class_chips.get_values(), parent=self)
@@ -223,10 +440,17 @@ class DesktopPage(QWidget):
             self.axes_card.invert_toggles[i].setChecked(bool(ainv.get(key, False)))
 
         bmap = default.get("button_mapping", {})
-        for i in range(2):
-            action = bmap.get(str(i), "none")
-            idx = BTN_ACTIONS.index(action) if action in BTN_ACTIONS else 0
-            self.btn_combos[i].setCurrentIndex(idx)
+        self._reset_button_rows()
+        configured = set()
+        for key in bmap:
+            try:
+                bnum = int(key)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= bnum < MAX_BUTTONS:
+                configured.add(bnum)
+        for bnum in sorted(configured | set(DEFAULT_BUTTON_ROWS)):
+            self._add_button_row(bnum, bmap.get(str(bnum), "none"))
 
         self.dswitch_thresh_s.setValue(default.get("desktop_switch_threshold", 200))
         self.dswitch_cool_s.setValue(default.get("desktop_switch_cooldown_ms", 500))
@@ -253,8 +477,9 @@ class DesktopPage(QWidget):
             data["axis_invert"][key] = self.axes_card.invert_toggles[i].isChecked()
 
         data["button_mapping"] = {}
-        for i in range(2):
-            data["button_mapping"][str(i)] = BTN_ACTIONS[self.btn_combos[i].currentIndex()]
+        for bnum in sorted(self.btn_rows):
+            row = self.btn_rows[bnum]
+            data["button_mapping"][str(bnum)] = BTN_ACTIONS[row["combo"].currentIndex()]
 
         data["desktop_switch_threshold"] = self.dswitch_thresh_s.value()
         data["desktop_switch_cooldown_ms"] = self.dswitch_cool_s.value()

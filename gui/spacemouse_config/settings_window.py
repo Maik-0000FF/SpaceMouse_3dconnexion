@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from .backends import FreeCADConfig
 from .constants import COLOR_ACCENT, COLOR_TEXT_MUTED
-from .helpers import create_tray_icon_pixmap, send_daemon_cmd
+from .helpers import create_tray_icon_pixmap, query_device_info, send_daemon_cmd
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 
@@ -194,6 +194,7 @@ class SettingsWindow(QMainWindow):
         self._status_timer.timeout.connect(self._update_status)
 
         self._dirty = False
+        self._last_device_key = None
 
     def _switch_page(self, idx):
         self.stack.setCurrentIndex(idx)
@@ -270,12 +271,37 @@ class SettingsWindow(QMainWindow):
         self.setWindowTitle("SpaceMouse Control")
 
     def _update_status(self):
+        # Two synchronous daemon IPCs per tick (STATUS + DEVICE), both on
+        # the Qt main thread with the 1 s socket timeout in send_daemon_cmd.
+        # Acceptable at the current 2 s tick rate; revisit if the timer
+        # rate goes up or more poll-style commands are added.
         resp = send_daemon_cmd("STATUS")
         self.live_bar.set_daemon_status(resp is not None)
+        self.refresh_device_info()
+
+    def refresh_device_info(self):
+        """Pull DEVICE info from the daemon and apply it to GUI state.
+
+        Cheap to call repeatedly: a change is detected via (vid, pid)
+        so the desktop-page row pre-seeding fires once per hot-plug,
+        not on every poll. Daemon-unreachable leaves the GUI as-is.
+        """
+        info = query_device_info()
+        key = (info["vid"], info["pid"]) if info else None
+        if key == self._last_device_key:
+            return
+        self._last_device_key = key
+        if info is None:
+            self.live_bar.set_device_name(None)
+            return
+        self.live_bar.set_device_name(info["name"])
+        if info["button_count"] > 0:
+            self.desktop_page.ensure_button_rows(info["button_count"])
 
     def set_spnav_reader(self, reader):
         reader.axes_updated.connect(self.live_bar.update_axes)
         reader.button_pressed.connect(self.live_bar.update_button)
+        reader.button_pressed.connect(self.desktop_page.on_button_press)
 
     def set_profile_name(self, name):
         self.live_bar.set_profile(name)
@@ -284,10 +310,24 @@ class SettingsWindow(QMainWindow):
         self.desktop_page.update_config(config)
 
     def sync_settings(self, settings_state):
-        self.autostart_cb.setChecked(settings_state.get("autostart", True))
-        self.bg_test_cb.setChecked(settings_state.get("bg_test", False))
+        # Block stateChanged so the programmatic setChecked() does not
+        # cascade into _save_desktop → on_save before the host app has
+        # finished its own construction. Paired with the
+        # ``self.window_monitor = None`` pre-init in app.SpaceMouseApp
+        # __init__ — that one guards the desktop_page.changed cascade
+        # during SettingsWindow construction; this one guards the
+        # sync_settings() call right after.
+        for cb, value in (
+            (self.autostart_cb, settings_state.get("autostart", True)),
+            (self.bg_test_cb, settings_state.get("bg_test", False)),
+        ):
+            blocked = cb.blockSignals(True)
+            cb.setChecked(value)
+            cb.blockSignals(blocked)
         if "disabled" in settings_state:
+            blocked = self.actions_cb.blockSignals(True)
             self.actions_cb.setChecked(not settings_state["disabled"])
+            self.actions_cb.blockSignals(blocked)
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -1,13 +1,15 @@
-/* Tests for kinput_reset_state() — disconnect-fix correctness.
- *
- * Without this reset, axis values from before a USB disconnect would
- * persist in the module-local g_kinput_state[] cache and replay
- * themselves on the first SYN_REPORT after reconnect, producing a
- * spurious motion event with stale coordinates on a freshly opened
- * fd. The daemon calls kinput_reset_state() from kinput_open() so
- * reconnects start from a clean slate; this test pins that behaviour
- * down so a future refactor can't quietly drop it. */
+/* Tests for kernel_input.c:
+ *   1. kinput_reset_state() — disconnect-fix correctness.
+ *      Without this reset, axis values from before a USB disconnect
+ *      would persist in the module-local g_kinput_state[] cache and
+ *      replay themselves on the first SYN_REPORT after reconnect.
+ *   2. EV_KEY → bnum mapping — covers BTN_0..BTN_9, BTN_TRIGGER_HAPPY1+
+ *      and the MAX_BUTTONS clamp. Indirect: exercises the internal
+ *      kinput_code_to_bnum() via kinput_poll_event() with crafted
+ *      EV_KEY events on the pipe fixture.
+ */
 
+#include "config.h"
 #include "kernel_input.h"
 
 #include <assert.h>
@@ -82,6 +84,62 @@ int main(void)
 	assert(ev.motion.rx == 0);
 	assert(ev.motion.ry == 0);
 	assert(ev.motion.rz == 0);
+
+	/* Phase 4 — EV_KEY → bnum mapping.
+	 *
+	 * BTN_0..BTN_9 map straight to bnums 0..9, BTN_TRIGGER_HAPPY1+
+	 * picks up at bnum 10. Codes that overshoot MAX_BUTTONS must be
+	 * dropped (returns 0 from kinput_poll_event with no event emitted).
+	 * Codes outside both ranges (e.g. BTN_LEFT) must also be dropped.
+	 */
+	kinput_reset_state();
+
+	/* BTN_0 press → bnum 0. */
+	push(wfd, EV_KEY, BTN_0, 1);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_BUTTON);
+	assert(ev.button.bnum == 0);
+	assert(ev.button.press == 1);
+
+	/* BTN_9 release → bnum 9. */
+	push(wfd, EV_KEY, BTN_9, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_BUTTON);
+	assert(ev.button.bnum == 9);
+	assert(ev.button.press == 0);
+
+	/* BTN_TRIGGER_HAPPY1 → bnum 10 (the first overflow button). */
+	int happy_base = BTN_TRIGGER_HAPPY1;
+	push(wfd, EV_KEY, happy_base, 1);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_BUTTON);
+	assert(ev.button.bnum == 10);
+
+	/* Highest in-range HAPPY code = MAX_BUTTONS - 1. */
+	push(wfd, EV_KEY, happy_base + (MAX_BUTTONS - 11), 1);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_BUTTON);
+	assert(ev.button.bnum == MAX_BUTTONS - 1);
+
+	/* Just past the clamp: bnum would be MAX_BUTTONS → dropped.
+	 * Push a sentinel motion event after it so we can distinguish
+	 * "dropped" from "queue empty" — the motion must come back,
+	 * proving the loop kept reading past the rejected EV_KEY. */
+	push(wfd, EV_KEY, happy_base + (MAX_BUTTONS - 10), 1);
+	push(wfd, EV_ABS, 2, 7);
+	push(wfd, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_MOTION);
+	assert(ev.motion.z == 7);
+
+	/* Out-of-range EV_KEY (e.g. BTN_LEFT) — also dropped, again
+	 * proven by the sentinel motion that follows. */
+	push(wfd, EV_KEY, BTN_LEFT, 1);
+	push(wfd, EV_ABS, 3, 11);
+	push(wfd, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_MOTION);
+	assert(ev.motion.rx == 11);
 
 	close(rfd);
 	close(wfd);

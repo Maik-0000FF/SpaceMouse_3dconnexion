@@ -23,7 +23,11 @@ from .constants import (
 
 # Re-export daemon-socket helpers so existing callers keep their import path.
 # The actual implementations live in daemon_socket.py (Qt-free for testing).
-from .daemon_socket import send_daemon_cmd, wait_for_daemon_socket  # noqa: F401
+from .daemon_socket import (  # noqa: F401
+    query_device_info,
+    send_daemon_cmd,
+    wait_for_daemon_socket,
+)
 
 # ── LED control via direct USB HID ────────────────────────────────────
 

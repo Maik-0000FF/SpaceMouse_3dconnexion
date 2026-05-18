@@ -429,52 +429,64 @@ class LivePreviewBar(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("live-bar")
-        self.setFixedHeight(52)
+        self.setFixedHeight(104)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 4, 12, 4)
-        layout.setSpacing(6)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 4, 12, 4)
+        outer.setSpacing(2)
 
         section_style = f"color: {COLOR_TEXT_DIM}; font-weight: bold; font-size: 11px;"
+
+        # \u2500\u2500 Row 1: device name + profile + status dot \u2500\u2500
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        self.device_label = QLabel("")
+        self.device_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 11px;")
+        self.device_label.setVisible(False)
+        top.addWidget(self.device_label)
+        top.addStretch()
+        self.profile_label = QLabel("Profile: Desktop")
+        self.profile_label.setStyleSheet(
+            f"color: {COLOR_ACCENT}; font-weight: bold; font-size: 11px;"
+        )
+        top.addWidget(self.profile_label)
+        self.status_dot = QLabel("\u25cf")
+        self.status_dot.setStyleSheet(f"font-size: 12px; color: {COLOR_BG_RAISED};")
+        self.status_dot.setToolTip("Daemon: checking...")
+        top.addWidget(self.status_dot)
+        outer.addLayout(top)
+
+        # \u2500\u2500 Row 2: axis bars \u2500\u2500
+        axes = QHBoxLayout()
+        axes.setSpacing(6)
         lbl = QLabel("Live:")
         lbl.setStyleSheet(section_style)
-        layout.addWidget(lbl)
-
+        axes.addWidget(lbl)
         self.bars = []
         short_names = ["TX", "TY", "TZ", "RX", "RY", "RZ"]
         for name in short_names:
             nl = QLabel(name)
             nl.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 10px; min-width: 18px;")
-            layout.addWidget(nl)
+            axes.addWidget(nl)
             bar = AxisBar()
-            layout.addWidget(bar, 1)
+            axes.addWidget(bar, 1)
             self.bars.append(bar)
+        outer.addLayout(axes)
+        outer.addSpacing(8)
 
-        layout.addSpacing(8)
-
+        # \u2500\u2500 Row 3: button chips \u2500\u2500
+        bottom = QHBoxLayout()
+        bottom.setSpacing(6)
         lbl = QLabel("Buttons:")
         lbl.setStyleSheet(section_style)
-        layout.addWidget(lbl)
-
-        self.btn_labels = []
-        for _ in range(2):
-            bl = QLabel("\u25cb")
-            bl.setStyleSheet(f"font-size: 14px; color: {COLOR_BG_RAISED};")
-            layout.addWidget(bl)
-            self.btn_labels.append(bl)
-
-        layout.addSpacing(12)
-
-        self.profile_label = QLabel("Profile: Desktop")
-        self.profile_label.setStyleSheet(
-            f"color: {COLOR_ACCENT}; font-weight: bold; font-size: 11px;"
-        )
-        layout.addWidget(self.profile_label)
-
-        self.status_dot = QLabel("\u25cf")
-        self.status_dot.setStyleSheet(f"font-size: 12px; color: {COLOR_BG_RAISED};")
-        self.status_dot.setToolTip("Daemon: checking...")
-        layout.addWidget(self.status_dot)
+        bottom.addWidget(lbl)
+        self.btn_chips_layout = QHBoxLayout()
+        self.btn_chips_layout.setSpacing(3)
+        self.btn_chips_layout.setContentsMargins(0, 0, 0, 0)
+        bottom.addLayout(self.btn_chips_layout)
+        self.btn_chips = {}
+        bottom.addStretch()
+        outer.addLayout(bottom)
 
     def update_axes(self, values):
         for i, val in enumerate(values):
@@ -488,13 +500,53 @@ class LivePreviewBar(QWidget):
                 self.bars[i].setDeadzone(dz)
 
     def update_button(self, bnum, pressed):
-        if 0 <= bnum < len(self.btn_labels):
-            if pressed:
-                self.btn_labels[bnum].setText("\u25cf")
-                self.btn_labels[bnum].setStyleSheet(f"font-size: 14px; color: {COLOR_OK};")
-            else:
-                self.btn_labels[bnum].setText("\u25cb")
-                self.btn_labels[bnum].setStyleSheet(f"font-size: 14px; color: {COLOR_BG_RAISED};")
+        if bnum < 0:
+            return
+        chip = self.btn_chips.get(bnum)
+        if chip is None:
+            chip = self._add_button_chip(bnum)
+        self._style_button_chip(chip, pressed)
+
+    def _add_button_chip(self, bnum):
+        chip = QLabel(str(bnum + 1))
+        chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        chip.setFixedSize(22, 20)
+        chip.setToolTip(f"Button {bnum + 1}")
+        self._style_button_chip(chip, False)
+        # Insert sorted by bnum so chips stay ordered as they appear.
+        insert_at = sum(1 for b in self.btn_chips if b < bnum)
+        self.btn_chips_layout.insertWidget(insert_at, chip)
+        self.btn_chips[bnum] = chip
+        return chip
+
+    @staticmethod
+    def _style_button_chip(chip, pressed):
+        if pressed:
+            chip.setStyleSheet(
+                f"background: {COLOR_OK}; color: {COLOR_BG_BASE}; "
+                f"font-size: 10px; font-weight: bold; border-radius: 4px;"
+            )
+        else:
+            chip.setStyleSheet(
+                f"background: {COLOR_BG_RAISED}; color: {COLOR_TEXT_MUTED}; "
+                f"font-size: 10px; font-weight: bold; border-radius: 4px;"
+            )
+
+    def seed_buttons(self, bnums):
+        """Pre-populate chips for known buttons (e.g. from config)."""
+        for bnum in bnums:
+            if bnum >= 0 and bnum not in self.btn_chips:
+                self._add_button_chip(bnum)
+
+    def set_device_name(self, name):
+        """Display the detected device name to the right of the chips.
+        Pass None to hide the label (no device attached)."""
+        if not name:
+            self.device_label.setVisible(False)
+            self.device_label.setText("")
+            return
+        self.device_label.setText(name)
+        self.device_label.setVisible(True)
 
     def set_profile(self, name):
         # Display-only alias for the catch-all profile — the config file

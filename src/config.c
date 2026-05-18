@@ -240,7 +240,7 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 			char *endp = NULL;
 			long bnum = strtol(key, &endp, 10);
 			struct json_object *bval = json_object_iter_peek_value(&it);
-			if (endp != key && *endp == '\0' && bnum >= 0 && bnum < 16)
+			if (endp != key && *endp == '\0' && bnum >= 0 && bnum < MAX_BUTTONS)
 				apply_btn_action(c, (int)bnum, json_object_get_string(bval));
 			json_object_iter_next(&it);
 		}
@@ -267,7 +267,7 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 		}
 	}
 	if (p->passthrough) {
-		for (int i = 0; i < 16; i++) {
+		for (int i = 0; i < MAX_BUTTONS; i++) {
 			if (c->btn_map[i] != BTNACT_NONE) {
 				p->passthrough = 0;
 				break;

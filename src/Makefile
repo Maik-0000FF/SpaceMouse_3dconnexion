@@ -28,7 +28,7 @@ TEST_BINS = \
 all: $(TARGETS)
 
 DAEMON_OBJS = spacemouse-core.o config.o command_socket.o kernel_input.o uinput.o \
-              dbus_actions.o desktop_actions.o
+              dbus_actions.o desktop_actions.o device.o
 
 spacemouse-core.o: spacemouse-core.c spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
@@ -36,10 +36,13 @@ spacemouse-core.o: spacemouse-core.c spacemouse-core.h
 config.o: config.c config.h spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) -c -o $@ $<
 
-command_socket.o: command_socket.c command_socket.h config.h
+command_socket.o: command_socket.c command_socket.h config.h device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
-kernel_input.o: kernel_input.c kernel_input.h
+kernel_input.o: kernel_input.c kernel_input.h device.h config.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
+
+device.o: device.c device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
 uinput.o: uinput.c uinput.h spacemouse-core.h
@@ -52,7 +55,8 @@ desktop_actions.o: desktop_actions.c desktop_actions.h dbus_actions.h uinput.h s
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
 spacemouse-desktop: spacemouse-desktop.c $(DAEMON_OBJS) spacemouse-core.h config.h \
-                    command_socket.h kernel_input.h uinput.h dbus_actions.h desktop_actions.h
+                    command_socket.h kernel_input.h uinput.h dbus_actions.h desktop_actions.h \
+                    device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) \
 		-o $@ spacemouse-desktop.c $(DAEMON_OBJS) \
 		-lm $(DBUS_LIBS) $(JSON_LIBS) $(EXTRA_LDFLAGS)
@@ -73,16 +77,16 @@ tests/test_%: tests/test_%.c spacemouse-core.o spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< spacemouse-core.o -lm $(EXTRA_LDFLAGS)
 
 # Specific override: this test exercises kernel_input.c, not spacemouse-core.
-tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o kernel_input.h
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< kernel_input.o $(EXTRA_LDFLAGS)
+tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o device.o kernel_input.h device.h config.h
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< kernel_input.o device.o $(EXTRA_LDFLAGS)
 
 # Specific override: this test exercises command_socket.c and uses
 # the profile globals defined in config.c. spacemouse-core.o is pulled
 # in because config.c calls lookup_key() at link time.
 tests/test_command_socket: tests/test_command_socket.c command_socket.o config.o spacemouse-core.o \
-                            command_socket.h config.h
+                            device.o command_socket.h config.h device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) -I. -o $@ $< \
-		command_socket.o config.o spacemouse-core.o \
+		command_socket.o config.o spacemouse-core.o device.o \
 		-lm $(JSON_LIBS) $(EXTRA_LDFLAGS)
 
 # Specific override: exercises config.c (JSON loader, legacy-key
@@ -110,7 +114,7 @@ test: $(TEST_BINS)
 # is a single file and clang-tidy is fine with command-line -I args.
 lint-c:
 	@CFLAGS_TIDY="$$(pkg-config --cflags dbus-1) $$(pkg-config --cflags json-c) -I. -std=gnu11"; \
-	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c config.c command_socket.c kernel_input.c uinput.c dbus_actions.c desktop_actions.c -- $$CFLAGS_TIDY; \
+	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c config.c command_socket.c kernel_input.c uinput.c dbus_actions.c desktop_actions.c device.c -- $$CFLAGS_TIDY; \
 	clang-tidy --quiet tests/test_*.c -- -I. -std=gnu11
 
 # clang-format check: fail if any source needs reformatting. Counterpart
@@ -119,6 +123,7 @@ C_SOURCES = spacemouse-desktop.c spacemouse-core.c spacemouse-core.h config.c co
             command_socket.c command_socket.h kernel_input.c kernel_input.h \
             uinput.c uinput.h dbus_actions.c dbus_actions.h \
             desktop_actions.c desktop_actions.h \
+            device.c device.h \
             tests/test_curve.c tests/test_key_lookup.c tests/test_de_detect.c \
             tests/test_scroll_acc.c tests/test_kinput_state.c \
             tests/test_command_socket.c tests/test_config_migration.c

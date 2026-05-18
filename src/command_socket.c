@@ -14,6 +14,7 @@
 #include <sys/un.h>
 
 #include "config.h"
+#include "device.h"
 
 int cmd_sock_open(const char *path)
 {
@@ -109,6 +110,16 @@ void cmd_handle_client(int listen_fd)
 	} else if (strcmp(buf, "RELOAD") == 0) {
 		g_reload = 1;
 		snprintf(response, sizeof(response), "OK reloading\n");
+	} else if (strcmp(buf, "DEVICE") == 0) {
+		struct device_info info;
+		device_get_cached(&info);
+		if (info.vid == 0 && info.pid == 0) {
+			snprintf(response, sizeof(response), "NONE\n");
+		} else {
+			snprintf(response, sizeof(response),
+				 "OK vid=%04x pid=%04x buttons=%d known=%d name=%s\n", info.vid,
+				 info.pid, info.button_count, info.known, info.display_name);
+		}
 	} else if (strcmp(buf, "STATUS") == 0) {
 		snprintf(response, sizeof(response), "ACTIVE %s\nPROFILES",
 			 g_profiles[g_active_profile].name);

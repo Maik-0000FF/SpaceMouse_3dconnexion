@@ -13,6 +13,9 @@
 
 #include <linux/input.h>
 
+#include "config.h"
+#include "device.h"
+
 /* Per-axis state cached between EV_ABS events; flushed at SYN_REPORT. */
 static int g_kinput_state[6] = {0};
 static int g_kinput_dirty = 0;
@@ -60,8 +63,38 @@ int kinput_open(int verbose)
 	/* Reset cached state — after a reconnect the device starts fresh. */
 	kinput_reset_state();
 
+	struct device_info info;
+	if (device_detect_from_fd(fd, &info) == 0 && verbose) {
+		fprintf(stderr, "spacemouse-desktop: detected %s (%04x:%04x), %d buttons\n",
+			info.display_name, info.vid, info.pid, info.button_count);
+	}
+
 	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
 	return fd;
+}
+
+/* Map a Linux EV_KEY code to a 0-based bnum for SpaceMouse devices.
+ *
+ * The HID layer assigns the first 10 puck buttons to BTN_0..BTN_9
+ * (0x100..0x109). For devices with more buttons (SpacePilot Pro = 31,
+ * SpaceMouse Enterprise = 31) the kernel uses BTN_TRIGGER_HAPPY1+
+ * (0x2c0..0x2e7) for buttons 10..49. Anything outside both ranges is
+ * not a SpaceMouse button (returns -1). Matches spacenavd's mapping.
+ *
+ * Result is clamped to MAX_BUTTONS so the effective button cap matches
+ * the config arrays (no current device exceeds 31; the clamp guards
+ * against future hardware advertising the full HAPPY range).
+ */
+static int kinput_code_to_bnum(int code)
+{
+	int bnum = -1;
+	if (code >= BTN_0 && code <= BTN_9)
+		bnum = code - BTN_0;
+	else if (code >= BTN_TRIGGER_HAPPY1 && code <= BTN_TRIGGER_HAPPY40)
+		bnum = 10 + (code - BTN_TRIGGER_HAPPY1);
+	if (bnum >= MAX_BUTTONS)
+		return -1;
+	return bnum;
 }
 
 int kinput_poll_event(int fd, struct kinput_event *out)
@@ -71,9 +104,12 @@ int kinput_poll_event(int fd, struct kinput_event *out)
 		if (ie.type == EV_ABS && ie.code <= 5) {
 			g_kinput_state[ie.code] = ie.value;
 			g_kinput_dirty = 1;
-		} else if (ie.type == EV_KEY && ie.code >= BTN_0 && ie.code <= BTN_9) {
+		} else if (ie.type == EV_KEY) {
+			int bnum = kinput_code_to_bnum(ie.code);
+			if (bnum < 0)
+				continue;
 			out->type = KIE_BUTTON;
-			out->button.bnum = ie.code - BTN_0;
+			out->button.bnum = bnum;
 			out->button.press = ie.value;
 			return 1;
 		} else if (ie.type == EV_SYN && ie.code == SYN_REPORT) {

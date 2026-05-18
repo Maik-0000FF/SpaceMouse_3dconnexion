@@ -7,6 +7,8 @@
  *   PROFILE <name>   → "OK <name>\n" or "ERR unknown profile '<name>'\n"
  *   RELOAD           → "OK reloading\n" (sets g_reload, main loop picks up)
  *   STATUS           → "ACTIVE <name>\nPROFILES <n1> <n2> …\n"
+ *   DEVICE           → "OK vid=XXXX pid=XXXX buttons=N known=0|1 name=<str>\n"
+ *                       or "NONE\n" when no device is currently open
  *
  * Connections are accept()ed one at a time from the daemon's main poll
  * loop; the socket is non-blocking so a stuck client cannot stall the
