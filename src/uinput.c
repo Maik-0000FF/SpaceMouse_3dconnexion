@@ -16,19 +16,29 @@
 
 #include "spacemouse-core.h"
 
-/* Hold between key-combo transitions so compositors see Alt+Tab as a
- * deliberate sequence rather than a single input batch. Without this,
- * KWin's window-switcher overlay does not surface and the Walk-Through-
- * Windows shortcut fires sporadically. ~70 ms total — matches what
- * a human-typed shortcut looks like to the input layer. */
-#define KEY_COMBO_MOD_HOLD_NS (20L * 1000L * 1000L)
-#define KEY_COMBO_KEY_HOLD_NS (30L * 1000L * 1000L)
+/* Time-unit conversions. Kept local so callers can express the timing
+ * constants in milliseconds (the only unit the values are tuned in)
+ * while the kernel sleep API gets nanoseconds via sleep_ms below. */
+#define MS_PER_SEC 1000L
+#define NS_PER_MS 1000000L
 
-static void nsleep(long ns)
+/* Hold between key-combo transitions so compositors see Alt+Tab as a
+ * deliberate sequence rather than a single input batch. Without these,
+ * KWin's window-switcher overlay does not surface and the Walk-Through-
+ * Windows shortcut fires sporadically. Both values are in milliseconds;
+ * the total combo time of ~70 ms matches what a human-typed shortcut
+ * looks like to the input layer. */
+#define KEY_COMBO_MOD_HOLD_MS 20
+#define KEY_COMBO_KEY_HOLD_MS 30
+
+static void sleep_ms(long ms)
 {
-	if (ns <= 0)
+	if (ms <= 0)
 		return;
-	struct timespec ts = {.tv_sec = ns / 1000000000L, .tv_nsec = ns % 1000000000L};
+	struct timespec ts = {
+		.tv_sec = ms / MS_PER_SEC,
+		.tv_nsec = (ms % MS_PER_SEC) * NS_PER_MS,
+	};
 	nanosleep(&ts, NULL);
 }
 
@@ -153,14 +163,14 @@ void emit_key_tap_held(int fd, int code)
 		return;
 	emit_event(fd, EV_KEY, code, 1);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
-	nsleep(KEY_COMBO_KEY_HOLD_NS);
+	sleep_ms(KEY_COMBO_KEY_HOLD_MS);
 	emit_event(fd, EV_KEY, code, 0);
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
 void emit_settle_after_mods(void)
 {
-	nsleep(KEY_COMBO_MOD_HOLD_NS);
+	sleep_ms(KEY_COMBO_MOD_HOLD_MS);
 }
 
 void emit_key_combo(int fd, const int *mods, int n_mods, int key)

@@ -32,10 +32,10 @@
 #include "config.h" /* struct btn_key_combo + BTN_KEY_MAX_MODS */
 
 /* How long modifiers stay held after the last key tap before the
- * sticky auto-releases. ~400 ms is comfortable: long enough for a
- * human to chain a second Tab, short enough that an idle release
- * doesn't keep modifiers around when the user has stopped. */
-#define STICKY_COMBO_TIMEOUT_MS 400
+ * sticky auto-releases. 1 s gives the user comfortable time to
+ * chain more Tabs through the window switcher overlay; the wait
+ * after the final tap before the commit is the cost of admission. */
+#define STICKY_COMBO_TIMEOUT_MS 1000
 
 struct sticky_combo_state {
 	int active;
