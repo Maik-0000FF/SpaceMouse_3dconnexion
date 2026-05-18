@@ -55,6 +55,11 @@ class DesktopPage(QWidget):
         super().__init__()
         self._building = True
         self._config = config_data
+        # Tracks the connected device's hardware button count so we
+        # only flag bnums beyond it as orphans (and offer a Remove
+        # affordance for those). 0 = unknown device → fall back to
+        # offering Remove on every non-default row.
+        self._device_button_count = 0
         self._setup_ui()
         self._load_state()
         self._building = False
@@ -234,21 +239,39 @@ class DesktopPage(QWidget):
         combo.setFixedWidth(160)
         combo.currentIndexChanged.connect(self._emit_changed)
 
-        remove_btn = QPushButton("×")  # noqa: RUF001
-        remove_btn.setFixedSize(20, 20)
-        remove_btn.setToolTip("Remove this button row")
+        remove_btn = QPushButton("Remove")
+        remove_btn.setToolTip(
+            "Remove this orphaned button row — the connected device does not expose this button"
+        )
         remove_btn.clicked.connect(lambda _, b=bnum: self._remove_button_row(b))
-        # Buttons 0 and 1 are always-visible (SpaceNavigator baseline) — no remove.
-        if bnum in DEFAULT_BUTTON_ROWS:
-            remove_btn.setVisible(False)
 
         self.btn_rows[bnum] = {
             "label": label,
             "combo": combo,
             "remove_btn": remove_btn,
         }
+        self._update_remove_visibility(bnum)
         self._relayout_buttons()
         return self.btn_rows[bnum]
+
+    def _is_orphan(self, bnum):
+        """A row is an orphan iff its bnum is not on the connected
+        device. Default rows are never orphans. With an unknown device
+        (button_count == 0) anything outside the defaults is treated
+        as orphan so the user has a way to clean it up."""
+        if bnum in DEFAULT_BUTTON_ROWS:
+            return False
+        if self._device_button_count <= 0:
+            return True
+        return bnum >= self._device_button_count
+
+    def _update_remove_visibility(self, bnum=None):
+        targets = (bnum,) if bnum is not None else tuple(self.btn_rows)
+        for b in targets:
+            row = self.btn_rows.get(b)
+            if row is None:
+                continue
+            row["remove_btn"].setVisible(self._is_orphan(b))
 
     def _remove_button_row(self, bnum):
         row = self.btn_rows.get(bnum)
@@ -291,10 +314,13 @@ class DesktopPage(QWidget):
         keeps user-configured rows even when they overshoot, so a
         temporary device swap does not silently destroy mappings.
         ``DEFAULT_BUTTON_ROWS`` are always preserved regardless.
+        Also records the count so the Remove affordance only shows on
+        bnums the connected device does not expose.
         """
         if count <= 0:
             return
         count = min(count, MAX_BUTTONS)
+        self._device_button_count = count
         # Suppress per-edit emit and fire once at the end.
         was_building = self._building
         self._building = True
@@ -314,6 +340,9 @@ class DesktopPage(QWidget):
                 changed = True
         finally:
             self._building = was_building
+        # Count changed → revisit every row so orphan markers stay
+        # accurate after device hot-plug.
+        self._update_remove_visibility()
         if changed:
             self._emit_changed()
 
