@@ -10,6 +10,7 @@ src/tests/test_de_detect
 src/tests/test_scroll_acc
 src/tests/test_kinput_state
 src/tests/test_command_socket
+src/tests/test_config_migration
 
 # pytest cache
 .pytest_cache/
