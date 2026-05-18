@@ -31,7 +31,7 @@ from .constants import (
     FREECAD_ORBIT_STYLES,
 )
 from .helpers import make_card, make_slider
-from .widgets import AxesCard, ToggleSwitch
+from .widgets import AxesCard
 
 # ── DesktopPage ───────────────────────────────────────────────────────
 
@@ -99,16 +99,6 @@ class DesktopPage(QWidget):
         add_row.addStretch()
         cl.addLayout(add_row)
 
-        fl = QFormLayout()
-        fl.setSpacing(8)
-        bm_row = QHBoxLayout()
-        self.browser_mode_toggle = ToggleSwitch()
-        self.browser_mode_toggle.stateChanged.connect(self._emit_changed)
-        bm_row.addWidget(self.browser_mode_toggle)
-        bm_row.addWidget(QLabel("Browser Mode (smart actions send Space/Arrows)"))
-        bm_row.addStretch()
-        fl.addRow("", bm_row)
-        cl.addLayout(fl)
         layout.addWidget(card)
 
         # ── Card 1: SENSITIVITY & SPEED ──
@@ -304,10 +294,8 @@ class DesktopPage(QWidget):
         profiles = self._config.get("profiles", {})
         data = profiles.get(self._current_profile, {})
 
-        # Match Apps + Browser Mode
         wm = data.get("match_wm_class", [])
         self.wm_class_chips.set_values(wm if isinstance(wm, list) else [])
-        self.browser_mode_toggle.setChecked(bool(data.get("browser_keys", False)))
 
         self.sensitivity_s.setValue(int(data.get("sensitivity", 1.0) * 10))
         self.scroll_speed_s.setValue(int(data.get("scroll_speed", 3.0) * 10))
@@ -344,12 +332,9 @@ class DesktopPage(QWidget):
     def _get_profile_data(self):
         """Return current UI state as profile data dict."""
         data = {}
-        # Match Apps + Browser Mode
         wm = self.wm_class_chips.get_values()
         if wm:
             data["match_wm_class"] = wm
-        if self.browser_mode_toggle.isChecked():
-            data["browser_keys"] = True
         data["sensitivity"] = self.sensitivity_s.value() / 10.0
         data["scroll_speed"] = self.scroll_speed_s.value() / 10.0
         data["zoom_speed"] = self.zoom_speed_s.value() / 10.0
