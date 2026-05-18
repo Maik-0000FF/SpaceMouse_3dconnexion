@@ -153,10 +153,14 @@ class DesktopPage(QWidget):
         cl.addWidget(hint)
 
         self.btn_rows_layout = QGridLayout()
-        self.btn_rows_layout.setHorizontalSpacing(12)
+        self.btn_rows_layout.setHorizontalSpacing(6)
         self.btn_rows_layout.setVerticalSpacing(8)
-        self.btn_rows_layout.setColumnStretch(0, 1)
-        self.btn_rows_layout.setColumnStretch(1, 1)
+        # Two button-row blocks per grid row. Each block uses 3 cols:
+        # label / combo / remove. Column 3 is a fixed gap between the
+        # two blocks, column 7 absorbs the trailing slack so the filled
+        # cells stay compact instead of stretching to the card width.
+        self.btn_rows_layout.setColumnMinimumWidth(3, 24)
+        self.btn_rows_layout.setColumnStretch(7, 1)
         cl.addLayout(self.btn_rows_layout)
         # bnum → {label, combo, remove_btn, container} for active rows only.
         self.btn_rows = {}
@@ -190,15 +194,27 @@ class DesktopPage(QWidget):
             self.changed.emit()
 
     # ── Button rows ──
+    #
+    # Each row is a QHBoxLayout, not a wrapper QWidget. The DARK_THEME
+    # has a `QWidget { background-color: … }` rule, so a wrapper widget
+    # would paint its own panel-coloured rectangle behind the controls,
+    # breaking the visual match with AxesCard (which also uses bare
+    # HBoxes inside its card).
     def _reset_button_rows(self):
         for timer in self._highlight_timers.values():
             timer.stop()
         self._highlight_timers.clear()
         for bnum in list(self.btn_rows):
-            row_w = self.btn_rows[bnum]["container"]
-            self.btn_rows_layout.removeWidget(row_w)
-            row_w.deleteLater()
+            self._discard_row_widgets(self.btn_rows[bnum])
         self.btn_rows.clear()
+
+    @staticmethod
+    def _discard_row_widgets(row):
+        for key in ("label", "combo", "remove_btn"):
+            w = row.get(key)
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
 
     def _add_button_row(self, bnum, action="none"):
         """Add (or return existing) row for `bnum`. Rows are laid out
@@ -209,21 +225,14 @@ class DesktopPage(QWidget):
         if not (0 <= bnum < MAX_BUTTONS):
             return None
 
-        label = QLabel(f"Btn {bnum + 1}")
-        label.setFixedWidth(48)
+        label = QLabel(f"Button {bnum + 1}")
+        label.setFixedWidth(72)
         combo = NoScrollComboBox()
         combo.addItems(BTN_ACTION_LABELS)
         idx = BTN_ACTIONS.index(action) if action in BTN_ACTIONS else 0
         combo.setCurrentIndex(idx)
-        combo.setMinimumWidth(100)
+        combo.setFixedWidth(160)
         combo.currentIndexChanged.connect(self._emit_changed)
-
-        row_w = QWidget()
-        row_l = QHBoxLayout(row_w)
-        row_l.setContentsMargins(0, 0, 0, 0)
-        row_l.setSpacing(4)
-        row_l.addWidget(label)
-        row_l.addWidget(combo, 1)
 
         remove_btn = QPushButton("×")  # noqa: RUF001
         remove_btn.setFixedSize(20, 20)
@@ -232,13 +241,11 @@ class DesktopPage(QWidget):
         # Buttons 0 and 1 are always-visible (SpaceNavigator baseline) — no remove.
         if bnum in DEFAULT_BUTTON_ROWS:
             remove_btn.setVisible(False)
-        row_l.addWidget(remove_btn)
 
         self.btn_rows[bnum] = {
             "label": label,
             "combo": combo,
             "remove_btn": remove_btn,
-            "container": row_w,
         }
         self._relayout_buttons()
         return self.btn_rows[bnum]
@@ -247,8 +254,7 @@ class DesktopPage(QWidget):
         row = self.btn_rows.get(bnum)
         if row is None or bnum in DEFAULT_BUTTON_ROWS:
             return
-        self.btn_rows_layout.removeWidget(row["container"])
-        row["container"].deleteLater()
+        self._discard_row_widgets(row)
         timer = self._highlight_timers.pop(bnum, None)
         if timer:
             timer.stop()
@@ -258,15 +264,23 @@ class DesktopPage(QWidget):
 
     def _relayout_buttons(self):
         """Re-pack the two-column grid sorted by bnum so add/remove
-        does not leave holes."""
+        does not leave holes.
+
+        Each visible button row claims 3 grid columns (label, combo,
+        remove). Two button rows share one grid row → 6 grid columns
+        total. takeAt() releases the layout items without destroying
+        their widgets so we can re-place them sorted.
+        """
         for i in reversed(range(self.btn_rows_layout.count())):
-            item = self.btn_rows_layout.takeAt(i)
-            # takeAt detaches but keeps the widget — we re-attach below.
-            if item is None:
-                continue
+            self.btn_rows_layout.takeAt(i)
         for idx, bnum in enumerate(sorted(self.btn_rows)):
-            row_w = self.btn_rows[bnum]["container"]
-            self.btn_rows_layout.addWidget(row_w, idx // 2, idx % 2)
+            row = self.btn_rows[bnum]
+            grid_row = idx // 2
+            # Left block: cols 0..2. Right block: cols 4..6 (col 3 is the gap).
+            base_col = 0 if idx % 2 == 0 else 4
+            self.btn_rows_layout.addWidget(row["label"], grid_row, base_col)
+            self.btn_rows_layout.addWidget(row["combo"], grid_row, base_col + 1)
+            self.btn_rows_layout.addWidget(row["remove_btn"], grid_row, base_col + 2)
 
     def ensure_button_rows(self, count):
         """Reconcile button rows with the connected device's button count.
