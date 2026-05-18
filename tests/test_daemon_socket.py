@@ -1,9 +1,13 @@
-"""Tests for wait_for_daemon_socket() — daemon-socket race-condition fix.
+"""Tests for daemon_socket helpers.
 
-When the GUI calls `systemctl start spacemouse-desktop` it returns as soon
+wait_for_daemon_socket() — race-condition fix:
+when the GUI calls `systemctl start spacemouse-desktop` it returns as soon
 as the unit forks, but the daemon needs a beat to bind its command socket.
 wait_for_daemon_socket() exists to bridge that gap so the first PROFILE
 command isn't dropped against an empty socket.
+
+query_device_info() — DEVICE response parser:
+pure-function tests; mock send_daemon_cmd to feed canned wire responses.
 """
 
 import socket
@@ -68,3 +72,83 @@ def test_returns_true_once_socket_appears_mid_wait(patched_sock_path):
         t.join()
         if holder:
             holder[0].close()
+
+
+# ── query_device_info() ──────────────────────────────────────────────
+
+
+@pytest.fixture
+def patched_send(monkeypatch):
+    """Patch send_daemon_cmd to return a canned response per test."""
+
+    def install(response):
+        monkeypatch.setattr(daemon_socket, "send_daemon_cmd", lambda _cmd: response)
+
+    return install
+
+
+def test_query_device_info_parses_typical_response(patched_send):
+    patched_send("OK vid=256f pid=c635 buttons=2 known=1 name=3Dconnexion SpaceMouse Compact")
+    info = daemon_socket.query_device_info()
+    assert info == {
+        "vid": 0x256F,
+        "pid": 0xC635,
+        "button_count": 2,
+        "known": True,
+        "name": "3Dconnexion SpaceMouse Compact",
+    }
+
+
+def test_query_device_info_handles_name_with_multiple_spaces(patched_send):
+    # The whole "rest of line" past the first "name=" is the device name —
+    # spaces inside it must round-trip verbatim.
+    patched_send("OK vid=046d pid=c629 buttons=31 known=1 name=3Dconnexion SpacePilot Pro")
+    info = daemon_socket.query_device_info()
+    assert info is not None
+    assert info["name"] == "3Dconnexion SpacePilot Pro"
+    assert info["button_count"] == 31
+    assert info["known"] is True
+
+
+def test_query_device_info_trims_trailing_newline_in_name(patched_send):
+    # The daemon's snprintf appends "\n"; send_daemon_cmd usually strips
+    # via recv().decode().strip(), but defend against a stray \r etc.
+    patched_send("OK vid=256f pid=c635 buttons=2 known=1 name=3Dconnexion SpaceMouse Compact\n")
+    info = daemon_socket.query_device_info()
+    assert info is not None
+    assert info["name"] == "3Dconnexion SpaceMouse Compact"
+
+
+def test_query_device_info_unknown_device_known_zero(patched_send):
+    patched_send("OK vid=1234 pid=5678 buttons=0 known=0 name=Unknown SpaceMouse")
+    info = daemon_socket.query_device_info()
+    assert info is not None
+    assert info["known"] is False
+    assert info["button_count"] == 0
+
+
+def test_query_device_info_none_response(patched_send):
+    patched_send("NONE")
+    assert daemon_socket.query_device_info() is None
+
+
+def test_query_device_info_daemon_unreachable(patched_send):
+    patched_send(None)
+    assert daemon_socket.query_device_info() is None
+
+
+def test_query_device_info_rejects_unknown_prefix(patched_send):
+    patched_send("ERR something went wrong")
+    assert daemon_socket.query_device_info() is None
+
+
+def test_query_device_info_rejects_missing_name_field(patched_send):
+    # Defensive: if a future daemon drops the name= field entirely the
+    # parser should refuse rather than returning a stub with name="".
+    patched_send("OK vid=256f pid=c635 buttons=2 known=1")
+    assert daemon_socket.query_device_info() is None
+
+
+def test_query_device_info_rejects_garbage_numbers(patched_send):
+    patched_send("OK vid=zz pid=c635 buttons=2 known=1 name=Whatever")
+    assert daemon_socket.query_device_info() is None

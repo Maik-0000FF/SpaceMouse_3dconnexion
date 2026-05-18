@@ -13,6 +13,7 @@
 
 #include <linux/input.h>
 
+#include "config.h"
 #include "device.h"
 
 /* Per-axis state cached between EV_ABS events; flushed at SYN_REPORT. */
@@ -77,16 +78,23 @@ int kinput_open(int verbose)
  * The HID layer assigns the first 10 puck buttons to BTN_0..BTN_9
  * (0x100..0x109). For devices with more buttons (SpacePilot Pro = 31,
  * SpaceMouse Enterprise = 31) the kernel uses BTN_TRIGGER_HAPPY1+
- * (0x2c1..0x2e8) for buttons 10..49. Anything outside both ranges is
+ * (0x2c0..0x2e7) for buttons 10..49. Anything outside both ranges is
  * not a SpaceMouse button (returns -1). Matches spacenavd's mapping.
+ *
+ * Result is clamped to MAX_BUTTONS so the effective button cap matches
+ * the config arrays (no current device exceeds 31; the clamp guards
+ * against future hardware advertising the full HAPPY range).
  */
 static int kinput_code_to_bnum(int code)
 {
+	int bnum = -1;
 	if (code >= BTN_0 && code <= BTN_9)
-		return code - BTN_0;
-	if (code >= BTN_TRIGGER_HAPPY1 && code <= BTN_TRIGGER_HAPPY40)
-		return 10 + (code - BTN_TRIGGER_HAPPY1);
-	return -1;
+		bnum = code - BTN_0;
+	else if (code >= BTN_TRIGGER_HAPPY1 && code <= BTN_TRIGGER_HAPPY40)
+		bnum = 10 + (code - BTN_TRIGGER_HAPPY1);
+	if (bnum >= MAX_BUTTONS)
+		return -1;
+	return bnum;
 }
 
 int kinput_poll_event(int fd, struct kinput_event *out)

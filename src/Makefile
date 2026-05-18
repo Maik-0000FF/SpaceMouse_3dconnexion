@@ -39,7 +39,7 @@ config.o: config.c config.h spacemouse-core.h
 command_socket.o: command_socket.c command_socket.h config.h device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
-kernel_input.o: kernel_input.c kernel_input.h device.h
+kernel_input.o: kernel_input.c kernel_input.h device.h config.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
 device.o: device.c device.h
@@ -77,7 +77,7 @@ tests/test_%: tests/test_%.c spacemouse-core.o spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< spacemouse-core.o -lm $(EXTRA_LDFLAGS)
 
 # Specific override: this test exercises kernel_input.c, not spacemouse-core.
-tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o device.o kernel_input.h device.h
+tests/test_kinput_state: tests/test_kinput_state.c kernel_input.o device.o kernel_input.h device.h config.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< kernel_input.o device.o $(EXTRA_LDFLAGS)
 
 # Specific override: this test exercises command_socket.c and uses

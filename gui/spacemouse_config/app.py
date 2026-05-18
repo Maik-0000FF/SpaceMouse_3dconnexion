@@ -63,7 +63,12 @@ class SpaceMouseApp:
         # self.window_monitor and the settings-window ctor wires the
         # desktop_page.changed → _save_desktop → _on_save cascade; if
         # anything fires that signal before _start_window_monitor() runs
-        # we must still respond with a defined attribute.
+        # we must still respond with a defined attribute. Paired with the
+        # blockSignals() guard around sync_settings() in
+        # settings_window.SettingsWindow.sync_settings — they protect
+        # different stretches of the startup sequence (this one for any
+        # desktop_page edit during ctor; the other for the programmatic
+        # autostart/bg_test/actions setChecked() calls right after).
         self.window_monitor = None
 
         self.settings_window = SettingsWindow(

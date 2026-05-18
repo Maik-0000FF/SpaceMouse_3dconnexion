@@ -271,6 +271,10 @@ class SettingsWindow(QMainWindow):
         self.setWindowTitle("SpaceMouse Control")
 
     def _update_status(self):
+        # Two synchronous daemon IPCs per tick (STATUS + DEVICE), both on
+        # the Qt main thread with the 1 s socket timeout in send_daemon_cmd.
+        # Acceptable at the current 2 s tick rate; revisit if the timer
+        # rate goes up or more poll-style commands are added.
         resp = send_daemon_cmd("STATUS")
         self.live_bar.set_daemon_status(resp is not None)
         self.refresh_device_info()
@@ -308,7 +312,11 @@ class SettingsWindow(QMainWindow):
     def sync_settings(self, settings_state):
         # Block stateChanged so the programmatic setChecked() does not
         # cascade into _save_desktop → on_save before the host app has
-        # finished its own construction.
+        # finished its own construction. Paired with the
+        # ``self.window_monitor = None`` pre-init in app.SpaceMouseApp
+        # __init__ — that one guards the desktop_page.changed cascade
+        # during SettingsWindow construction; this one guards the
+        # sync_settings() call right after.
         for cb, value in (
             (self.autostart_cb, settings_state.get("autostart", True)),
             (self.bg_test_cb, settings_state.get("bg_test", False)),

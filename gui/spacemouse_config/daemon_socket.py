@@ -35,24 +35,24 @@ def query_device_info():
         return None
     if not resp.startswith("OK "):
         return None
+    # Response shape (positional — name= must remain the final field):
+    #   OK vid=XXXX pid=XXXX buttons=N known=0|1 name=<rest of line>
+    body = resp[3:]
+    head, sep, name_value = body.partition("name=")
+    if not sep:
+        return None
     info = {}
-    for token in resp[3:].split(" "):
+    for token in head.split():
         key, _, value = token.partition("=")
-        if not key:
-            continue
-        info[key] = value
-    # Reassemble name= which may legitimately contain spaces (the daemon
-    # appends it last so everything after the first "name=" is the name).
-    name_pos = resp.find("name=")
-    if name_pos >= 0:
-        info["name"] = resp[name_pos + 5 :]
+        if key:
+            info[key] = value
     try:
         return {
             "vid": int(info.get("vid", "0"), 16),
             "pid": int(info.get("pid", "0"), 16),
             "button_count": int(info.get("buttons", "0")),
             "known": info.get("known", "0") == "1",
-            "name": info.get("name", "").strip(),
+            "name": name_value.strip(),
         }
     except ValueError:
         return None
