@@ -71,8 +71,6 @@ struct config {
 	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[16];
 	int btn_key[16]; /* keycode (BTNACT_KEY only) */
-	int invert_scroll_x;
-	int invert_scroll_y;
 	double sensitivity;
 };
 

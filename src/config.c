@@ -183,10 +183,6 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 		c->dswitch_threshold = json_object_get_int(val);
 	if (json_object_object_get_ex(obj, "desktop_switch_cooldown_ms", &val))
 		c->dswitch_cooldown_ms = json_object_get_int(val);
-	if (json_object_object_get_ex(obj, "invert_scroll_x", &val))
-		c->invert_scroll_x = json_object_get_boolean(val);
-	if (json_object_object_get_ex(obj, "invert_scroll_y", &val))
-		c->invert_scroll_y = json_object_get_boolean(val);
 	if (json_object_object_get_ex(obj, "sensitivity", &val))
 		c->sensitivity = json_object_get_double(val);
 

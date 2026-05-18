@@ -220,8 +220,6 @@ class SpaceMouseApp:
                         "rz": "none",
                     },
                     "button_mapping": {"0": "none", "1": "none"},
-                    "invert_scroll_x": False,
-                    "invert_scroll_y": False,
                 }
             }
         }

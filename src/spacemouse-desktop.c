@@ -327,8 +327,6 @@ int main(int argc, char **argv)
 							      c->sensitivity;
 							if (c->axis_invert[i])
 								val = -val;
-							if (c->invert_scroll_x)
-								val = -val;
 							sacc.acc_x += val;
 							break;
 						case ACT_SCROLL_V:
@@ -337,8 +335,6 @@ int main(int argc, char **argv)
 									  c->scroll_speed) *
 							      c->sensitivity;
 							if (c->axis_invert[i])
-								val = -val;
-							if (c->invert_scroll_y)
 								val = -val;
 							sacc.acc_y -= val;
 							break;

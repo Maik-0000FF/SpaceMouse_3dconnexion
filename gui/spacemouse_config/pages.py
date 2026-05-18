@@ -146,10 +146,6 @@ class DesktopPage(QWidget):
             show_deadzone=True,
             deadzone_enabled=True,
             deadzone_max=200,
-            extra_toggles=[
-                ("Invert Horizontal Scroll", False),
-                ("Invert Vertical Scroll", False),
-            ],
         )
         self.axes_card.changed.connect(self._emit_changed)
         # Live-apply: dropdowns + invert toggles save+RELOAD immediately,
@@ -158,8 +154,6 @@ class DesktopPage(QWidget):
             combo.currentIndexChanged.connect(self._on_live_change)
         for inv in self.axes_card.invert_toggles:
             inv.stateChanged.connect(self._on_live_change)
-        for ex in self.axes_card.extra_toggle_widgets:
-            ex.stateChanged.connect(self._on_live_change)
         layout.addWidget(self.axes_card)
 
         # ── Card 4: BUTTONS ──
@@ -321,10 +315,6 @@ class DesktopPage(QWidget):
         for i, key in enumerate(AXIS_KEYS):
             self.axes_card.invert_toggles[i].setChecked(bool(ainv.get(key, False)))
 
-        # Extra toggles: [0] = Invert H Scroll, [1] = Invert V Scroll
-        self.axes_card.extra_toggle_widgets[0].setChecked(data.get("invert_scroll_x", False))
-        self.axes_card.extra_toggle_widgets[1].setChecked(data.get("invert_scroll_y", False))
-
         bmap = data.get("button_mapping", {})
         for i in range(2):
             action = bmap.get(str(i), "none")
@@ -365,8 +355,6 @@ class DesktopPage(QWidget):
         for i in range(2):
             data["button_mapping"][str(i)] = BTN_ACTIONS[self.btn_combos[i].currentIndex()]
 
-        data["invert_scroll_x"] = self.axes_card.extra_toggle_widgets[0].isChecked()
-        data["invert_scroll_y"] = self.axes_card.extra_toggle_widgets[1].isChecked()
         data["desktop_switch_threshold"] = self.dswitch_thresh_s.value()
         data["desktop_switch_cooldown_ms"] = self.dswitch_cool_s.value()
         return data
