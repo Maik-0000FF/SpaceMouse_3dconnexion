@@ -129,6 +129,22 @@ Name=A Link Entry
 URL=https://example.com
 """
 
+_MALFORMED_INI = """not a section header
+some=garbage
+[Desktop Entry]
+Type=Application
+Name=Should Not Survive
+"""
+
+_NO_SECTION = """just a plain text file
+no INI structure at all
+"""
+
+_NO_NAME = """[Desktop Entry]
+Type=Application
+Exec=sh
+"""
+
 
 def test_scan_returns_minimal_entry(isolated_xdg):
     _write(isolated_xdg, "min.desktop", _MINIMAL)
@@ -218,3 +234,29 @@ def test_scan_groups_by_category(isolated_xdg):
     grouped = installed_apps.group_by_category(apps)
     assert "Graphics" in grouped
     assert grouped["Graphics"][0]["name"] == "Blender"
+
+
+# ── Defensive paths: broken or incomplete files are skipped quietly ───
+
+
+def test_scan_skips_malformed_ini(isolated_xdg):
+    _write(isolated_xdg, "bad.desktop", _MALFORMED_INI)
+    assert installed_apps.scan_installed_apps() == []
+
+
+def test_scan_skips_missing_section(isolated_xdg):
+    _write(isolated_xdg, "no-sec.desktop", _NO_SECTION)
+    assert installed_apps.scan_installed_apps() == []
+
+
+def test_scan_skips_missing_name(isolated_xdg):
+    _write(isolated_xdg, "no-name.desktop", _NO_NAME)
+    assert installed_apps.scan_installed_apps() == []
+
+
+def test_scan_survives_bad_file_alongside_good(isolated_xdg):
+    """A single broken file must not abort the whole scan."""
+    _write(isolated_xdg, "bad.desktop", _MALFORMED_INI)
+    _write(isolated_xdg, "good.desktop", _MINIMAL)
+    apps = installed_apps.scan_installed_apps()
+    assert [a["name"] for a in apps] == ["Minimal App"]

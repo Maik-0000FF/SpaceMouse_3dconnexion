@@ -267,7 +267,11 @@ class DesktopPage(QWidget):
         are preserved as-is. ``passthrough_apps`` is dropped when the chip
         list is empty so an unused profile doesn't sit around in the file.
         Any legacy ``passthrough`` key (pre-rename) is dropped on save so
-        both names never coexist on disk.
+        both names never coexist on disk. The rebuild only keeps
+        ``match_wm_class`` — any custom deadzone/sensitivity/axis fields a
+        user hand-edited into a legacy passthrough profile are intentionally
+        discarded, since passthrough profiles are all-none by definition and
+        those fields are ignored by the daemon anyway.
         """
         profiles = self._config.setdefault("profiles", {})
         profiles["default"] = self._collect_default_profile()
