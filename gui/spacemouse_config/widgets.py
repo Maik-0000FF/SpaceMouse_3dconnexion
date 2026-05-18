@@ -446,7 +446,7 @@ class LivePreviewBar(QWidget):
 
         layout.addSpacing(12)
 
-        self.profile_label = QLabel("Profile: default")
+        self.profile_label = QLabel("Profile: Desktop")
         self.profile_label.setStyleSheet("color: #5294e2; font-weight: bold; font-size: 11px;")
         layout.addWidget(self.profile_label)
 
@@ -476,7 +476,11 @@ class LivePreviewBar(QWidget):
                 self.btn_labels[bnum].setStyleSheet("font-size: 14px; color: #45475a;")
 
     def set_profile(self, name):
-        self.profile_label.setText(f"Profile: {name}")
+        # Display-only alias for the catch-all profile — the config file
+        # still stores it as "default" so the daemon's fallback path keeps
+        # working. Other profile names pass through unchanged.
+        display = "Desktop" if name == "default" else name
+        self.profile_label.setText(f"Profile: {display}")
 
     def set_daemon_status(self, connected):
         if connected:
