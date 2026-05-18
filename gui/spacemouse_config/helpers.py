@@ -89,9 +89,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     """
     container = QFrame()
     container.setObjectName("slider-box")
-    container.setStyleSheet(
-        "QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }"
-    )
+    container.setStyleSheet("QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }")
     hl = QHBoxLayout(container)
     hl.setContentsMargins(12, 4, 12, 4)
     hl.setSpacing(8)
