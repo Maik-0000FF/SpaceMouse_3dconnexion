@@ -148,12 +148,14 @@ class DesktopPage(QWidget):
             ],
         )
         self.axes_card.changed.connect(self._emit_changed)
-        # Per-axis invert toggles apply immediately — no Apply click needed.
+        # Live-apply: dropdowns + invert toggles save+RELOAD immediately,
+        # no Apply click needed. Sliders stay manual (would spam RELOAD).
+        for combo in self.axes_card.action_combos:
+            combo.currentIndexChanged.connect(self._on_live_change)
         for inv in self.axes_card.invert_toggles:
-            inv.stateChanged.connect(self._on_invert_toggled)
-        # Extra scroll-invert toggles also apply immediately.
+            inv.stateChanged.connect(self._on_live_change)
         for ex in self.axes_card.extra_toggle_widgets:
-            ex.stateChanged.connect(self._on_invert_toggled)
+            ex.stateChanged.connect(self._on_live_change)
         layout.addWidget(self.axes_card)
 
         # ── Card 4: BUTTONS ──
@@ -164,7 +166,7 @@ class DesktopPage(QWidget):
         for i in range(2):
             combo = QComboBox()
             combo.addItems(BTN_ACTION_LABELS)
-            combo.currentIndexChanged.connect(self._emit_changed)
+            combo.currentIndexChanged.connect(self._on_live_change)
             fl.addRow(f"Button {i + 1}:", combo)
             self.btn_combos.append(combo)
         cl.addLayout(fl)
@@ -199,7 +201,7 @@ class DesktopPage(QWidget):
         if not self._building:
             self.changed.emit()
 
-    def _on_invert_toggled(self):
+    def _on_live_change(self):
         if self._building:
             return
         self.live_apply_requested.emit()
