@@ -102,10 +102,10 @@ class FlowLayout(QLayout):
 class Chip(QFrame):
     """Read-only pill: friendly app name as label.
 
-    Carries the original WM-class string for parent containers that need
-    to identify which entry the chip represents. Removal happens via a
-    dedicated dialog, not by clicking the chip — easy misclicks would
-    silently drop apps from the passthrough list.
+    A chip represents one logical application, which may be backed by
+    several WM-class strings (e.g. Firefox: ``firefox`` + ``Navigator``,
+    VSCode: ``Code`` + ``code-oss``). The tooltip lists all backing
+    classes for transparency.
     """
 
     _STYLE = """
@@ -119,9 +119,9 @@ class Chip(QFrame):
     }
     """
 
-    def __init__(self, wm_class, parent=None):
+    def __init__(self, display, wm_classes, parent=None):
         super().__init__(parent)
-        self._wm_class = wm_class
+        self._wm_classes = list(wm_classes)
         self.setStyleSheet(self._STYLE)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
@@ -129,12 +129,13 @@ class Chip(QFrame):
         layout.setContentsMargins(10, 3, 10, 3)
         layout.setSpacing(0)
 
-        label = QLabel(display_name_for(wm_class))
-        label.setToolTip(f"WM class: {wm_class}")
+        label = QLabel(display)
+        label.setToolTip(
+            f"WM class: {wm_classes[0]}"
+            if len(wm_classes) == 1
+            else "WM classes: " + ", ".join(wm_classes)
+        )
         layout.addWidget(label)
-
-    def wm_class(self):
-        return self._wm_class
 
 
 # ── ChipList (container of chips backed by an ordered set) ────────────
@@ -195,7 +196,21 @@ class ChipList(QWidget):
                 if w is not None:
                     w.setParent(None)
                     w.deleteLater()
+
+        # Group WM classes by display name — apps with multiple catalog
+        # WM-class variants (Firefox + Navigator, Code + code-oss, …)
+        # render as a single chip so the list shows one entry per app.
+        groups = {}
+        order = []
         for wm in self._values:
-            chip = Chip(wm, parent=self)
+            display = display_name_for(wm)
+            if display in groups:
+                groups[display].append(wm)
+            else:
+                groups[display] = [wm]
+                order.append(display)
+
+        for display in order:
+            chip = Chip(display, groups[display], parent=self)
             self._layout.addWidget(chip)
         self.updateGeometry()
