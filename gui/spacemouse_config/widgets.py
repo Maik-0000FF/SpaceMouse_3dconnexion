@@ -429,7 +429,7 @@ class LivePreviewBar(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("live-bar")
-        self.setFixedHeight(96)
+        self.setFixedHeight(104)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 4, 12, 4)
@@ -472,6 +472,7 @@ class LivePreviewBar(QWidget):
             axes.addWidget(bar, 1)
             self.bars.append(bar)
         outer.addLayout(axes)
+        outer.addSpacing(8)
 
         # \u2500\u2500 Row 3: button chips \u2500\u2500
         bottom = QHBoxLayout()
