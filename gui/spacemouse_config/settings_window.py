@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .backends import FreeCADConfig
+from .constants import COLOR_ACCENT, COLOR_TEXT_MUTED
 from .helpers import create_tray_icon_pixmap, send_daemon_cmd
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
@@ -62,10 +63,14 @@ class SettingsWindow(QMainWindow):
         sb_layout.setSpacing(4)
 
         title = QLabel("SpaceMouse")
-        title.setStyleSheet("color: #5294e2; font-size: 15px; font-weight: bold; padding: 4px;")
+        title.setStyleSheet(
+            f"color: {COLOR_ACCENT}; font-size: 15px; font-weight: bold; padding: 4px;"
+        )
         sb_layout.addWidget(title)
         subtitle = QLabel("Control")
-        subtitle.setStyleSheet("color: #6c7086; font-size: 12px; padding: 0 4px 12px 4px;")
+        subtitle.setStyleSheet(
+            f"color: {COLOR_TEXT_MUTED}; font-size: 12px; padding: 0 4px 12px 4px;"
+        )
         sb_layout.addWidget(subtitle)
 
         self._page_buttons = []

@@ -14,6 +14,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .constants import (
+    COLOR_ACCENT,
+    COLOR_BG_BASE,
+    COLOR_BG_CARD,
+    COLOR_TEXT_DIM,
+)
+
 # Re-export daemon-socket helpers so existing callers keep their import path.
 # The actual implementations live in daemon_socket.py (Qt-free for testing).
 from .daemon_socket import send_daemon_cmd, wait_for_daemon_socket  # noqa: F401
@@ -69,14 +76,14 @@ def make_card(title=None):
     card.setProperty("class", "card")
     card.setObjectName("card")
     card.setStyleSheet(
-        "QFrame#card { background-color: #2a2a3e; border-radius: 8px; padding: 12px; }"
+        f"QFrame#card {{ background-color: {COLOR_BG_CARD}; border-radius: 8px; padding: 12px; }}"
     )
     layout = QVBoxLayout(card)
     layout.setContentsMargins(12, 12, 12, 12)
     layout.setSpacing(8)
     if title:
         lbl = QLabel(title)
-        lbl.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: bold;")
+        lbl.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 11px; font-weight: bold;")
         layout.addWidget(lbl)
     return card, layout
 
@@ -89,7 +96,9 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     """
     container = QFrame()
     container.setObjectName("slider-box")
-    container.setStyleSheet("QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }")
+    container.setStyleSheet(
+        f"QFrame#slider-box {{ background-color: {COLOR_BG_BASE}; border-radius: 6px; }}"
+    )
     hl = QHBoxLayout(container)
     hl.setContentsMargins(12, 4, 12, 4)
     hl.setSpacing(8)
@@ -101,7 +110,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     slider.setMinimumWidth(200)
 
     val_label = QLabel()
-    val_label.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 45px;")
+    val_label.setStyleSheet(f"color: {COLOR_ACCENT}; font-weight: bold; min-width: 45px;")
     val_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
     def update_label(v):

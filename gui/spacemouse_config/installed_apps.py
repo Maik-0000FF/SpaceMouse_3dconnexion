@@ -13,6 +13,7 @@ basename, which is right ~80% of the time in practice.
 
 import configparser
 import os
+import shutil
 from pathlib import Path
 
 _XDG_DIRS = [
@@ -42,6 +43,31 @@ _XDG_MAIN_CATEGORIES = (
 )
 
 
+def _current_desktops():
+    """Return the set of desktop names this session advertises.
+
+    XDG_CURRENT_DESKTOP is a colon-separated list per the spec; on
+    Plasma it is typically "KDE:Plasma", on GNOME "GNOME". Apps with
+    OnlyShowIn / NotShowIn lists are filtered against this set.
+    """
+    raw = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    return {d.strip() for d in raw.split(":") if d.strip()}
+
+
+def _try_exec_available(try_exec):
+    """Honor the XDG TryExec key. True when the entry has no TryExec, or
+    when the named binary is reachable: absolute/relative paths must
+    point at an executable file, bare names are looked up via PATH."""
+    if not try_exec:
+        return True
+    try_exec = try_exec.strip()
+    if not try_exec:
+        return True
+    if "/" in try_exec:
+        return os.path.isfile(try_exec) and os.access(try_exec, os.X_OK)
+    return shutil.which(try_exec) is not None
+
+
 def _exec_basename(exec_value):
     """Return the binary basename from a Desktop Entry Exec= line.
 
@@ -60,8 +86,13 @@ def _exec_basename(exec_value):
     return ""
 
 
-def _read_desktop(path):
-    """Parse a .desktop file. Return app info dict or None if hidden/invalid."""
+def _read_desktop(path, current_desktops):
+    """Parse a .desktop file. Return app info dict or None if hidden/invalid.
+
+    Filters per XDG spec: Hidden / NoDisplay drop the entry outright;
+    OnlyShowIn / NotShowIn scope it to the current desktop session;
+    TryExec drops entries whose binary isn't installed.
+    """
     cfg = configparser.RawConfigParser(strict=False, interpolation=None)
     try:
         cfg.read(path, encoding="utf-8")
@@ -77,6 +108,16 @@ def _read_desktop(path):
     if section.get("Hidden", "false").strip().lower() == "true":
         return None
     if section.get("NoDisplay", "false").strip().lower() == "true":
+        return None
+
+    only_show_in = {x.strip() for x in section.get("OnlyShowIn", "").split(";") if x.strip()}
+    not_show_in = {x.strip() for x in section.get("NotShowIn", "").split(";") if x.strip()}
+    if only_show_in and not (only_show_in & current_desktops):
+        return None
+    if not_show_in & current_desktops:
+        return None
+
+    if not _try_exec_available(section.get("TryExec", "")):
         return None
 
     name = section.get("Name", "").strip()
@@ -112,6 +153,7 @@ def scan_installed_apps():
     """
     apps = []
     seen = set()
+    current_desktops = _current_desktops()
 
     for xdg_dir in _XDG_DIRS:
         if not xdg_dir.is_dir():
@@ -119,7 +161,7 @@ def scan_installed_apps():
         for entry in sorted(xdg_dir.iterdir()):
             if entry.suffix != ".desktop" or not entry.is_file():
                 continue
-            info = _read_desktop(entry)
+            info = _read_desktop(entry, current_desktops)
             if info is None:
                 continue
             key = info["name"].lower()

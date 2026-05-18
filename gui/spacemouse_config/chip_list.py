@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .app_catalog import display_name_for
+from .constants import COLOR_BG_RAISED, COLOR_TEXT
 
 # ── FlowLayout (wraps items to next line when row fills) ──────────────
 
@@ -107,16 +108,16 @@ class Chip(QFrame):
     classes for transparency.
     """
 
-    _STYLE = """
-    Chip {
-        background: #45475a;
-        border-radius: 12px;
-    }
-    Chip QLabel {
-        color: #cdd6f4;
-        background: transparent;
-    }
-    """
+    _STYLE = (
+        "Chip {"
+        f" background: {COLOR_BG_RAISED};"
+        " border-radius: 12px;"
+        " }"
+        "Chip QLabel {"
+        f" color: {COLOR_TEXT};"
+        " background: transparent;"
+        " }"
+    )
 
     def __init__(self, display, wm_classes, parent=None):
         super().__init__(parent)

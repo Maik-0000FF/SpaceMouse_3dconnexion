@@ -22,6 +22,13 @@ from .constants import (
     AXIS_KEYS,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
+    COLOR_BG_ERROR,
+    COLOR_BG_WARN,
+    COLOR_ERROR,
+    COLOR_OK,
+    COLOR_TEXT_DIM,
+    COLOR_WARN,
+    COLOR_WARN_ALT,
     FREECAD_BTN_COMMANDS,
     FREECAD_BTN_LABELS,
     FREECAD_NAV_LABELS,
@@ -66,7 +73,7 @@ class DesktopPage(QWidget):
             "silent and each app handles SpaceMouse input itself via "
             "libspnav."
         )
-        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
+        intro.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px; padding-bottom: 4px;")
         intro.setWordWrap(True)
         cl.addWidget(intro)
 
@@ -182,10 +189,15 @@ class DesktopPage(QWidget):
 
     def _load_state(self):
         """Populate widgets from the ``default`` profile + populate the 3D
-        APPS chip list from the ``passthrough`` profile's match list."""
+        APPS chip list from the ``passthrough_apps`` profile's match list.
+
+        Legacy configs (pre-rename) used the bare name ``passthrough`` for
+        this same profile; fall back to it so old config.json files keep
+        working until the next save migrates them onto the new key.
+        """
         profiles = self._config.get("profiles", {})
         default = profiles.get("default", {})
-        passthrough = profiles.get("passthrough", {})
+        passthrough = profiles.get("passthrough_apps") or profiles.get("passthrough", {})
 
         pt_wm = passthrough.get("match_wm_class", [])
         self.wm_class_chips.set_values(pt_wm if isinstance(pt_wm, list) else [])
@@ -249,23 +261,30 @@ class DesktopPage(QWidget):
         return data
 
     def get_all_config(self):
-        """Return full daemon config dict with default + passthrough updated.
+        """Return full daemon config dict with default + passthrough_apps updated.
 
         Other profiles a power user may have added directly in config.json
-        are preserved as-is. Passthrough is dropped when the chip list is
-        empty so an unused profile doesn't sit around in the file.
+        are preserved as-is. ``passthrough_apps`` is dropped when the chip
+        list is empty so an unused profile doesn't sit around in the file.
+        Any legacy ``passthrough`` key (pre-rename) is dropped on save so
+        both names never coexist on disk. The rebuild only keeps
+        ``match_wm_class`` — any custom deadzone/sensitivity/axis fields a
+        user hand-edited into a legacy passthrough profile are intentionally
+        discarded, since passthrough profiles are all-none by definition and
+        those fields are ignored by the daemon anyway.
         """
         profiles = self._config.setdefault("profiles", {})
         profiles["default"] = self._collect_default_profile()
         wm = self.wm_class_chips.get_values()
         if wm:
-            profiles["passthrough"] = {
+            profiles["passthrough_apps"] = {
                 "match_wm_class": wm,
                 "axis_mapping": dict.fromkeys(AXIS_KEYS, "none"),
                 "button_mapping": {"0": "none", "1": "none"},
             }
         else:
-            profiles.pop("passthrough", None)
+            profiles.pop("passthrough_apps", None)
+        profiles.pop("passthrough", None)
         return self._config
 
     def update_config(self, config):
@@ -309,7 +328,8 @@ class FreeCADPage(QWidget):
         if not self._fc.is_available():
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
-                "color: #f9e2af; background-color: #3a3636; border-radius: 6px; padding: 8px;"
+                f"color: {COLOR_WARN}; background-color: {COLOR_BG_WARN}; "
+                "border-radius: 6px; padding: 8px;"
             )
             warn.setWordWrap(True)
             cl.addWidget(warn)
@@ -319,7 +339,8 @@ class FreeCADPage(QWidget):
             "Close FreeCAD before applying changes."
         )
         self.running_warn.setStyleSheet(
-            "color: #f38ba8; background-color: #3a2a2a; border-radius: 6px; padding: 8px;"
+            f"color: {COLOR_ERROR}; background-color: {COLOR_BG_ERROR}; "
+            "border-radius: 6px; padding: 8px;"
         )
         self.running_warn.setWordWrap(True)
         self.running_warn.setVisible(False)
@@ -556,7 +577,7 @@ class BlenderPage(QWidget):
         # Lock Horizon warning (below axes card)
         lock_warn = QLabel("Lock Horizon blocks the RX/pitch axis \u2014 keep OFF for full 6DOF")
         lock_warn.setStyleSheet(
-            "color: #f9e2af; font-size: 11px; background: transparent; padding: 0 12px;"
+            f"color: {COLOR_WARN}; font-size: 11px; background: transparent; padding: 0 12px;"
         )
         lock_warn.setWordWrap(True)
         layout.addWidget(lock_warn)
@@ -564,7 +585,7 @@ class BlenderPage(QWidget):
         # ── Card 4: BUTTONS ──
         card, cl = make_card("BUTTONS")
         info = QLabel("Blender buttons are configured via Blender's Keymap Editor")
-        info.setStyleSheet("color: #a6adc8; font-style: italic; background: transparent;")
+        info.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-style: italic; background: transparent;")
         info.setWordWrap(True)
         cl.addWidget(info)
         layout.addWidget(card)
@@ -592,7 +613,7 @@ class BlenderPage(QWidget):
                 "Startup script not installed. Blender won't pick up settings until you install it.\n"
                 f"Install target: Blender {target_versions}"
             )
-            self.script_status.setStyleSheet("color: #f9e2af; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_WARN}; background: transparent;")
             self.install_btn.setText("Install Startup Script")
             return
 
@@ -617,11 +638,11 @@ class BlenderPage(QWidget):
             # makes the action sound non-destructive on the up-to-date
             # versions (it's a re-copy, but with the exact same bytes).
             self.script_status.setText(f"Startup script status:\n{body}")
-            self.script_status.setStyleSheet("color: #fab387; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_WARN_ALT}; background: transparent;")
             self.install_btn.setText("Update Startup Script")
         else:
             self.script_status.setText(f"Startup script installed and up to date.\n{body}")
-            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_OK}; background: transparent;")
             self.install_btn.setText("Reinstall Startup Script")
 
     def _install_script(self):
