@@ -23,10 +23,10 @@
 struct device_info {
 	uint16_t vid;
 	uint16_t pid;
-	char product[128];      /* EVIOCGNAME — raw kernel string */
-	char display_name[64];  /* Curated name from table, or product if unknown */
-	int button_count;       /* 0 = unknown, falls back to discovery */
-	int known;              /* 1 if VID/PID matched the table, 0 otherwise */
+	char product[128];     /* EVIOCGNAME — raw kernel string */
+	char display_name[64]; /* Curated name from table, or product if unknown */
+	int button_count;      /* 0 = unknown, falls back to discovery */
+	int known;	       /* 1 if VID/PID matched the table, 0 otherwise */
 };
 
 /* Probe `fd` (an open /dev/input/eventN for a 3Dconnexion puck) via

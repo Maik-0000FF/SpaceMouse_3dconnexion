@@ -117,9 +117,8 @@ void cmd_handle_client(int listen_fd)
 			snprintf(response, sizeof(response), "NONE\n");
 		} else {
 			snprintf(response, sizeof(response),
-				 "OK vid=%04x pid=%04x buttons=%d known=%d name=%s\n",
-				 info.vid, info.pid, info.button_count, info.known,
-				 info.display_name);
+				 "OK vid=%04x pid=%04x buttons=%d known=%d name=%s\n", info.vid,
+				 info.pid, info.button_count, info.known, info.display_name);
 		}
 	} else if (strcmp(buf, "STATUS") == 0) {
 		snprintf(response, sizeof(response), "ACTIVE %s\nPROFILES",

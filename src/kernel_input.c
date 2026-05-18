@@ -64,10 +64,8 @@ int kinput_open(int verbose)
 
 	struct device_info info;
 	if (device_detect_from_fd(fd, &info) == 0 && verbose) {
-		fprintf(stderr,
-			"spacemouse-desktop: detected %s (%04x:%04x), %d buttons\n",
-			info.display_name, info.vid, info.pid,
-			info.button_count);
+		fprintf(stderr, "spacemouse-desktop: detected %s (%04x:%04x), %d buttons\n",
+			info.display_name, info.vid, info.pid, info.button_count);
 	}
 
 	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
