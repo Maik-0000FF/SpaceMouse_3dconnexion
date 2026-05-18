@@ -21,6 +21,7 @@ from .constants import (
     AXIS_ACTION_LABELS,
     AXIS_ACTIONS,
     AXIS_KEYS,
+    BTN_ACTION_EXEC,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
     COLOR_ACCENT,
@@ -39,6 +40,7 @@ from .constants import (
     FREECAD_ORBIT_STYLES,
     MAX_BUTTONS,
 )
+from .exec_dialog import ExecConfigDialog, format_cmdline
 from .helpers import NoScrollComboBox, make_card, make_slider
 from .widgets import AxesCard
 
@@ -160,14 +162,19 @@ class DesktopPage(QWidget):
         self.btn_rows_layout = QGridLayout()
         self.btn_rows_layout.setHorizontalSpacing(6)
         self.btn_rows_layout.setVerticalSpacing(8)
-        # Two button-row blocks per grid row. Each block uses 3 cols:
-        # label / combo / remove. Column 3 is a fixed gap between the
-        # two blocks, column 7 absorbs the trailing slack so the filled
-        # cells stay compact instead of stretching to the card width.
-        self.btn_rows_layout.setColumnMinimumWidth(3, 24)
-        self.btn_rows_layout.setColumnStretch(7, 1)
+        # Two button-row blocks per grid row. Each block uses 4 cols:
+        # label / combo / edit / remove. Column 4 is a fixed gap between
+        # the two blocks; column 9 absorbs the trailing slack so the
+        # filled cells stay compact instead of stretching to the card
+        # width. Edit is only visible for exec rows but the column is
+        # always reserved so add/remove of an exec binding does not
+        # shift neighbouring rows.
+        self.btn_rows_layout.setColumnMinimumWidth(4, 24)
+        self.btn_rows_layout.setColumnStretch(9, 1)
         cl.addLayout(self.btn_rows_layout)
-        # bnum → {label, combo, remove_btn, container} for active rows only.
+        # bnum → {label, combo, edit_btn, remove_btn, exec_argv} for
+        # active rows only. exec_argv is the parsed argv when the row
+        # is bound to BTN_ACTION_EXEC, otherwise None.
         self.btn_rows = {}
         self._highlight_timers = {}
         layout.addWidget(card)
@@ -215,29 +222,57 @@ class DesktopPage(QWidget):
 
     @staticmethod
     def _discard_row_widgets(row):
-        for key in ("label", "combo", "remove_btn"):
+        for key in ("label", "combo", "edit_btn", "remove_btn"):
             w = row.get(key)
             if w is not None:
                 w.setParent(None)
                 w.deleteLater()
 
+    @staticmethod
+    def _action_from_value(value):
+        """Normalize a stored button-mapping value into (action_str, exec_argv).
+
+        Strings ("overview", "key:Ctrl+S", …) round-trip to themselves
+        with no argv. Dict values like {"type": "exec", "cmd": [...]}
+        return the ``exec`` sentinel + the argv. Anything unrecognised
+        falls back to ``none`` so a malformed entry does not crash the
+        page — the user can re-bind the row.
+        """
+        if isinstance(value, dict):
+            if value.get("type") == "exec":
+                cmd = value.get("cmd") or []
+                if isinstance(cmd, list) and all(isinstance(s, str) for s in cmd):
+                    return BTN_ACTION_EXEC, list(cmd)
+            return "none", None
+        if isinstance(value, str):
+            return value, None
+        return "none", None
+
     def _add_button_row(self, bnum, action="none"):
-        """Add (or return existing) row for `bnum`. Rows are laid out
-        as a two-column grid sorted by bnum — adding triggers a
-        relayout so the order stays stable."""
+        """Add (or return existing) row for `bnum`. Accepts either a
+        string action (legacy + key combos) or a dict (object-form
+        actions like exec). Rows are laid out as a two-column grid
+        sorted by bnum — adding triggers a relayout so the order
+        stays stable."""
         if bnum in self.btn_rows:
             return self.btn_rows[bnum]
         if not (0 <= bnum < MAX_BUTTONS):
             return None
 
+        action_str, exec_argv = self._action_from_value(action)
+
         label = QLabel(f"Button {bnum + 1}")
         label.setFixedWidth(72)
         combo = NoScrollComboBox()
         combo.addItems(BTN_ACTION_LABELS)
-        idx = BTN_ACTIONS.index(action) if action in BTN_ACTIONS else 0
+        idx = BTN_ACTIONS.index(action_str) if action_str in BTN_ACTIONS else 0
         combo.setCurrentIndex(idx)
         combo.setFixedWidth(160)
-        combo.currentIndexChanged.connect(self._emit_changed)
+        combo.currentIndexChanged.connect(lambda _, b=bnum: self._on_action_changed(b))
+
+        edit_btn = QPushButton("Edit…")
+        edit_btn.setToolTip("Edit the command this button runs")
+        edit_btn.clicked.connect(lambda _, b=bnum: self._edit_exec_for(b))
 
         remove_btn = QPushButton("Remove")
         remove_btn.clicked.connect(lambda _, b=bnum: self._remove_button_row(b))
@@ -245,11 +280,71 @@ class DesktopPage(QWidget):
         self.btn_rows[bnum] = {
             "label": label,
             "combo": combo,
+            "edit_btn": edit_btn,
             "remove_btn": remove_btn,
+            "exec_argv": exec_argv,
         }
+        self._refresh_exec_affordance(bnum)
         self._update_remove_visibility(bnum)
         self._relayout_buttons()
         return self.btn_rows[bnum]
+
+    def _on_action_changed(self, bnum):
+        """Combo selection changed: open the exec dialog the first time
+        an exec is picked, then forward the change emit. Switching away
+        from exec keeps any prior argv around so a quick toggle back
+        does not lose the user's work — only an explicit Cancel on the
+        dialog leaves the row in a half-configured state, which the
+        save path handles by emitting ``"none"``."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        action_str = BTN_ACTIONS[row["combo"].currentIndex()]
+        if action_str == BTN_ACTION_EXEC and not row.get("exec_argv"):
+            self._edit_exec_for(bnum, allow_cancel_revert=True)
+        self._refresh_exec_affordance(bnum)
+        self._emit_changed()
+
+    def _refresh_exec_affordance(self, bnum):
+        """Show the Edit… button only when the row is bound to exec.
+        The tooltip carries the configured cmdline so users can verify
+        without opening the dialog."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        action_str = BTN_ACTIONS[row["combo"].currentIndex()]
+        is_exec = action_str == BTN_ACTION_EXEC
+        row["edit_btn"].setVisible(is_exec)
+        if is_exec:
+            argv = row.get("exec_argv") or []
+            preview = format_cmdline(argv) if argv else "(not configured)"
+            row["combo"].setToolTip(f"Runs: {preview}")
+        else:
+            row["combo"].setToolTip("")
+
+    def _edit_exec_for(self, bnum, allow_cancel_revert=False):
+        """Open the exec dialog for ``bnum``. If ``allow_cancel_revert``
+        is True and the user cancels with no argv configured, revert
+        the row's combo back to ``none`` so the saved profile doesn't
+        carry a half-bound exec."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        dlg = ExecConfigDialog(current_argv=row.get("exec_argv"), parent=self)
+        if dlg.exec():
+            argv = dlg.argv()
+            if argv:
+                row["exec_argv"] = argv
+                self._refresh_exec_affordance(bnum)
+                self._emit_changed()
+                return
+            # OK pressed but cmdline is empty — treat as cancel.
+        if allow_cancel_revert and not row.get("exec_argv"):
+            none_idx = BTN_ACTIONS.index("none")
+            blocked = row["combo"].blockSignals(True)
+            row["combo"].setCurrentIndex(none_idx)
+            row["combo"].blockSignals(blocked)
+            self._refresh_exec_affordance(bnum)
 
     def _is_orphan(self, bnum):
         """A row is an orphan iff its bnum is not on the connected
@@ -299,21 +394,23 @@ class DesktopPage(QWidget):
         """Re-pack the two-column grid sorted by bnum so add/remove
         does not leave holes.
 
-        Each visible button row claims 3 grid columns (label, combo,
-        remove). Two button rows share one grid row → 6 grid columns
-        total. takeAt() releases the layout items without destroying
-        their widgets so we can re-place them sorted.
+        Each visible button row claims 4 grid columns (label, combo,
+        edit, remove). Two button rows share one grid row → 8 grid
+        columns plus 1 gap col (4) = 9 visible cols. takeAt() releases
+        the layout items without destroying their widgets so we can
+        re-place them sorted.
         """
         for i in reversed(range(self.btn_rows_layout.count())):
             self.btn_rows_layout.takeAt(i)
         for idx, bnum in enumerate(sorted(self.btn_rows)):
             row = self.btn_rows[bnum]
             grid_row = idx // 2
-            # Left block: cols 0..2. Right block: cols 4..6 (col 3 is the gap).
-            base_col = 0 if idx % 2 == 0 else 4
+            # Left block: cols 0..3. Right block: cols 5..8 (col 4 is the gap).
+            base_col = 0 if idx % 2 == 0 else 5
             self.btn_rows_layout.addWidget(row["label"], grid_row, base_col)
             self.btn_rows_layout.addWidget(row["combo"], grid_row, base_col + 1)
-            self.btn_rows_layout.addWidget(row["remove_btn"], grid_row, base_col + 2)
+            self.btn_rows_layout.addWidget(row["edit_btn"], grid_row, base_col + 2)
+            self.btn_rows_layout.addWidget(row["remove_btn"], grid_row, base_col + 3)
 
     def ensure_button_rows(self, count):
         """Reconcile button rows with the connected device's button count.
@@ -449,6 +546,8 @@ class DesktopPage(QWidget):
                 continue
             if 0 <= bnum < MAX_BUTTONS:
                 configured.add(bnum)
+        # Pass the raw value (string or dict) — _add_button_row →
+        # _action_from_value normalises both shapes onto the row state.
         for bnum in sorted(configured | set(DEFAULT_BUTTON_ROWS)):
             self._add_button_row(bnum, bmap.get(str(bnum), "none"))
 
@@ -479,7 +578,18 @@ class DesktopPage(QWidget):
         data["button_mapping"] = {}
         for bnum in sorted(self.btn_rows):
             row = self.btn_rows[bnum]
-            data["button_mapping"][str(bnum)] = BTN_ACTIONS[row["combo"].currentIndex()]
+            action_str = BTN_ACTIONS[row["combo"].currentIndex()]
+            if action_str == BTN_ACTION_EXEC:
+                argv = row.get("exec_argv") or []
+                # Empty argv = user picked exec but didn't configure it.
+                # Save "none" rather than an exec stub the daemon would
+                # silently skip — keeps the JSON honest.
+                if argv:
+                    data["button_mapping"][str(bnum)] = {"type": "exec", "cmd": argv}
+                else:
+                    data["button_mapping"][str(bnum)] = "none"
+            else:
+                data["button_mapping"][str(bnum)] = action_str
 
         data["desktop_switch_threshold"] = self.dswitch_thresh_s.value()
         data["desktop_switch_cooldown_ms"] = self.dswitch_cool_s.value()

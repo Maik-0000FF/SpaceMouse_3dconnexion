@@ -96,6 +96,12 @@ BTN_ACTIONS = [
     "key:M",
     "key:ENTER",
     "key:ESC",
+    "key:Ctrl+C",
+    "key:Ctrl+V",
+    "key:Ctrl+Z",
+    "key:Ctrl+Shift+S",
+    "key:Alt+Tab",
+    "exec",
 ]
 BTN_ACTION_LABELS = [
     "None",
@@ -112,7 +118,19 @@ BTN_ACTION_LABELS = [
     "M (Mute YouTube)",
     "Enter",
     "Escape",
+    "Copy (Ctrl+C)",
+    "Paste (Ctrl+V)",
+    "Undo (Ctrl+Z)",
+    "Save As (Ctrl+Shift+S)",
+    "Switch Window (Alt+Tab)",
+    "Run command…",
 ]
+
+# Sentinel string written to a row's combo when it is bound to an exec
+# action. The dropdown index points here; the actual argv lives off the
+# row in DesktopPage.btn_rows[bnum]["exec_cmd"] until save time, when
+# _collect_default_profile emits {"type": "exec", "cmd": [...]}.
+BTN_ACTION_EXEC = "exec"
 
 AXIS_NAMES = [
     "TX (Left/Right)",
