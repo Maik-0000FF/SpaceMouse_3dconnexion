@@ -1,14 +1,16 @@
 """Dialog for managing the 3D apps list (add + remove via checkboxes).
 
 Two tabs:
-  * Known Apps — category-grouped checkboxes from APP_CATALOG. Pre-checked
-                 for apps already in the list. Unchecking removes them.
-  * Custom    — at top: existing non-catalog entries with pre-checked
-                 checkboxes (uncheck to remove). Below: free-form input
-                 for adding new custom WM class strings.
+  * Installed — apps detected on the system via XDG .desktop files.
+                Pre-checked for entries already in the current list.
+                Unchecking removes them.
+  * Custom    — at top: existing entries that are NOT installed apps
+                (typed by the user previously, or detected via other
+                means). Pre-checked, uncheck to remove. Below: free-form
+                input for adding a new custom WM class string.
 
-``result_list()`` returns the full desired state on accept — caller
-replaces the chip list contents with that.
+Each app appears in exactly one tab. ``result_list()`` returns the full
+desired state on accept — caller replaces the chip list contents.
 """
 
 from PySide6.QtWidgets import (
@@ -26,34 +28,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .app_catalog import APP_CATALOG, app_owns_class
-
-
-def _wm_in_catalog(wm_class):
-    """True if wm_class belongs to any known app in APP_CATALOG."""
-    for category in APP_CATALOG.values():
-        for classes in category.values():
-            if app_owns_class(classes, wm_class):
-                return True
-    return False
+from .installed_apps import group_by_category, scan_installed_apps
 
 
 class AddAppDialog(QDialog):
-    """Unified add+remove dialog for the 3D apps list.
-
-    ``current_wm_classes`` is the profile's current entries. Catalog
-    matches show as pre-checked enabled checkboxes; unchecking removes
-    them. Non-catalog (custom) entries appear at the top of the Custom
-    tab with their own pre-checked checkboxes. ``result_list()`` returns
-    the full desired state on accept.
-    """
+    """Unified add+remove dialog for the 3D apps list."""
 
     def __init__(self, current_wm_classes, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage 3D Apps")
         self.setMinimumSize(560, 540)
         self._current = list(current_wm_classes)
-        self._known_checkboxes = []  # list of (QCheckBox, [wm_classes])
+
+        # Scan once — both tabs read the same list.
+        self._installed_apps = scan_installed_apps()
+        self._installed_wm_lower = {
+            a["wm_class"].lower() for a in self._installed_apps
+        }
+
+        self._installed_checkboxes = []  # list of (QCheckBox, wm_class)
         self._custom_existing_checkboxes = []  # list of (QCheckBox, wm_class)
         self._custom_input = None
 
@@ -63,15 +56,15 @@ class AddAppDialog(QDialog):
 
         intro = QLabel(
             "Check apps to keep them in the list, uncheck to remove. "
-            "Use the Custom tab to add or remove unusual apps that aren't "
-            "in the catalog."
+            "Use the Custom tab for apps that aren't detected on this "
+            "system."
         )
         intro.setStyleSheet("color: #a6adc8; font-size: 12px;")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
         tabs = QTabWidget()
-        tabs.addTab(self._build_known_tab(), "Known Apps")
+        tabs.addTab(self._build_installed_tab(), "Installed")
         tabs.addTab(self._build_custom_tab(), "Custom")
         layout.addWidget(tabs, 1)
 
@@ -87,13 +80,15 @@ class AddAppDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    # ── Known Apps tab ────────────────────────────────────────────────
+    # ── Installed tab (scanned from .desktop files) ───────────────────
 
-    def _build_known_tab(self):
+    def _build_installed_tab(self):
         wrap = QWidget()
         outer = QVBoxLayout(wrap)
         outer.setContentsMargins(0, 8, 0, 0)
         outer.setSpacing(0)
+
+        grouped = group_by_category(self._installed_apps)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -104,34 +99,38 @@ class AddAppDialog(QDialog):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(14)
 
-        for category, apps in APP_CATALOG.items():
-            cat_label = QLabel(category)
-            cat_label.setStyleSheet(
-                "color: #89b4fa; font-weight: bold; font-size: 12px; "
-                "padding: 2px 0;"
-            )
-            layout.addWidget(cat_label)
-
-            grid = QGridLayout()
-            grid.setSpacing(6)
-            grid.setColumnStretch(0, 1)
-            grid.setColumnStretch(1, 1)
-            row = 0
-            col = 0
-            for name, classes in apps.items():
-                cb = QCheckBox(name)
-                already_listed = any(
-                    app_owns_class(classes, w) for w in self._current
+        if not self._installed_apps:
+            empty = QLabel("No installed applications detected.")
+            empty.setStyleSheet("color: #a6adc8; font-size: 12px;")
+            layout.addWidget(empty)
+        else:
+            current_lower = [w.lower() for w in self._current]
+            for category, cat_apps in grouped.items():
+                cat_label = QLabel(category)
+                cat_label.setStyleSheet(
+                    "color: #89b4fa; font-weight: bold; font-size: 12px; "
+                    "padding: 2px 0;"
                 )
-                cb.setChecked(already_listed)
-                cb.setToolTip("WM classes: " + ", ".join(classes))
-                self._known_checkboxes.append((cb, classes))
-                grid.addWidget(cb, row, col)
-                col += 1
-                if col >= 2:
-                    col = 0
-                    row += 1
-            layout.addLayout(grid)
+                layout.addWidget(cat_label)
+
+                grid = QGridLayout()
+                grid.setSpacing(6)
+                grid.setColumnStretch(0, 1)
+                grid.setColumnStretch(1, 1)
+                row = 0
+                col = 0
+                for app in cat_apps:
+                    cb = QCheckBox(app["name"])
+                    cb.setToolTip(f"WM class: {app['wm_class']}")
+                    if app["wm_class"].lower() in current_lower:
+                        cb.setChecked(True)
+                    self._installed_checkboxes.append((cb, app["wm_class"]))
+                    grid.addWidget(cb, row, col)
+                    col += 1
+                    if col >= 2:
+                        col = 0
+                        row += 1
+                layout.addLayout(grid)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -146,8 +145,11 @@ class AddAppDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Existing custom entries (current list items not in catalog)
-        existing_custom = [w for w in self._current if not _wm_in_catalog(w)]
+        # Current entries that aren't detected as installed apps.
+        existing_custom = [
+            w for w in self._current
+            if w.lower() not in self._installed_wm_lower
+        ]
         if existing_custom:
             section = QLabel("In list (custom entries — uncheck to remove):")
             section.setStyleSheet(
@@ -215,10 +217,9 @@ class AddAppDialog(QDialog):
             seen.add(key)
             out.append(wc)
 
-        for cb, classes in self._known_checkboxes:
+        for cb, wm in self._installed_checkboxes:
             if cb.isChecked():
-                for c in classes:
-                    maybe_add(c)
+                maybe_add(wm)
 
         for cb, wm in self._custom_existing_checkboxes:
             if cb.isChecked():
