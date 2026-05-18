@@ -5,19 +5,19 @@ from spacemouse_config.profile_match import find_matching_profile
 PROFILES = {
     "default": {"match_wm_class": []},
     "browser": {"match_wm_class": ["firefox", "chromium"]},
-    "passthrough": {"match_wm_class": ["blender", "FreeCAD", "openscad"]},
+    "passthrough_apps": {"match_wm_class": ["blender", "FreeCAD", "openscad"]},
 }
 
 
 def test_exact_match():
-    assert find_matching_profile("blender", PROFILES) == "passthrough"
+    assert find_matching_profile("blender", PROFILES) == "passthrough_apps"
     assert find_matching_profile("firefox", PROFILES) == "browser"
 
 
 def test_case_insensitive():
     assert find_matching_profile("Firefox", PROFILES) == "browser"
     assert find_matching_profile("CHROMIUM", PROFILES) == "browser"
-    assert find_matching_profile("BLENDER", PROFILES) == "passthrough"
+    assert find_matching_profile("BLENDER", PROFILES) == "passthrough_apps"
 
 
 def test_substring_match():
@@ -28,7 +28,7 @@ def test_substring_match():
 def test_prefix_match():
     # FreeCAD Wayland reports org.freecad.FreeCAD; the bare "FreeCAD"
     # entry should match windows that start with it.
-    assert find_matching_profile("FreeCAD-1.1", PROFILES) == "passthrough"
+    assert find_matching_profile("FreeCAD-1.1", PROFILES) == "passthrough_apps"
 
 
 def test_default_fallback():

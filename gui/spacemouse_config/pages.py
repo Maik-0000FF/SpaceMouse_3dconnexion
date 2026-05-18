@@ -182,10 +182,15 @@ class DesktopPage(QWidget):
 
     def _load_state(self):
         """Populate widgets from the ``default`` profile + populate the 3D
-        APPS chip list from the ``passthrough`` profile's match list."""
+        APPS chip list from the ``passthrough_apps`` profile's match list.
+
+        Legacy configs (pre-rename) used the bare name ``passthrough`` for
+        this same profile; fall back to it so old config.json files keep
+        working until the next save migrates them onto the new key.
+        """
         profiles = self._config.get("profiles", {})
         default = profiles.get("default", {})
-        passthrough = profiles.get("passthrough", {})
+        passthrough = profiles.get("passthrough_apps") or profiles.get("passthrough", {})
 
         pt_wm = passthrough.get("match_wm_class", [])
         self.wm_class_chips.set_values(pt_wm if isinstance(pt_wm, list) else [])
@@ -249,23 +254,26 @@ class DesktopPage(QWidget):
         return data
 
     def get_all_config(self):
-        """Return full daemon config dict with default + passthrough updated.
+        """Return full daemon config dict with default + passthrough_apps updated.
 
         Other profiles a power user may have added directly in config.json
-        are preserved as-is. Passthrough is dropped when the chip list is
-        empty so an unused profile doesn't sit around in the file.
+        are preserved as-is. ``passthrough_apps`` is dropped when the chip
+        list is empty so an unused profile doesn't sit around in the file.
+        Any legacy ``passthrough`` key (pre-rename) is dropped on save so
+        both names never coexist on disk.
         """
         profiles = self._config.setdefault("profiles", {})
         profiles["default"] = self._collect_default_profile()
         wm = self.wm_class_chips.get_values()
         if wm:
-            profiles["passthrough"] = {
+            profiles["passthrough_apps"] = {
                 "match_wm_class": wm,
                 "axis_mapping": dict.fromkeys(AXIS_KEYS, "none"),
                 "button_mapping": {"0": "none", "1": "none"},
             }
         else:
-            profiles.pop("passthrough", None)
+            profiles.pop("passthrough_apps", None)
+        profiles.pop("passthrough", None)
         return self._config
 
     def update_config(self, config):
