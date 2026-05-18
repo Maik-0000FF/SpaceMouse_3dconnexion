@@ -1,6 +1,15 @@
 """Custom widgets: ToggleSwitch, AxesCard, AxisBar, LivePreviewBar."""
 
-from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
+from PySide6.QtCore import (
+    Property,
+    QEasingCurve,
+    QLineF,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -349,19 +358,20 @@ class AxisBar(QWidget):
         p.setBrush(QColor(0x31, 0x32, 0x44))
         p.drawRoundedRect(0, 0, w, h, 3, 3)
 
-        # Deadzone region (centered, visible red-tinted area). Drawn as a
-        # plain rectangle — the rounded ends belong to the background bar
-        # and would clip the red fill into a redundant pill shape.
+        # Deadzone region (centered, visible red-tinted area). Float geometry
+        # via QRectF/QLineF — antialiased Qt rendering keeps the two edges
+        # subpixel-symmetric around center, where int() truncation would have
+        # left the band visibly off-center by 1px for fractional dz_half.
         if self._deadzone > 0:
             dz_half = (self._deadzone / self._AXIS_RANGE) * (w / 2.0)
             p.setBrush(QColor(0xF3, 0x8B, 0xA8, 50))
-            p.drawRect(int(center - dz_half), 0, int(dz_half * 2), h)
+            p.drawRect(QRectF(center - dz_half, 0, dz_half * 2, h))
             # Deadzone edge lines
             pen = QPen(QColor(0xF3, 0x8B, 0xA8, 120))
             pen.setWidthF(1.0)
             p.setPen(pen)
-            p.drawLine(int(center - dz_half), 0, int(center - dz_half), h)
-            p.drawLine(int(center + dz_half), 0, int(center + dz_half), h)
+            p.drawLine(QLineF(center - dz_half, 0, center - dz_half, h))
+            p.drawLine(QLineF(center + dz_half, 0, center + dz_half, h))
             p.setPen(Qt.PenStyle.NoPen)
 
         # Value bar (from center)
@@ -375,9 +385,9 @@ class AxisBar(QWidget):
             p.setBrush(color)
             val_x = center + (self._value / self._AXIS_RANGE) * (w / 2.0)
             if val_x > center:
-                p.drawRect(int(center), 0, int(val_x - center), h)
+                p.drawRect(QRectF(center, 0, val_x - center, h))
             else:
-                p.drawRect(int(val_x), 0, int(center - val_x), h)
+                p.drawRect(QRectF(val_x, 0, center - val_x, h))
 
         p.end()
 
