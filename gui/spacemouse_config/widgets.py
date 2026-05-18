@@ -349,11 +349,13 @@ class AxisBar(QWidget):
         p.setBrush(QColor(0x31, 0x32, 0x44))
         p.drawRoundedRect(0, 0, w, h, 3, 3)
 
-        # Deadzone region (centered, visible red-tinted area)
+        # Deadzone region (centered, visible red-tinted area). Drawn as a
+        # plain rectangle — the rounded ends belong to the background bar
+        # and would clip the red fill into a redundant pill shape.
         if self._deadzone > 0:
             dz_half = (self._deadzone / self._AXIS_RANGE) * (w / 2.0)
             p.setBrush(QColor(0xF3, 0x8B, 0xA8, 50))
-            p.drawRoundedRect(int(center - dz_half), 0, int(dz_half * 2), h, 3, 3)
+            p.drawRect(int(center - dz_half), 0, int(dz_half * 2), h)
             # Deadzone edge lines
             pen = QPen(QColor(0xF3, 0x8B, 0xA8, 120))
             pen.setWidthF(1.0)
@@ -373,9 +375,9 @@ class AxisBar(QWidget):
             p.setBrush(color)
             val_x = center + (self._value / self._AXIS_RANGE) * (w / 2.0)
             if val_x > center:
-                p.drawRoundedRect(int(center), 0, int(val_x - center), h, 2, 2)
+                p.drawRect(int(center), 0, int(val_x - center), h)
             else:
-                p.drawRoundedRect(int(val_x), 0, int(center - val_x), h, 2, 2)
+                p.drawRect(int(val_x), 0, int(center - val_x), h)
 
         p.end()
 
