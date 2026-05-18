@@ -124,6 +124,11 @@ AXIS_NAMES = [
 ]
 AXIS_KEYS = ["tx", "ty", "tz", "rx", "ry", "rz"]
 
+# Hard upper bound, matches MAX_BUTTONS in src/config.h (SpacePilot Pro = 31).
+MAX_BUTTONS = 32
+# Always-visible rows in the Desktop page Buttons card; covers SpaceNavigator.
+DEFAULT_BUTTON_ROWS = (0, 1)
+
 FREECAD_BTN_COMMANDS = [
     "Std_ViewFitAll",
     "Std_ViewHome",

@@ -11,6 +11,7 @@
 
 #define MAX_PROFILES 32
 #define MAX_WM_CLASSES 32
+#define MAX_BUTTONS 32
 
 /* ── Defaults (also used by event loop for thresholds) ──────────────── */
 
@@ -67,8 +68,8 @@ struct config {
 	int axis_invert[6];  /* per-axis direction flip, applied to scroll_h/scroll_v/zoom */
 	int axis_key_neg[6]; /* keycode for negative direction (ACT_KEY_PAIR only) */
 	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
-	enum btn_action btn_map[16];
-	int btn_key[16]; /* keycode (BTNACT_KEY only) */
+	enum btn_action btn_map[MAX_BUTTONS];
+	int btn_key[MAX_BUTTONS]; /* keycode (BTNACT_KEY only) */
 	double sensitivity;
 };
 

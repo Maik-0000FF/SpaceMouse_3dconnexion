@@ -59,6 +59,12 @@ class SpaceMouseApp:
         self._bg_test_enabled = settings.get("bg_test", False)
         self._bg_test_proc = None
         self._paused = settings.get("disabled", False)
+        # Initialise before SettingsWindow construction. _on_save reads
+        # self.window_monitor and the settings-window ctor wires the
+        # desktop_page.changed → _save_desktop → _on_save cascade; if
+        # anything fires that signal before _start_window_monitor() runs
+        # we must still respond with a defined attribute.
+        self.window_monitor = None
 
         self.settings_window = SettingsWindow(
             self.config,
@@ -73,8 +79,6 @@ class SpaceMouseApp:
         self.tray.setIcon(QIcon(create_tray_icon_pixmap("SM")))
         self.tray.setToolTip("SpaceMouse: default")
         self.tray.activated.connect(self._on_tray_activated)
-
-        self.window_monitor = None
 
         # Build the tray menu ONCE and keep references alive on self. Two
         # reasons this can't be a local:
@@ -127,6 +131,10 @@ class SpaceMouseApp:
             timeout=5,
         )
         wait_for_daemon_socket()
+        # Pull device info as soon as the daemon is reachable so the
+        # button-rows / live-bar reflect the actual hardware on first
+        # open. The 2s status timer keeps it in sync after hot-plug.
+        self.settings_window.refresh_device_info()
 
         if self._paused:
             send_daemon_cmd("PROFILE _passthrough")
