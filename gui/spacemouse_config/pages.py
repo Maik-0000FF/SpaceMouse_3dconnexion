@@ -106,15 +106,11 @@ class DesktopPage(QWidget):
         self.sensitivity_s.valueChanged.connect(self._emit_changed)
         fl.addRow("Sensitivity:", self.sensitivity_w)
 
-        self.scroll_speed_w, self.scroll_speed_s, _ = make_slider(0.5, 10.0, 3.0, 1)
-        self.scroll_speed_s.setSingleStep(5)
-        self.scroll_speed_s.setPageStep(10)
+        self.scroll_speed_w, self.scroll_speed_s, _ = make_slider(0.1, 5.0, 3.0, 1)
         self.scroll_speed_s.valueChanged.connect(self._emit_changed)
         fl.addRow("Scroll Speed:", self.scroll_speed_w)
 
-        self.zoom_speed_w, self.zoom_speed_s, _ = make_slider(0.5, 10.0, 2.0, 1)
-        self.zoom_speed_s.setSingleStep(5)
-        self.zoom_speed_s.setPageStep(10)
+        self.zoom_speed_w, self.zoom_speed_s, _ = make_slider(0.1, 5.0, 2.0, 1)
         self.zoom_speed_s.valueChanged.connect(self._emit_changed)
         fl.addRow("Zoom Speed:", self.zoom_speed_w)
 
