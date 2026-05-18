@@ -183,6 +183,8 @@ spacemouse-test --led     # LED toggle test
 | Device | Status |
 |--------|--------|
 | SpaceNavigator (046d:c626) | Tested (fully working, including LED control) |
+| SpaceBall 5000 (046d:c621) | Confirmed working |
+| SpacePilot (046d:c625) | Confirmed working |
 | SpaceMouse Compact | Should work (untested) |
 | SpaceMouse Wireless | Should work (untested) |
 | SpaceMouse Pro (Wireless) | Should work (untested) |
