@@ -12,6 +12,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QVBoxLayout,
@@ -264,10 +265,14 @@ class AxesCard(QWidget):
                 self.invert_toggles.append(inv)
 
             if show_deadzone:
-                dz_container = QWidget()
+                dz_container = QFrame()
+                dz_container.setObjectName("slider-box")
+                dz_container.setStyleSheet(
+                    "QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }"
+                )
                 dz_hl = QHBoxLayout(dz_container)
-                dz_hl.setContentsMargins(0, 0, 0, 0)
-                dz_hl.setSpacing(4)
+                dz_hl.setContentsMargins(12, 4, 12, 4)
+                dz_hl.setSpacing(8)
                 dz_slider = NoScrollSlider(Qt.Orientation.Horizontal)
                 dz_slider.setRange(0, deadzone_max)
                 dz_slider.setValue(0)

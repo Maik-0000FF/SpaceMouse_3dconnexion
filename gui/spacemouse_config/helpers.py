@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QSlider,
     QVBoxLayout,
-    QWidget,
 )
 
 # Re-export daemon-socket helpers so existing callers keep their import path.
@@ -83,10 +82,19 @@ def make_card(title=None):
 
 
 def make_slider(minimum, maximum, value, decimals=0, suffix=""):
-    """Create a horizontal slider with value label. Returns (widget, slider, label)."""
-    container = QWidget()
+    """Create a horizontal slider with value label inside a rounded container.
+
+    The container sits inside the card and uses the main window bg so the
+    slider area reads as a recess into the card. Returns (widget, slider, label).
+    """
+    container = QFrame()
+    container.setObjectName("slider-box")
+    container.setStyleSheet(
+        "QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }"
+    )
     hl = QHBoxLayout(container)
-    hl.setContentsMargins(0, 0, 0, 0)
+    hl.setContentsMargins(12, 4, 12, 4)
+    hl.setSpacing(8)
 
     slider = NoScrollSlider(Qt.Orientation.Horizontal)
     scale = 10**decimals
