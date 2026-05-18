@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -37,19 +36,18 @@ from .widgets import AxesCard
 
 
 class DesktopPage(QWidget):
-    """Daemon profile editor — switches between all daemon profiles."""
+    """Edits the ``default`` desktop profile plus the ``passthrough``
+    profile's match list (3D apps the daemon should leave alone)."""
 
     changed = Signal()
     live_apply_requested = Signal()
-
-    PROTECTED_PROFILES = {"default"}  # cannot be deleted
 
     def __init__(self, config_data):
         super().__init__()
         self._building = True
         self._config = config_data
-        self._current_profile = "default"
         self._setup_ui()
+        self._load_state()
         self._building = False
 
     def _setup_ui(self):
@@ -61,45 +59,6 @@ class DesktopPage(QWidget):
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
-
-        # ── Card 0: PROFILE selector ──
-        card, cl = make_card("PROFILE")
-        prow = QHBoxLayout()
-        prow.setSpacing(8)
-        self.profile_combo = QComboBox()
-        self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
-        prow.addWidget(self.profile_combo, 1)
-        new_btn = QPushButton("+ New")
-        new_btn.clicked.connect(self._on_new_profile)
-        prow.addWidget(new_btn)
-        self.delete_btn = QPushButton("Delete")
-        self.delete_btn.clicked.connect(self._on_delete_profile)
-        prow.addWidget(self.delete_btn)
-        cl.addLayout(prow)
-        layout.addWidget(card)
-
-        # ── Card 0b: APPS (auto-select this profile when focused) ──
-        card, cl = make_card("APPS — auto-select this profile when focused")
-        intro = QLabel(
-            "Click chips to remove, or use Add app to pick from a "
-            "catalog of known applications."
-        )
-        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
-        intro.setWordWrap(True)
-        cl.addWidget(intro)
-
-        self.wm_class_chips = ChipList()
-        self.wm_class_chips.changed.connect(self._emit_changed)
-        cl.addWidget(self.wm_class_chips)
-
-        add_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add app…")
-        add_btn.clicked.connect(self._on_add_apps)
-        add_row.addWidget(add_btn)
-        add_row.addStretch()
-        cl.addLayout(add_row)
-
-        layout.addWidget(card)
 
         # ── Card 1: SENSITIVITY & SPEED ──
         card, cl = make_card("SENSITIVITY & SPEED")
@@ -185,15 +144,36 @@ class DesktopPage(QWidget):
         cl.addLayout(fl)
         layout.addWidget(card)
 
+        # ── Card 6: 3D APPS (passthrough match list) ──
+        card, cl = make_card("3D APPS — SpaceMouse stays silent for these")
+        intro = QLabel(
+            "Apps with their own SpaceMouse / libspnav support (Blender, "
+            "FreeCAD, OpenSCAD, KiCad, …). When one of these is focused "
+            "the daemon goes idle so the app receives input directly."
+        )
+        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
+        intro.setWordWrap(True)
+        cl.addWidget(intro)
+
+        self.wm_class_chips = ChipList()
+        self.wm_class_chips.changed.connect(self._emit_changed)
+        cl.addWidget(self.wm_class_chips)
+
+        add_row = QHBoxLayout()
+        add_btn = QPushButton("+ Add app…")
+        add_btn.clicked.connect(self._on_add_apps)
+        add_row.addWidget(add_btn)
+        add_row.addStretch()
+        cl.addLayout(add_row)
+
+        layout.addWidget(card)
+
         layout.addStretch()
         scroll.setWidget(content)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
-
-        self._refresh_profile_combo()
-        self._load_profile()
 
     def _emit_changed(self):
         if not self._building:
@@ -211,130 +191,48 @@ class DesktopPage(QWidget):
             if picked:
                 self.wm_class_chips.add_many(picked)
 
-    def _refresh_profile_combo(self):
+    def _load_state(self):
+        """Populate widgets from the ``default`` profile + populate the 3D
+        APPS chip list from the ``passthrough`` profile's match list."""
         profiles = self._config.get("profiles", {})
-        names = list(profiles.keys())
-        if "default" not in names:
-            names.insert(0, "default")
-        self._building = True
-        self.profile_combo.blockSignals(True)
-        self.profile_combo.clear()
-        self.profile_combo.addItems(names)
-        if self._current_profile in names:
-            self.profile_combo.setCurrentText(self._current_profile)
-        else:
-            self._current_profile = "default"
-            self.profile_combo.setCurrentText("default")
-        self.profile_combo.blockSignals(False)
-        self.delete_btn.setEnabled(self._current_profile not in self.PROTECTED_PROFILES)
-        self._building = False
+        default = profiles.get("default", {})
+        passthrough = profiles.get("passthrough", {})
 
-    def _on_profile_changed(self, name):
-        if self._building or not name:
-            return
-        # Save current widget state into the previously selected profile
-        self._save_current_profile()
-        self._current_profile = name
-        self.delete_btn.setEnabled(name not in self.PROTECTED_PROFILES)
-        self._building = True
-        self._load_profile()
-        self._building = False
+        pt_wm = passthrough.get("match_wm_class", [])
+        self.wm_class_chips.set_values(pt_wm if isinstance(pt_wm, list) else [])
 
-    def _on_new_profile(self):
+        self.sensitivity_s.setValue(int(default.get("sensitivity", 1.0) * 10))
+        self.scroll_speed_s.setValue(int(default.get("scroll_speed", 3.0) * 10))
+        self.zoom_speed_s.setValue(int(default.get("zoom_speed", 2.0) * 10))
+        self.scroll_exp_s.setValue(int(default.get("scroll_exponent", 2.0) * 10))
+        self.deadzone_s.setValue(default.get("deadzone", 0))
 
-        name, ok = QInputDialog.getText(self, "New Profile", "Profile name:")
-        if not ok or not name:
-            return
-        name = name.strip()
-        if not name or name.startswith("_") or name == "default":
-            QMessageBox.warning(
-                self, "Invalid Name", "Name cannot be empty, start with '_', or be 'default'."
-            )
-            return
-        profiles = self._config.setdefault("profiles", {})
-        if name in profiles:
-            QMessageBox.warning(self, "Exists", f"Profile '{name}' already exists.")
-            return
-        # Save current first, then create empty new profile
-        self._save_current_profile()
-        profiles[name] = {
-            "match_wm_class": [],
-            "axis_mapping": dict.fromkeys(AXIS_KEYS, "none"),
-            "button_mapping": {"0": "none", "1": "none"},
-        }
-        self._current_profile = name
-        self._refresh_profile_combo()
-        self._load_profile()
-        self._emit_changed()
-
-    def _on_delete_profile(self):
-        if self._current_profile in self.PROTECTED_PROFILES:
-            return
-        reply = QMessageBox.question(
-            self,
-            "Delete Profile",
-            f"Delete profile '{self._current_profile}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        profiles = self._config.setdefault("profiles", {})
-        profiles.pop(self._current_profile, None)
-        self._current_profile = "default"
-        self._refresh_profile_combo()
-        self._load_profile()
-        self._emit_changed()
-
-    def _save_current_profile(self):
-        """Capture current widget state into self._config for the active profile."""
-        profiles = self._config.setdefault("profiles", {})
-        profiles[self._current_profile] = self._get_profile_data()
-
-    def _load_profile(self):
-        profiles = self._config.get("profiles", {})
-        data = profiles.get(self._current_profile, {})
-
-        wm = data.get("match_wm_class", [])
-        self.wm_class_chips.set_values(wm if isinstance(wm, list) else [])
-
-        self.sensitivity_s.setValue(int(data.get("sensitivity", 1.0) * 10))
-        self.scroll_speed_s.setValue(int(data.get("scroll_speed", 3.0) * 10))
-        self.zoom_speed_s.setValue(int(data.get("zoom_speed", 2.0) * 10))
-        self.scroll_exp_s.setValue(int(data.get("scroll_exponent", 2.0) * 10))
-        self.deadzone_s.setValue(data.get("deadzone", 0))
-
-        # Axes card
-        amap = data.get("axis_mapping", {})
+        amap = default.get("axis_mapping", {})
         for i, key in enumerate(AXIS_KEYS):
             action = amap.get(key, "none")
             idx = AXIS_ACTIONS.index(action) if action in AXIS_ACTIONS else 0
             self.axes_card.action_combos[i].setCurrentIndex(idx)
 
-        # Per-axis deadzone
-        adz = data.get("axis_deadzone", {})
+        adz = default.get("axis_deadzone", {})
         for i, key in enumerate(AXIS_KEYS):
             self.axes_card.deadzone_sliders[i].setValue(adz.get(key, 0))
 
-        # Per-axis invert toggles
-        ainv = data.get("axis_invert", {})
+        ainv = default.get("axis_invert", {})
         for i, key in enumerate(AXIS_KEYS):
             self.axes_card.invert_toggles[i].setChecked(bool(ainv.get(key, False)))
 
-        bmap = data.get("button_mapping", {})
+        bmap = default.get("button_mapping", {})
         for i in range(2):
             action = bmap.get(str(i), "none")
             idx = BTN_ACTIONS.index(action) if action in BTN_ACTIONS else 0
             self.btn_combos[i].setCurrentIndex(idx)
 
-        self.dswitch_thresh_s.setValue(data.get("desktop_switch_threshold", 200))
-        self.dswitch_cool_s.setValue(data.get("desktop_switch_cooldown_ms", 500))
+        self.dswitch_thresh_s.setValue(default.get("desktop_switch_threshold", 200))
+        self.dswitch_cool_s.setValue(default.get("desktop_switch_cooldown_ms", 500))
 
-    def _get_profile_data(self):
-        """Return current UI state as profile data dict."""
+    def _collect_default_profile(self):
+        """Return the desktop-settings widget state as a default profile dict."""
         data = {}
-        wm = self.wm_class_chips.get_values()
-        if wm:
-            data["match_wm_class"] = wm
         data["sensitivity"] = self.sensitivity_s.value() / 10.0
         data["scroll_speed"] = self.scroll_speed_s.value() / 10.0
         data["zoom_speed"] = self.zoom_speed_s.value() / 10.0
@@ -362,16 +260,30 @@ class DesktopPage(QWidget):
         return data
 
     def get_all_config(self):
-        """Return full daemon config dict with the current profile saved."""
-        self._save_current_profile()
+        """Return full daemon config dict with default + passthrough updated.
+
+        Other profiles a power user may have added directly in config.json
+        are preserved as-is. Passthrough is dropped when the chip list is
+        empty so an unused profile doesn't sit around in the file.
+        """
+        profiles = self._config.setdefault("profiles", {})
+        profiles["default"] = self._collect_default_profile()
+        wm = self.wm_class_chips.get_values()
+        if wm:
+            profiles["passthrough"] = {
+                "match_wm_class": wm,
+                "axis_mapping": dict.fromkeys(AXIS_KEYS, "none"),
+                "button_mapping": {"0": "none", "1": "none"},
+            }
+        else:
+            profiles.pop("passthrough", None)
         return self._config
 
     def update_config(self, config):
-        """Replace config data and refresh UI."""
+        """Replace config data and refresh widgets from it."""
         self._config = config
         self._building = True
-        self._refresh_profile_combo()
-        self._load_profile()
+        self._load_state()
         self._building = False
 
 
