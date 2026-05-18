@@ -3,15 +3,13 @@
 from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
-from .helpers import make_card
+from .helpers import NoScrollComboBox, NoScrollSlider, make_card
 
 # ── ToggleSwitch (Apple-style pill) ───────────────────────────────────
 
@@ -235,7 +233,7 @@ class AxesCard(QWidget):
             row.addWidget(name_lbl)
 
             if show_action:
-                combo = QComboBox()
+                combo = NoScrollComboBox()
                 combo.addItems(action_items or [])
                 combo.currentIndexChanged.connect(self._emit_changed)
                 combo.setMinimumWidth(160)
@@ -261,7 +259,7 @@ class AxesCard(QWidget):
                 dz_hl = QHBoxLayout(dz_container)
                 dz_hl.setContentsMargins(0, 0, 0, 0)
                 dz_hl.setSpacing(4)
-                dz_slider = QSlider(Qt.Orientation.Horizontal)
+                dz_slider = NoScrollSlider(Qt.Orientation.Horizontal)
                 dz_slider.setRange(0, deadzone_max)
                 dz_slider.setValue(0)
                 dz_slider.setMinimumWidth(80)
@@ -269,7 +267,7 @@ class AxesCard(QWidget):
                 dz_lbl.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 28px;")
                 dz_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 dz_slider.valueChanged.connect(lambda v, lbl=dz_lbl: lbl.setText(str(v)))
-                dz_slider.valueChanged.connect(self._emit_changed)
+                dz_slider.sliderReleased.connect(self._emit_changed)
                 if not deadzone_enabled:
                     dz_slider.setEnabled(False)
                     dz_slider.setStyleSheet(DISABLED_SLIDER_STYLE)

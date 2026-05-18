@@ -2,7 +2,6 @@
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -29,7 +28,7 @@ from .constants import (
     FREECAD_NAV_STYLES,
     FREECAD_ORBIT_STYLES,
 )
-from .helpers import make_card, make_slider
+from .helpers import NoScrollComboBox, make_card, make_slider
 from .widgets import AxesCard
 
 # ── DesktopPage ───────────────────────────────────────────────────────
@@ -40,7 +39,6 @@ class DesktopPage(QWidget):
     profile's match list (3D apps the daemon should leave alone)."""
 
     changed = Signal()
-    live_apply_requested = Signal()
 
     def __init__(self, config_data):
         super().__init__()
@@ -91,23 +89,23 @@ class DesktopPage(QWidget):
         fl.setSpacing(10)
 
         self.sensitivity_w, self.sensitivity_s, _ = make_slider(0.1, 10.0, 1.0, 1)
-        self.sensitivity_s.valueChanged.connect(self._emit_changed)
+        self.sensitivity_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Sensitivity:", self.sensitivity_w)
 
         self.scroll_speed_w, self.scroll_speed_s, _ = make_slider(0.1, 5.0, 3.0, 1)
-        self.scroll_speed_s.valueChanged.connect(self._emit_changed)
+        self.scroll_speed_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Scroll Speed:", self.scroll_speed_w)
 
         self.zoom_speed_w, self.zoom_speed_s, _ = make_slider(0.1, 5.0, 2.0, 1)
-        self.zoom_speed_s.valueChanged.connect(self._emit_changed)
+        self.zoom_speed_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Zoom Speed:", self.zoom_speed_w)
 
         self.scroll_exp_w, self.scroll_exp_s, _ = make_slider(0.5, 5.0, 2.0, 1)
-        self.scroll_exp_s.valueChanged.connect(self._emit_changed)
+        self.scroll_exp_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Scroll Curve:", self.scroll_exp_w)
 
         self.deadzone_w, self.deadzone_s, _ = make_slider(0, 200, 0, 0)
-        self.deadzone_s.valueChanged.connect(self._emit_changed)
+        self.deadzone_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Global Deadzone:", self.deadzone_w)
 
         cl.addLayout(fl)
@@ -132,12 +130,6 @@ class DesktopPage(QWidget):
             deadzone_max=200,
         )
         self.axes_card.changed.connect(self._emit_changed)
-        # Live-apply: dropdowns + invert toggles save+RELOAD immediately,
-        # no Apply click needed. Sliders stay manual (would spam RELOAD).
-        for combo in self.axes_card.action_combos:
-            combo.currentIndexChanged.connect(self._on_live_change)
-        for inv in self.axes_card.invert_toggles:
-            inv.stateChanged.connect(self._on_live_change)
         layout.addWidget(self.axes_card)
 
         # ── Card 4: BUTTONS ──
@@ -146,9 +138,9 @@ class DesktopPage(QWidget):
         fl.setSpacing(8)
         self.btn_combos = []
         for i in range(2):
-            combo = QComboBox()
+            combo = NoScrollComboBox()
             combo.addItems(BTN_ACTION_LABELS)
-            combo.currentIndexChanged.connect(self._on_live_change)
+            combo.currentIndexChanged.connect(self._emit_changed)
             fl.addRow(f"Button {i + 1}:", combo)
             self.btn_combos.append(combo)
         cl.addLayout(fl)
@@ -159,11 +151,11 @@ class DesktopPage(QWidget):
         fl = QFormLayout()
         fl.setSpacing(8)
         self.dswitch_thresh_w, self.dswitch_thresh_s, _ = make_slider(0, 500, 200, 0)
-        self.dswitch_thresh_s.valueChanged.connect(self._emit_changed)
+        self.dswitch_thresh_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Threshold:", self.dswitch_thresh_w)
 
         self.dswitch_cool_w, self.dswitch_cool_s, _ = make_slider(100, 2000, 500, 0, " ms")
-        self.dswitch_cool_s.valueChanged.connect(self._emit_changed)
+        self.dswitch_cool_s.sliderReleased.connect(self._emit_changed)
         fl.addRow("Cooldown:", self.dswitch_cool_w)
 
         cl.addLayout(fl)
@@ -180,21 +172,14 @@ class DesktopPage(QWidget):
         if not self._building:
             self.changed.emit()
 
-    def _on_live_change(self):
-        if self._building:
-            return
-        self.live_apply_requested.emit()
-
     def _on_manage_apps(self):
         dlg = AddAppDialog(self.wm_class_chips.get_values(), parent=self)
         if dlg.exec():
             new_list = dlg.result_list()
             if new_list != self.wm_class_chips.get_values():
                 self.wm_class_chips.set_values(new_list)
-                # The dialog's Apply already counts as confirmation — push
-                # the change to disk + daemon RELOAD immediately so the user
-                # doesn't have to click Apply twice.
-                self.live_apply_requested.emit()
+                # ChipList.set_values doesn't auto-emit; nudge the cascade.
+                self.changed.emit()
 
     def _load_state(self):
         """Populate widgets from the ``default`` profile + populate the 3D
@@ -383,7 +368,7 @@ class FreeCADPage(QWidget):
         fl.setSpacing(8)
         self.fc_btn_combos = []
         for i in range(2):
-            combo = QComboBox()
+            combo = NoScrollComboBox()
             combo.addItems(FREECAD_BTN_LABELS)
             combo.currentIndexChanged.connect(self._emit_changed)
             fl.addRow(f"Button {i + 1}:", combo)
@@ -396,12 +381,12 @@ class FreeCADPage(QWidget):
         fl = QFormLayout()
         fl.setSpacing(8)
 
-        self.fc_nav_combo = QComboBox()
+        self.fc_nav_combo = NoScrollComboBox()
         self.fc_nav_combo.addItems(FREECAD_NAV_LABELS)
         self.fc_nav_combo.currentIndexChanged.connect(self._emit_changed)
         fl.addRow("Navigation Style:", self.fc_nav_combo)
 
-        self.fc_orbit_combo = QComboBox()
+        self.fc_orbit_combo = NoScrollComboBox()
         self.fc_orbit_combo.addItems(list(FREECAD_ORBIT_STYLES.keys()))
         self.fc_orbit_combo.currentIndexChanged.connect(self._emit_changed)
         fl.addRow("Orbit Style:", self.fc_orbit_combo)

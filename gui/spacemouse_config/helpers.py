@@ -5,7 +5,15 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Re-export daemon-socket helpers so existing callers keep their import path.
 # The actual implementations live in daemon_socket.py (Qt-free for testing).
@@ -32,6 +40,25 @@ def set_spacemouse_led(on):
     except OSError:
         pass
     return False
+
+
+# ── Wheel-blocking variants ───────────────────────────────────────────
+
+
+class NoScrollSlider(QSlider):
+    """QSlider that ignores mouse-wheel events. Used inside scroll areas
+    so the wheel scrolls the page instead of nudging the slider value."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoScrollComboBox(QComboBox):
+    """QComboBox that ignores mouse-wheel events. Same rationale as
+    NoScrollSlider — scrolling the page must not flip the selection."""
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 # ── UI helpers ────────────────────────────────────────────────────────
@@ -61,7 +88,7 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     hl = QHBoxLayout(container)
     hl.setContentsMargins(0, 0, 0, 0)
 
-    slider = QSlider(Qt.Orientation.Horizontal)
+    slider = NoScrollSlider(Qt.Orientation.Horizontal)
     scale = 10**decimals
     slider.setRange(int(minimum * scale), int(maximum * scale))
     slider.setValue(int(value * scale))
