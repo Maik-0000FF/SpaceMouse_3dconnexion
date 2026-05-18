@@ -299,6 +299,9 @@ class SettingsWindow(QMainWindow):
                 | QMessageBox.StandardButton.Cancel
             )
             msg.setDefaultButton(QMessageBox.StandardButton.Save)
+            msg.button(QMessageBox.StandardButton.Save).setText("Save")
+            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
+            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
                 self._apply()

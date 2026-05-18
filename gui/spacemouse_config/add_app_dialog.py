@@ -81,6 +81,8 @@ class AddAppDialog(QDialog):
         ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok_btn.setText("Apply")
         ok_btn.setDefault(True)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_btn.setText("Cancel")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

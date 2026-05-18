@@ -658,17 +658,22 @@ class BlenderPage(QWidget):
         st = self._bc.script_status()
         installed = [v for v in st["versions"] if v["installed"]]
         targets = "\n".join(f"  Blender {v['version']}: {v['path']}" for v in installed)
-        confirm = QMessageBox.question(
-            self,
-            "Uninstall Startup Script",
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setWindowTitle("Uninstall Startup Script")
+        msg.setText(
             f"Remove the startup script from {len(installed)} Blender version(s)?\n\n"
             f"{targets}\n\n"
             "Blender will fall back to its own NDOF defaults on the next start "
-            "and stop picking up settings made here.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            "and stop picking up settings made here."
         )
-        if confirm != QMessageBox.StandardButton.Yes:
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        msg.button(QMessageBox.StandardButton.Yes).setText("Yes")
+        msg.button(QMessageBox.StandardButton.No).setText("No")
+        if msg.exec() != QMessageBox.StandardButton.Yes:
             return
         removed = self._bc.uninstall_startup_script()
         self._update_script_status()
