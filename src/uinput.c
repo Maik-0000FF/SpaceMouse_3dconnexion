@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 
@@ -14,6 +15,22 @@
 #include <linux/uinput.h>
 
 #include "spacemouse-core.h"
+
+/* Hold between key-combo transitions so compositors see Alt+Tab as a
+ * deliberate sequence rather than a single input batch. Without this,
+ * KWin's window-switcher overlay does not surface and the Walk-Through-
+ * Windows shortcut fires sporadically. ~70 ms total — matches what
+ * a human-typed shortcut looks like to the input layer. */
+#define KEY_COMBO_MOD_HOLD_NS (20L * 1000L * 1000L)
+#define KEY_COMBO_KEY_HOLD_NS (30L * 1000L * 1000L)
+
+static void nsleep(long ns)
+{
+	if (ns <= 0)
+		return;
+	struct timespec ts = {.tv_sec = ns / 1000000000L, .tv_nsec = ns % 1000000000L};
+	nanosleep(&ts, NULL);
+}
 
 int uinput_open(void)
 {
@@ -110,19 +127,59 @@ void emit_key_tap(int fd, int code)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
+void emit_keys_press(int fd, const int *codes, int n)
+{
+	if (fd < 0 || n <= 0)
+		return;
+	for (int i = 0; i < n; i++)
+		emit_event(fd, EV_KEY, codes[i], 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+void emit_keys_release(int fd, const int *codes, int n)
+{
+	if (fd < 0 || n <= 0)
+		return;
+	/* Reverse order matches how a human releases a chord — pop the
+	 * stack from the top so the compositor sees a clean unwind. */
+	for (int i = n - 1; i >= 0; i--)
+		emit_event(fd, EV_KEY, codes[i], 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+void emit_key_tap_held(int fd, int code)
+{
+	if (fd < 0)
+		return;
+	emit_event(fd, EV_KEY, code, 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	nsleep(KEY_COMBO_KEY_HOLD_NS);
+	emit_event(fd, EV_KEY, code, 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+void emit_settle_after_mods(void)
+{
+	nsleep(KEY_COMBO_MOD_HOLD_NS);
+}
+
 void emit_key_combo(int fd, const int *mods, int n_mods, int key)
 {
 	if (fd < 0)
 		return;
-	for (int i = 0; i < n_mods; i++)
-		emit_event(fd, EV_KEY, mods[i], 1);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
-	emit_event(fd, EV_KEY, key, 1);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
-	emit_event(fd, EV_KEY, key, 0);
-	for (int i = n_mods - 1; i >= 0; i--)
-		emit_event(fd, EV_KEY, mods[i], 0);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	/* One-shot chord: press mods, settle so the compositor sees the
+	 * modifier state before the key arrives (Alt+Tab's window switcher
+	 * overlay won't surface otherwise), tap the key with a brief hold,
+	 * settle again so the switcher commits cleanly on mod-release. */
+	if (n_mods > 0) {
+		emit_keys_press(fd, mods, n_mods);
+		emit_settle_after_mods();
+	}
+	emit_key_tap_held(fd, key);
+	if (n_mods > 0) {
+		emit_settle_after_mods();
+		emit_keys_release(fd, mods, n_mods);
+	}
 }
 
 void emit_zoom(int fd, int dz)

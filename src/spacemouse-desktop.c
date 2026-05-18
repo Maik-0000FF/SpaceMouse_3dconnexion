@@ -39,6 +39,7 @@
 #include "device.h"
 #include "kernel_input.h"
 #include "spacemouse-core.h"
+#include "sticky_combo.h"
 #include "uinput.h"
 
 /* ── Constants ──────────────────────────────────────────────────────── */
@@ -111,6 +112,10 @@ int main(int argc, char **argv)
 
 	int foreground = 0;
 	const char *home = getenv("HOME");
+	/* Sticky-combo state lives at function scope so the cleanup
+	 * label can release any held modifiers regardless of which
+	 * code path got us there. Zero-init = "no chord held". */
+	struct sticky_combo_state sticky = {0};
 
 	if (home)
 		snprintf(g_config_path, sizeof(g_config_path), "%s/.config/spacemouse/config.json",
@@ -209,10 +214,17 @@ int main(int argc, char **argv)
 	long long last_keypair[6] = {0};
 	long long last_kinput_retry = 0;
 	int desktop_shown = 0;
+	/* sticky declared and zero-initialised earlier so the cleanup
+	 * label can call sticky_combo_release_now() even on the
+	 * pre-loop goto paths (fork failure). */
 
 	while (g_running) {
 		if (g_reload) {
 			g_reload = 0;
+			/* Release any held sticky modifiers before the reload
+			 * — a profile that drops the binding shouldn't leave
+			 * Alt held forever. */
+			sticky_combo_release_now(&sticky, g_uinput_fd);
 			int old_active = g_active_profile;
 			char old_name[64];
 			snprintf(old_name, sizeof(old_name), "%s",
@@ -229,6 +241,11 @@ int main(int argc, char **argv)
 			(void)old_active;
 			scroll_acc_reset(&sacc);
 		}
+
+		/* Auto-release sticky modifiers if their deadline passed.
+		 * The 100 ms poll() rhythm is short enough that we accept
+		 * the ≤100 ms latency instead of clamping the timeout. */
+		sticky_combo_tick(&sticky, g_uinput_fd, time_ms());
 
 		/* Direct kernel read. Other clients (Blender/FreeCAD via spacenavd)
 		 * read independently from the same kernel device, so we never
@@ -458,10 +475,9 @@ int main(int argc, char **argv)
 						break;
 					case BTNACT_KEY:
 						if (c->btn_key[bnum].key)
-							emit_key_combo(g_uinput_fd,
-								       c->btn_key[bnum].mods,
-								       c->btn_key[bnum].n_mods,
-								       c->btn_key[bnum].key);
+							sticky_combo_press(&sticky, g_uinput_fd,
+									   &c->btn_key[bnum],
+									   time_ms());
 						break;
 					case BTNACT_EXEC:
 						if (c->btn_exec_argv[bnum] &&
@@ -483,6 +499,9 @@ int main(int argc, char **argv)
 
 cleanup:
 	fprintf(stderr, "spacemouse-desktop: shutting down\n");
+	/* Drop any held sticky modifiers before tearing down the uinput
+	 * device so the compositor doesn't see Alt-down at our last gasp. */
+	sticky_combo_release_now(&sticky, g_uinput_fd);
 	if (g_kinput_fd >= 0)
 		close(g_kinput_fd);
 	uinput_close(g_uinput_fd);
