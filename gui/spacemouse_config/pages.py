@@ -22,6 +22,13 @@ from .constants import (
     AXIS_KEYS,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
+    COLOR_BG_ERROR,
+    COLOR_BG_WARN,
+    COLOR_ERROR,
+    COLOR_OK,
+    COLOR_TEXT_DIM,
+    COLOR_WARN,
+    COLOR_WARN_ALT,
     FREECAD_BTN_COMMANDS,
     FREECAD_BTN_LABELS,
     FREECAD_NAV_LABELS,
@@ -66,7 +73,7 @@ class DesktopPage(QWidget):
             "silent and each app handles SpaceMouse input itself via "
             "libspnav."
         )
-        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
+        intro.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px; padding-bottom: 4px;")
         intro.setWordWrap(True)
         cl.addWidget(intro)
 
@@ -317,7 +324,8 @@ class FreeCADPage(QWidget):
         if not self._fc.is_available():
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
-                "color: #f9e2af; background-color: #3a3636; border-radius: 6px; padding: 8px;"
+                f"color: {COLOR_WARN}; background-color: {COLOR_BG_WARN}; "
+                "border-radius: 6px; padding: 8px;"
             )
             warn.setWordWrap(True)
             cl.addWidget(warn)
@@ -327,7 +335,8 @@ class FreeCADPage(QWidget):
             "Close FreeCAD before applying changes."
         )
         self.running_warn.setStyleSheet(
-            "color: #f38ba8; background-color: #3a2a2a; border-radius: 6px; padding: 8px;"
+            f"color: {COLOR_ERROR}; background-color: {COLOR_BG_ERROR}; "
+            "border-radius: 6px; padding: 8px;"
         )
         self.running_warn.setWordWrap(True)
         self.running_warn.setVisible(False)
@@ -564,7 +573,7 @@ class BlenderPage(QWidget):
         # Lock Horizon warning (below axes card)
         lock_warn = QLabel("Lock Horizon blocks the RX/pitch axis \u2014 keep OFF for full 6DOF")
         lock_warn.setStyleSheet(
-            "color: #f9e2af; font-size: 11px; background: transparent; padding: 0 12px;"
+            f"color: {COLOR_WARN}; font-size: 11px; background: transparent; padding: 0 12px;"
         )
         lock_warn.setWordWrap(True)
         layout.addWidget(lock_warn)
@@ -572,7 +581,7 @@ class BlenderPage(QWidget):
         # ── Card 4: BUTTONS ──
         card, cl = make_card("BUTTONS")
         info = QLabel("Blender buttons are configured via Blender's Keymap Editor")
-        info.setStyleSheet("color: #a6adc8; font-style: italic; background: transparent;")
+        info.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-style: italic; background: transparent;")
         info.setWordWrap(True)
         cl.addWidget(info)
         layout.addWidget(card)
@@ -600,7 +609,7 @@ class BlenderPage(QWidget):
                 "Startup script not installed. Blender won't pick up settings until you install it.\n"
                 f"Install target: Blender {target_versions}"
             )
-            self.script_status.setStyleSheet("color: #f9e2af; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_WARN}; background: transparent;")
             self.install_btn.setText("Install Startup Script")
             return
 
@@ -625,11 +634,11 @@ class BlenderPage(QWidget):
             # makes the action sound non-destructive on the up-to-date
             # versions (it's a re-copy, but with the exact same bytes).
             self.script_status.setText(f"Startup script status:\n{body}")
-            self.script_status.setStyleSheet("color: #fab387; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_WARN_ALT}; background: transparent;")
             self.install_btn.setText("Update Startup Script")
         else:
             self.script_status.setText(f"Startup script installed and up to date.\n{body}")
-            self.script_status.setStyleSheet("color: #a6e3a1; background: transparent;")
+            self.script_status.setStyleSheet(f"color: {COLOR_OK}; background: transparent;")
             self.install_btn.setText("Reinstall Startup Script")
 
     def _install_script(self):

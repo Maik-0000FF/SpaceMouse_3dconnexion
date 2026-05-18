@@ -19,7 +19,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .constants import (
+    COLOR_ACCENT,
+    COLOR_BG_BASE,
+    COLOR_BG_CONTROL,
+    COLOR_BG_RAISED,
+    COLOR_ERROR,
+    COLOR_OK,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_MUTED,
+)
 from .helpers import NoScrollComboBox, NoScrollSlider, make_card
+
+_HEADER_LABEL_STYLE = f"color: {COLOR_TEXT_MUTED}; font-size: 11px; font-weight: bold;"
 
 # ── ToggleSwitch (Apple-style pill) ───────────────────────────────────
 
@@ -153,11 +165,14 @@ def make_toggle(label_text, checked=False):
 
 # ── Reusable Axes Card ────────────────────────────────────────────────
 
-DISABLED_SLIDER_STYLE = """
-QSlider::groove:horizontal { background: #313244; height: 6px; border-radius: 3px; }
-QSlider::handle:horizontal { background: #45475a; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }
-QSlider::sub-page:horizontal { background: #45475a; border-radius: 3px; }
-"""
+DISABLED_SLIDER_STYLE = (
+    f"QSlider::groove:horizontal {{ background: {COLOR_BG_CONTROL}; "
+    "height: 6px; border-radius: 3px; }\n"
+    f"QSlider::handle:horizontal {{ background: {COLOR_BG_RAISED}; "
+    "width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }\n"
+    f"QSlider::sub-page:horizontal {{ background: {COLOR_BG_RAISED}; "
+    "border-radius: 3px; }"
+)
 
 
 # ── AxesCard ──────────────────────────────────────────────────────────
@@ -213,27 +228,27 @@ class AxesCard(QWidget):
         header = QHBoxLayout()
         header.setSpacing(6)
         axis_lbl = QLabel("Axis")
-        axis_lbl.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+        axis_lbl.setStyleSheet(_HEADER_LABEL_STYLE)
         axis_lbl.setFixedWidth(130)
         header.addWidget(axis_lbl)
         if show_action:
             h = QLabel("Action")
-            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setStyleSheet(_HEADER_LABEL_STYLE)
             h.setFixedWidth(220)
             header.addWidget(h)
         if show_enable:
             h = QLabel("Enable")
-            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setStyleSheet(_HEADER_LABEL_STYLE)
             h.setFixedWidth(60)
             header.addWidget(h)
         if show_invert:
             h = QLabel("Invert")
-            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setStyleSheet(_HEADER_LABEL_STYLE)
             h.setFixedWidth(60)
             header.addWidget(h)
         if show_deadzone:
             h = QLabel("Deadzone")
-            h.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
+            h.setStyleSheet(_HEADER_LABEL_STYLE)
             h.setMinimumWidth(100)
             header.addWidget(h, 1)
         cl.addLayout(header)
@@ -273,7 +288,8 @@ class AxesCard(QWidget):
                 dz_container = QFrame()
                 dz_container.setObjectName("slider-box")
                 dz_container.setStyleSheet(
-                    "QFrame#slider-box { background-color: #1e1e2e; border-radius: 6px; }"
+                    f"QFrame#slider-box {{ background-color: {COLOR_BG_BASE}; "
+                    "border-radius: 6px; }"
                 )
                 dz_hl = QHBoxLayout(dz_container)
                 dz_hl.setContentsMargins(12, 4, 12, 4)
@@ -283,14 +299,16 @@ class AxesCard(QWidget):
                 dz_slider.setValue(0)
                 dz_slider.setMinimumWidth(80)
                 dz_lbl = QLabel("0")
-                dz_lbl.setStyleSheet("color: #5294e2; font-weight: bold; min-width: 28px;")
+                dz_lbl.setStyleSheet(f"color: {COLOR_ACCENT}; font-weight: bold; min-width: 28px;")
                 dz_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 dz_slider.valueChanged.connect(lambda v, lbl=dz_lbl: lbl.setText(str(v)))
                 dz_slider.sliderReleased.connect(self._emit_changed)
                 if not deadzone_enabled:
                     dz_slider.setEnabled(False)
                     dz_slider.setStyleSheet(DISABLED_SLIDER_STYLE)
-                    dz_lbl.setStyleSheet("color: #45475a; font-weight: bold; min-width: 28px;")
+                    dz_lbl.setStyleSheet(
+                        f"color: {COLOR_BG_RAISED}; font-weight: bold; min-width: 28px;"
+                    )
                 dz_hl.addWidget(dz_slider, 1)
                 dz_hl.addWidget(dz_lbl)
                 row.addWidget(dz_container, 1)
@@ -417,15 +435,16 @@ class LivePreviewBar(QWidget):
         layout.setContentsMargins(12, 4, 12, 4)
         layout.setSpacing(6)
 
+        section_style = f"color: {COLOR_TEXT_DIM}; font-weight: bold; font-size: 11px;"
         lbl = QLabel("Live:")
-        lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 11px;")
+        lbl.setStyleSheet(section_style)
         layout.addWidget(lbl)
 
         self.bars = []
         short_names = ["TX", "TY", "TZ", "RX", "RY", "RZ"]
         for name in short_names:
             nl = QLabel(name)
-            nl.setStyleSheet("color: #6c7086; font-size: 10px; min-width: 18px;")
+            nl.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 10px; min-width: 18px;")
             layout.addWidget(nl)
             bar = AxisBar()
             layout.addWidget(bar, 1)
@@ -434,24 +453,26 @@ class LivePreviewBar(QWidget):
         layout.addSpacing(8)
 
         lbl = QLabel("Buttons:")
-        lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 11px;")
+        lbl.setStyleSheet(section_style)
         layout.addWidget(lbl)
 
         self.btn_labels = []
         for _ in range(2):
             bl = QLabel("\u25cb")
-            bl.setStyleSheet("font-size: 14px; color: #45475a;")
+            bl.setStyleSheet(f"font-size: 14px; color: {COLOR_BG_RAISED};")
             layout.addWidget(bl)
             self.btn_labels.append(bl)
 
         layout.addSpacing(12)
 
         self.profile_label = QLabel("Profile: Desktop")
-        self.profile_label.setStyleSheet("color: #5294e2; font-weight: bold; font-size: 11px;")
+        self.profile_label.setStyleSheet(
+            f"color: {COLOR_ACCENT}; font-weight: bold; font-size: 11px;"
+        )
         layout.addWidget(self.profile_label)
 
         self.status_dot = QLabel("\u25cf")
-        self.status_dot.setStyleSheet("font-size: 12px; color: #45475a;")
+        self.status_dot.setStyleSheet(f"font-size: 12px; color: {COLOR_BG_RAISED};")
         self.status_dot.setToolTip("Daemon: checking...")
         layout.addWidget(self.status_dot)
 
@@ -470,10 +491,10 @@ class LivePreviewBar(QWidget):
         if 0 <= bnum < len(self.btn_labels):
             if pressed:
                 self.btn_labels[bnum].setText("\u25cf")
-                self.btn_labels[bnum].setStyleSheet("font-size: 14px; color: #a6e3a1;")
+                self.btn_labels[bnum].setStyleSheet(f"font-size: 14px; color: {COLOR_OK};")
             else:
                 self.btn_labels[bnum].setText("\u25cb")
-                self.btn_labels[bnum].setStyleSheet("font-size: 14px; color: #45475a;")
+                self.btn_labels[bnum].setStyleSheet(f"font-size: 14px; color: {COLOR_BG_RAISED};")
 
     def set_profile(self, name):
         # Display-only alias for the catch-all profile — the config file
@@ -484,8 +505,8 @@ class LivePreviewBar(QWidget):
 
     def set_daemon_status(self, connected):
         if connected:
-            self.status_dot.setStyleSheet("font-size: 12px; color: #a6e3a1;")
+            self.status_dot.setStyleSheet(f"font-size: 12px; color: {COLOR_OK};")
             self.status_dot.setToolTip("Daemon: connected")
         else:
-            self.status_dot.setStyleSheet("font-size: 12px; color: #f38ba8;")
+            self.status_dot.setStyleSheet(f"font-size: 12px; color: {COLOR_ERROR};")
             self.status_dot.setToolTip("Daemon: not connected")

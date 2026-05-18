@@ -152,6 +152,34 @@ FREECAD_NAV_LABELS = ["Inventor", "Blender", "CAD", "OpenCascade", "Revit"]
 
 FREECAD_ORBIT_STYLES = {"Trackball": 1, "Turntable": 0}
 
+# ── Palette (Catppuccin Mocha) ────────────────────────────────────────
+#
+# Single source of truth for inline setStyleSheet colors. The DARK_THEME
+# stylesheet block below still contains hardcoded literals; keep the two
+# in sync when adjusting the palette.
+
+COLOR_BG_BASE = "#1e1e2e"  # main window, recessed slider container
+COLOR_BG_SUNKEN = "#181825"  # sidebar, live preview bar
+COLOR_BG_CARD = "#2a2a3e"  # card surface
+COLOR_BG_CONTROL = "#313244"  # combo bg, axis-bar track, dividers
+COLOR_BG_RAISED = "#45475a"  # slider groove/handle, disabled controls
+COLOR_BG_WARN = "#3a3636"  # warning banner background
+COLOR_BG_ERROR = "#3a2a2a"  # error / "FreeCAD running" banner
+
+COLOR_TEXT = "#cdd6f4"  # primary text
+COLOR_TEXT_DIM = "#a6adc8"  # secondary / dimmed labels
+COLOR_TEXT_MUTED = "#6c7086"  # column headers / tips
+COLOR_TEXT_ON_ACCENT = "#ffffff"  # text on accent-filled buttons
+
+COLOR_ACCENT = "#5294e2"  # active blue (sliders, value labels)
+COLOR_ACCENT_HOVER = "#6ba4f0"  # button-hover blue
+COLOR_SECTION = "#89b4fa"  # section titles inside dialogs
+
+COLOR_OK = "#a6e3a1"  # green: daemon connected, button pressed
+COLOR_WARN = "#f9e2af"  # yellow: warnings
+COLOR_WARN_ALT = "#fab387"  # orange: outdated / partial install
+COLOR_ERROR = "#f38ba8"  # red: deadzone fill, FreeCAD-running
+
 # ── Dark Theme QSS ────────────────────────────────────────────────────
 
 DARK_THEME = """

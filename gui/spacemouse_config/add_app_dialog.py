@@ -28,6 +28,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .constants import (
+    COLOR_BG_CONTROL,
+    COLOR_SECTION,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_MUTED,
+)
 from .installed_apps import group_by_category, scan_installed_apps
 
 
@@ -57,7 +63,7 @@ class AddAppDialog(QDialog):
             "Use the Custom tab for apps that aren't detected on this "
             "system."
         )
-        intro.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        intro.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px;")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
@@ -99,14 +105,14 @@ class AddAppDialog(QDialog):
 
         if not self._installed_apps:
             empty = QLabel("No installed applications detected.")
-            empty.setStyleSheet("color: #a6adc8; font-size: 12px;")
+            empty.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px;")
             layout.addWidget(empty)
         else:
             current_lower = [w.lower() for w in self._current]
             for category, cat_apps in grouped.items():
                 cat_label = QLabel(category)
                 cat_label.setStyleSheet(
-                    "color: #89b4fa; font-weight: bold; font-size: 12px; padding: 2px 0;"
+                    f"color: {COLOR_SECTION}; font-weight: bold; font-size: 12px; padding: 2px 0;"
                 )
                 layout.addWidget(cat_label)
 
@@ -146,7 +152,7 @@ class AddAppDialog(QDialog):
         existing_custom = [w for w in self._current if w.lower() not in self._installed_wm_lower]
         if existing_custom:
             section = QLabel("In list (custom entries — uncheck to remove):")
-            section.setStyleSheet("color: #89b4fa; font-weight: bold; font-size: 12px;")
+            section.setStyleSheet(f"color: {COLOR_SECTION}; font-weight: bold; font-size: 12px;")
             layout.addWidget(section)
             for wm in existing_custom:
                 cb = QCheckBox(wm)
@@ -157,7 +163,7 @@ class AddAppDialog(QDialog):
 
             divider = QFrame()
             divider.setFrameShape(QFrame.Shape.HLine)
-            divider.setStyleSheet("color: #313244;")
+            divider.setStyleSheet(f"color: {COLOR_BG_CONTROL};")
             layout.addWidget(divider)
 
         hint = QLabel(
@@ -167,7 +173,7 @@ class AddAppDialog(QDialog):
             "an app."
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        hint.setStyleSheet(f"color: {COLOR_TEXT_DIM}; font-size: 12px;")
         layout.addWidget(hint)
 
         form = QFormLayout()
@@ -183,7 +189,7 @@ class AddAppDialog(QDialog):
             "spacemouse-wm-watch KWin script."
         )
         tip.setWordWrap(True)
-        tip.setStyleSheet("color: #6c7086; font-size: 11px; padding-top: 8px;")
+        tip.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 11px; padding-top: 8px;")
         layout.addWidget(tip)
 
         layout.addStretch()
