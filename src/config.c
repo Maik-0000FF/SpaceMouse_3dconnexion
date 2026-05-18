@@ -34,8 +34,6 @@ static enum axis_action parse_axis_action(const char *s)
 		return ACT_DESKTOP_SWITCH;
 	if (strcmp(s, "volume") == 0)
 		return ACT_VOLUME;
-	if (strcmp(s, "seek_auto") == 0)
-		return ACT_SEEK_AUTO;
 	return ACT_NONE;
 }
 
@@ -59,8 +57,6 @@ static enum btn_action parse_btn_action(const char *s)
 		return BTNACT_NEXT_TRACK;
 	if (strcmp(s, "prev_track") == 0)
 		return BTNACT_PREV_TRACK;
-	if (strcmp(s, "play_pause_auto") == 0)
-		return BTNACT_PLAY_PAUSE_AUTO;
 	return BTNACT_NONE;
 }
 
@@ -261,12 +257,6 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 				p->wm_classes[p->wm_class_count++] = strdup(s);
 		}
 	}
-
-	/* Browser-key flag: smart actions emit Space/Arrow keys when this profile is active */
-	struct json_object *bkv;
-	p->browser_keys = 0;
-	if (json_object_object_get_ex(obj, "browser_keys", &bkv))
-		p->browser_keys = json_object_get_boolean(bkv);
 
 	/* Detect passthrough profiles (all axes+buttons none) — skip event processing */
 	p->passthrough = 1;

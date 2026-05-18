@@ -37,8 +37,7 @@ enum axis_action {
 	ACT_ZOOM,
 	ACT_DESKTOP_SWITCH,
 	ACT_VOLUME,
-	ACT_KEY_PAIR,
-	ACT_SEEK_AUTO
+	ACT_KEY_PAIR
 };
 
 enum btn_action {
@@ -51,8 +50,7 @@ enum btn_action {
 	BTNACT_PLAY_PAUSE,
 	BTNACT_NEXT_TRACK,
 	BTNACT_PREV_TRACK,
-	BTNACT_KEY,
-	BTNACT_PLAY_PAUSE_AUTO
+	BTNACT_KEY
 };
 
 /* ── Per-profile config ─────────────────────────────────────────────── */
@@ -79,8 +77,7 @@ struct profile {
 	char *wm_classes[MAX_WM_CLASSES];
 	int wm_class_count;
 	struct config cfg;
-	int passthrough;  /* 1 if all axes+buttons are none → skip event processing */
-	int browser_keys; /* 1 if smart actions should send Space/Arrow keys */
+	int passthrough; /* 1 if all axes+buttons are none → skip event processing */
 };
 
 /* ── Profile table (owned by config.c, shared with the event loop) ──── */
