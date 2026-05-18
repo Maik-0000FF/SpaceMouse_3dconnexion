@@ -22,6 +22,7 @@ from .constants import (
     AXIS_ACTIONS,
     AXIS_KEYS,
     BTN_ACTION_EXEC,
+    BTN_ACTION_KEY_CUSTOM,
     BTN_ACTION_LABELS,
     BTN_ACTIONS,
     COLOR_ACCENT,
@@ -42,6 +43,7 @@ from .constants import (
 )
 from .exec_dialog import ExecConfigDialog, format_cmdline
 from .helpers import NoScrollComboBox, make_card, make_slider
+from .key_combo_dialog import KeyComboDialog, format_combo, parse_combo_string
 from .widgets import AxesCard
 
 # ── DesktopPage ───────────────────────────────────────────────────────
@@ -172,9 +174,11 @@ class DesktopPage(QWidget):
         self.btn_rows_layout.setColumnMinimumWidth(4, 24)
         self.btn_rows_layout.setColumnStretch(9, 1)
         cl.addLayout(self.btn_rows_layout)
-        # bnum → {label, combo, edit_btn, remove_btn, exec_argv} for
-        # active rows only. exec_argv is the parsed argv when the row
-        # is bound to BTN_ACTION_EXEC, otherwise None.
+        # bnum → {label, combo, edit_btn, remove_btn, exec_argv,
+        # key_combo} for active rows only. exec_argv carries the
+        # parsed argv on BTN_ACTION_EXEC rows; key_combo carries the
+        # canonical combo body (e.g. "Ctrl+Shift+N") on KEY_CUSTOM
+        # rows; both are None for any other action.
         self.btn_rows = {}
         self._highlight_timers = {}
         layout.addWidget(card)
@@ -230,23 +234,36 @@ class DesktopPage(QWidget):
 
     @staticmethod
     def _action_from_value(value):
-        """Normalize a stored button-mapping value into (action_str, exec_argv).
+        """Normalize a stored button-mapping value into ``(action_str,
+        extras)`` where ``extras`` is a dict carrying per-action state
+        the dropdown can't hold inline — the exec argv or a custom
+        combo body.
 
-        Strings ("overview", "key:Ctrl+S", …) round-trip to themselves
-        with no argv. Dict values like {"type": "exec", "cmd": [...]}
-        return the ``exec`` sentinel + the argv. Anything unrecognised
-        falls back to ``none`` so a malformed entry does not crash the
-        page — the user can re-bind the row.
+        Shapes handled:
+          - ``"overview"`` / preset ``"key:Ctrl+C"``  → ``(value, {})``
+          - non-preset ``"key:Ctrl+Shift+N"``         → ``(KEY_CUSTOM, {"key_combo": "Ctrl+Shift+N"})``
+          - ``{"type": "exec", "cmd": [...]}``        → ``(EXEC,        {"exec_argv": [...]})``
+
+        Unrecognised or malformed values fall back to ``"none"`` so a
+        bad config never crashes the page.
         """
         if isinstance(value, dict):
             if value.get("type") == "exec":
                 cmd = value.get("cmd") or []
                 if isinstance(cmd, list) and all(isinstance(s, str) for s in cmd):
-                    return BTN_ACTION_EXEC, list(cmd)
-            return "none", None
+                    return BTN_ACTION_EXEC, {"exec_argv": list(cmd)}
+            return "none", {}
         if isinstance(value, str):
-            return value, None
-        return "none", None
+            # Non-preset "key:..." strings come from a previous custom
+            # binding (or a hand-edited config). Route them through
+            # the custom-combo path so the user can re-open the dialog.
+            if value.startswith("key:") and value not in BTN_ACTIONS:
+                mods, key = parse_combo_string(value[4:])
+                if key:
+                    return BTN_ACTION_KEY_CUSTOM, {"key_combo": format_combo(mods, key)}
+                return "none", {}
+            return value, {}
+        return "none", {}
 
     def _add_button_row(self, bnum, action="none"):
         """Add (or return existing) row for `bnum`. Accepts either a
@@ -259,7 +276,7 @@ class DesktopPage(QWidget):
         if not (0 <= bnum < MAX_BUTTONS):
             return None
 
-        action_str, exec_argv = self._action_from_value(action)
+        action_str, extras = self._action_from_value(action)
 
         label = QLabel(f"Button {bnum + 1}")
         label.setFixedWidth(72)
@@ -271,8 +288,7 @@ class DesktopPage(QWidget):
         combo.currentIndexChanged.connect(lambda _, b=bnum: self._on_action_changed(b))
 
         edit_btn = QPushButton("Edit…")
-        edit_btn.setToolTip("Edit the command this button runs")
-        edit_btn.clicked.connect(lambda _, b=bnum: self._edit_exec_for(b))
+        edit_btn.clicked.connect(lambda _, b=bnum: self._edit_row_data_for(b))
 
         remove_btn = QPushButton("Remove")
         remove_btn.clicked.connect(lambda _, b=bnum: self._remove_button_row(b))
@@ -282,45 +298,70 @@ class DesktopPage(QWidget):
             "combo": combo,
             "edit_btn": edit_btn,
             "remove_btn": remove_btn,
-            "exec_argv": exec_argv,
+            "exec_argv": extras.get("exec_argv"),
+            "key_combo": extras.get("key_combo"),
         }
-        self._refresh_exec_affordance(bnum)
+        self._refresh_row_affordance(bnum)
         self._update_remove_visibility(bnum)
         self._relayout_buttons()
         return self.btn_rows[bnum]
 
     def _on_action_changed(self, bnum):
-        """Combo selection changed: open the exec dialog the first time
-        an exec is picked, then forward the change emit. Switching away
-        from exec keeps any prior argv around so a quick toggle back
-        does not lose the user's work — only an explicit Cancel on the
-        dialog leaves the row in a half-configured state, which the
-        save path handles by emitting ``"none"``."""
+        """Combo selection changed: open the per-action editor dialog
+        the first time a data-carrying action (exec, custom combo) is
+        picked, then forward the change emit. Switching away keeps any
+        prior payload around so a quick toggle back does not lose the
+        user's work — only an explicit Cancel on the dialog leaves the
+        row in a half-configured state, which the save path handles by
+        emitting ``"none"``."""
         row = self.btn_rows.get(bnum)
         if row is None:
             return
         action_str = BTN_ACTIONS[row["combo"].currentIndex()]
         if action_str == BTN_ACTION_EXEC and not row.get("exec_argv"):
             self._edit_exec_for(bnum, allow_cancel_revert=True)
-        self._refresh_exec_affordance(bnum)
+        elif action_str == BTN_ACTION_KEY_CUSTOM and not row.get("key_combo"):
+            self._edit_combo_for(bnum, allow_cancel_revert=True)
+        self._refresh_row_affordance(bnum)
         self._emit_changed()
 
-    def _refresh_exec_affordance(self, bnum):
-        """Show the Edit… button only when the row is bound to exec.
-        The tooltip carries the configured cmdline so users can verify
+    def _refresh_row_affordance(self, bnum):
+        """Show the Edit… button only on rows whose action carries
+        extra editable state (exec, custom combo). The tooltip carries
+        a preview of the configured payload so users can verify
         without opening the dialog."""
         row = self.btn_rows.get(bnum)
         if row is None:
             return
         action_str = BTN_ACTIONS[row["combo"].currentIndex()]
-        is_exec = action_str == BTN_ACTION_EXEC
-        row["edit_btn"].setVisible(is_exec)
-        if is_exec:
+        if action_str == BTN_ACTION_EXEC:
+            row["edit_btn"].setVisible(True)
+            row["edit_btn"].setToolTip("Edit the command this button runs")
             argv = row.get("exec_argv") or []
             preview = format_cmdline(argv) if argv else "(not configured)"
             row["combo"].setToolTip(f"Runs: {preview}")
+        elif action_str == BTN_ACTION_KEY_CUSTOM:
+            row["edit_btn"].setVisible(True)
+            row["edit_btn"].setToolTip("Edit the key combination this button sends")
+            combo_str = row.get("key_combo") or ""
+            preview = combo_str if combo_str else "(not configured)"
+            row["combo"].setToolTip(f"Sends: {preview}")
         else:
+            row["edit_btn"].setVisible(False)
             row["combo"].setToolTip("")
+
+    def _edit_row_data_for(self, bnum):
+        """Dispatch the Edit… button to whichever dialog the row's
+        current action wants. Cancel/empty edits are tolerated — the
+        prior payload survives unchanged."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        action_str = BTN_ACTIONS[row["combo"].currentIndex()]
+        if action_str == BTN_ACTION_EXEC:
+            self._edit_exec_for(bnum)
+        elif action_str == BTN_ACTION_KEY_CUSTOM:
+            self._edit_combo_for(bnum)
 
     def _edit_exec_for(self, bnum, allow_cancel_revert=False):
         """Open the exec dialog for ``bnum``. If ``allow_cancel_revert``
@@ -335,16 +376,44 @@ class DesktopPage(QWidget):
             argv = dlg.argv()
             if argv:
                 row["exec_argv"] = argv
-                self._refresh_exec_affordance(bnum)
+                self._refresh_row_affordance(bnum)
                 self._emit_changed()
                 return
             # OK pressed but cmdline is empty — treat as cancel.
         if allow_cancel_revert and not row.get("exec_argv"):
-            none_idx = BTN_ACTIONS.index("none")
-            blocked = row["combo"].blockSignals(True)
-            row["combo"].setCurrentIndex(none_idx)
-            row["combo"].blockSignals(blocked)
-            self._refresh_exec_affordance(bnum)
+            self._revert_to_none(bnum)
+
+    def _edit_combo_for(self, bnum, allow_cancel_revert=False):
+        """Open the key-combo dialog for ``bnum``. Same cancel-revert
+        semantics as the exec editor."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        dlg = KeyComboDialog(current_combo=row.get("key_combo"), parent=self)
+        if dlg.exec():
+            combo_str = dlg.combo_string()
+            if combo_str:
+                row["key_combo"] = combo_str
+                self._refresh_row_affordance(bnum)
+                self._emit_changed()
+                return
+        if allow_cancel_revert and not row.get("key_combo"):
+            self._revert_to_none(bnum)
+
+    def _revert_to_none(self, bnum):
+        """Snap a half-configured row's combo back to ``none`` without
+        re-emitting the changed signal. Used when the per-action dialog
+        was cancelled before any payload was stored — the dropdown
+        showed a sentinel but the save path would have written ``"none"``
+        anyway, so make the UI honest."""
+        row = self.btn_rows.get(bnum)
+        if row is None:
+            return
+        none_idx = BTN_ACTIONS.index("none")
+        blocked = row["combo"].blockSignals(True)
+        row["combo"].setCurrentIndex(none_idx)
+        row["combo"].blockSignals(blocked)
+        self._refresh_row_affordance(bnum)
 
     def _is_orphan(self, bnum):
         """A row is an orphan iff its bnum is not on the connected
@@ -586,6 +655,15 @@ class DesktopPage(QWidget):
                 # silently skip — keeps the JSON honest.
                 if argv:
                     data["button_mapping"][str(bnum)] = {"type": "exec", "cmd": argv}
+                else:
+                    data["button_mapping"][str(bnum)] = "none"
+            elif action_str == BTN_ACTION_KEY_CUSTOM:
+                combo_str = row.get("key_combo") or ""
+                # Same logic as exec: a sentinel without a payload
+                # downgrades to "none" rather than writing "key:" with
+                # an empty body the daemon would silently drop.
+                if combo_str:
+                    data["button_mapping"][str(bnum)] = f"key:{combo_str}"
                 else:
                     data["button_mapping"][str(bnum)] = "none"
             else:
