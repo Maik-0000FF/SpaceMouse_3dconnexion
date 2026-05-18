@@ -1,10 +1,14 @@
-"""Dialog for adding apps to a ChipList.
+"""Dialog for managing the 3D apps list (add + remove via checkboxes).
 
 Two tabs:
-  * Known Apps — category-grouped checkboxes from APP_CATALOG
-  * Custom    — free-form WM class entry for unusual apps
+  * Known Apps — category-grouped checkboxes from APP_CATALOG. Pre-checked
+                 for apps already in the list. Unchecking removes them.
+  * Custom    — at top: existing non-catalog entries with pre-checked
+                 checkboxes (uncheck to remove). Below: free-form input
+                 for adding new custom WM class strings.
 
-A Running Windows tab is planned (KWin live query) but not yet wired up.
+``result_list()`` returns the full desired state on accept — caller
+replaces the chip list contents with that.
 """
 
 from PySide6.QtWidgets import (
@@ -25,20 +29,32 @@ from PySide6.QtWidgets import (
 from .app_catalog import APP_CATALOG, app_owns_class
 
 
-class AddAppDialog(QDialog):
-    """Pick one or more apps to add to a profile's match list.
+def _wm_in_catalog(wm_class):
+    """True if wm_class belongs to any known app in APP_CATALOG."""
+    for category in APP_CATALOG.values():
+        for classes in category.values():
+            if app_owns_class(classes, wm_class):
+                return True
+    return False
 
-    ``current_wm_classes`` is the profile's current entries — used to
-    pre-check / dim presets that are already in the list. ``selected()``
-    returns the list of WM classes to add on accept.
+
+class AddAppDialog(QDialog):
+    """Unified add+remove dialog for the 3D apps list.
+
+    ``current_wm_classes`` is the profile's current entries. Catalog
+    matches show as pre-checked enabled checkboxes; unchecking removes
+    them. Non-catalog (custom) entries appear at the top of the Custom
+    tab with their own pre-checked checkboxes. ``result_list()`` returns
+    the full desired state on accept.
     """
 
     def __init__(self, current_wm_classes, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add Application")
-        self.setMinimumSize(560, 520)
+        self.setWindowTitle("Manage 3D Apps")
+        self.setMinimumSize(560, 540)
         self._current = list(current_wm_classes)
         self._known_checkboxes = []  # list of (QCheckBox, [wm_classes])
+        self._custom_existing_checkboxes = []  # list of (QCheckBox, wm_class)
         self._custom_input = None
 
         layout = QVBoxLayout(self)
@@ -46,9 +62,12 @@ class AddAppDialog(QDialog):
         layout.setSpacing(10)
 
         intro = QLabel(
-            "Pick an application from the catalog or enter a custom WM class."
+            "Check apps to keep them in the list, uncheck to remove. "
+            "Use the Custom tab to add or remove unusual apps that aren't "
+            "in the catalog."
         )
         intro.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        intro.setWordWrap(True)
         layout.addWidget(intro)
 
         tabs = QTabWidget()
@@ -60,7 +79,7 @@ class AddAppDialog(QDialog):
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
         )
         ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        ok_btn.setText("Add Selected")
+        ok_btn.setText("Apply")
         ok_btn.setDefault(True)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -102,12 +121,8 @@ class AddAppDialog(QDialog):
                 already_listed = any(
                     app_owns_class(classes, w) for w in self._current
                 )
-                if already_listed:
-                    cb.setChecked(True)
-                    cb.setEnabled(False)
-                    cb.setToolTip("Already in this profile")
-                else:
-                    cb.setToolTip("WM classes: " + ", ".join(classes))
+                cb.setChecked(already_listed)
+                cb.setToolTip("WM classes: " + ", ".join(classes))
                 self._known_checkboxes.append((cb, classes))
                 grid.addWidget(cb, row, col)
                 col += 1
@@ -129,10 +144,31 @@ class AddAppDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # Existing custom entries (current list items not in catalog)
+        existing_custom = [w for w in self._current if not _wm_in_catalog(w)]
+        if existing_custom:
+            section = QLabel("In list (custom entries — uncheck to remove):")
+            section.setStyleSheet(
+                "color: #89b4fa; font-weight: bold; font-size: 12px;"
+            )
+            layout.addWidget(section)
+            for wm in existing_custom:
+                cb = QCheckBox(wm)
+                cb.setChecked(True)
+                cb.setToolTip(f"WM class: {wm}")
+                self._custom_existing_checkboxes.append((cb, wm))
+                layout.addWidget(cb)
+
+            divider = QFrame()
+            divider.setFrameShape(QFrame.Shape.HLine)
+            divider.setStyleSheet("color: #313244;")
+            layout.addWidget(divider)
+
         hint = QLabel(
-            "Enter a WM class string. The matcher is case-insensitive "
-            "and matches via equal, prefix or substring — so a short "
-            "canonical name usually covers all variants of an app."
+            "Add a new entry by typing a WM class. The matcher is "
+            "case-insensitive and matches via equal, prefix or substring "
+            "— so a short canonical name usually covers all variants of "
+            "an app."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #a6adc8; font-size: 12px;")
@@ -159,14 +195,14 @@ class AddAppDialog(QDialog):
 
     # ── Result accessor ───────────────────────────────────────────────
 
-    def selected(self):
-        """Return all WM class strings the user picked.
+    def result_list(self):
+        """Return the desired WM class list after applying user changes.
 
-        Filters duplicates and entries already present in ``current``.
-        Preserves catalog order, with custom entries appended at the end.
+        Caller should ``set_values`` the chip list to this list — it is
+        the complete new state, not a diff. Dedupes by lowercase.
         """
         out = []
-        seen = {c.lower() for c in self._current}
+        seen = set()
 
         def maybe_add(wc):
             if not wc:
@@ -178,9 +214,13 @@ class AddAppDialog(QDialog):
             out.append(wc)
 
         for cb, classes in self._known_checkboxes:
-            if cb.isEnabled() and cb.isChecked():
+            if cb.isChecked():
                 for c in classes:
                     maybe_add(c)
+
+        for cb, wm in self._custom_existing_checkboxes:
+            if cb.isChecked():
+                maybe_add(wm)
 
         if self._custom_input is not None:
             text = self._custom_input.text().strip()

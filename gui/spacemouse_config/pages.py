@@ -60,6 +60,31 @@ class DesktopPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
+        # ── Card 0: 3D APPS (passthrough match list) ──
+        card, cl = make_card("3D APPS — desktop settings do not apply here")
+        intro = QLabel(
+            "These apps bring their own SpaceMouse support. The desktop "
+            "settings below are NOT applied to them — the daemon stays "
+            "silent and each app handles SpaceMouse input itself via "
+            "libspnav."
+        )
+        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
+        intro.setWordWrap(True)
+        cl.addWidget(intro)
+
+        self.wm_class_chips = ChipList()
+        self.wm_class_chips.changed.connect(self._emit_changed)
+        cl.addWidget(self.wm_class_chips)
+
+        btn_row = QHBoxLayout()
+        manage_btn = QPushButton("Manage apps…")
+        manage_btn.clicked.connect(self._on_manage_apps)
+        btn_row.addWidget(manage_btn)
+        btn_row.addStretch()
+        cl.addLayout(btn_row)
+
+        layout.addWidget(card)
+
         # ── Card 1: SENSITIVITY & SPEED ──
         card, cl = make_card("SENSITIVITY & SPEED")
         fl = QFormLayout()
@@ -144,30 +169,6 @@ class DesktopPage(QWidget):
         cl.addLayout(fl)
         layout.addWidget(card)
 
-        # ── Card 6: 3D APPS (passthrough match list) ──
-        card, cl = make_card("3D APPS — SpaceMouse stays silent for these")
-        intro = QLabel(
-            "Apps with their own SpaceMouse / libspnav support (Blender, "
-            "FreeCAD, OpenSCAD, KiCad, …). When one of these is focused "
-            "the daemon goes idle so the app receives input directly."
-        )
-        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
-        intro.setWordWrap(True)
-        cl.addWidget(intro)
-
-        self.wm_class_chips = ChipList()
-        self.wm_class_chips.changed.connect(self._emit_changed)
-        cl.addWidget(self.wm_class_chips)
-
-        add_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add app…")
-        add_btn.clicked.connect(self._on_add_apps)
-        add_row.addWidget(add_btn)
-        add_row.addStretch()
-        cl.addLayout(add_row)
-
-        layout.addWidget(card)
-
         layout.addStretch()
         scroll.setWidget(content)
 
@@ -184,12 +185,13 @@ class DesktopPage(QWidget):
             return
         self.live_apply_requested.emit()
 
-    def _on_add_apps(self):
+    def _on_manage_apps(self):
         dlg = AddAppDialog(self.wm_class_chips.get_values(), parent=self)
         if dlg.exec():
-            picked = dlg.selected()
-            if picked:
-                self.wm_class_chips.add_many(picked)
+            new_list = dlg.result_list()
+            if new_list != self.wm_class_chips.get_values():
+                self.wm_class_chips.set_values(new_list)
+                self._emit_changed()
 
     def _load_state(self):
         """Populate widgets from the ``default`` profile + populate the 3D

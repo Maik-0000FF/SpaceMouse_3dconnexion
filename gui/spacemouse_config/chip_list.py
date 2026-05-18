@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
-    QPushButton,
     QSizePolicy,
     QWidget,
 )
@@ -101,36 +100,22 @@ class FlowLayout(QLayout):
 
 
 class Chip(QFrame):
-    """Removable pill: friendly app name + × button.
+    """Read-only pill: friendly app name as label.
 
-    Carries the original WM-class string so the parent can identify which
-    entry to drop on removal.
+    Carries the original WM-class string for parent containers that need
+    to identify which entry the chip represents. Removal happens via a
+    dedicated dialog, not by clicking the chip — easy misclicks would
+    silently drop apps from the passthrough list.
     """
-
-    removed = Signal(str)
 
     _STYLE = """
     Chip {
         background: #45475a;
         border-radius: 12px;
     }
-    Chip:hover {
-        background: #585b70;
-    }
     Chip QLabel {
         color: #cdd6f4;
         background: transparent;
-        padding-left: 4px;
-    }
-    Chip QPushButton {
-        color: #cdd6f4;
-        background: transparent;
-        border: none;
-        font-weight: bold;
-        font-size: 13px;
-    }
-    Chip QPushButton:hover {
-        color: #f38ba8;
     }
     """
 
@@ -141,19 +126,12 @@ class Chip(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 4, 2)
-        layout.setSpacing(2)
+        layout.setContentsMargins(10, 3, 10, 3)
+        layout.setSpacing(0)
 
         label = QLabel(display_name_for(wm_class))
         label.setToolTip(f"WM class: {wm_class}")
         layout.addWidget(label)
-
-        btn = QPushButton("×")
-        btn.setFixedSize(20, 20)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setToolTip("Remove")
-        btn.clicked.connect(lambda: self.removed.emit(self._wm_class))
-        layout.addWidget(btn)
 
     def wm_class(self):
         return self._wm_class
@@ -219,6 +197,5 @@ class ChipList(QWidget):
                     w.deleteLater()
         for wm in self._values:
             chip = Chip(wm, parent=self)
-            chip.removed.connect(self.remove)
             self._layout.addWidget(chip)
         self.updateGeometry()
