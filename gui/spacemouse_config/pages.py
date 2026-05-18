@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -16,7 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .add_app_dialog import AddAppDialog
 from .backends import BlenderConfig, FreeCADConfig
+from .chip_list import ChipList
 from .constants import (
     AXIS_ACTION_LABELS,
     AXIS_ACTIONS,
@@ -77,16 +78,29 @@ class DesktopPage(QWidget):
         cl.addLayout(prow)
         layout.addWidget(card)
 
-        # ── Card 0b: MATCH APPS ──
-        card, cl = make_card("MATCH APPS (when this profile is auto-selected)")
+        # ── Card 0b: APPS (auto-select this profile when focused) ──
+        card, cl = make_card("APPS — auto-select this profile when focused")
+        intro = QLabel(
+            "Click chips to remove, or use Add app to pick from a "
+            "catalog of known applications."
+        )
+        intro.setStyleSheet("color: #a6adc8; font-size: 12px; padding-bottom: 4px;")
+        intro.setWordWrap(True)
+        cl.addWidget(intro)
+
+        self.wm_class_chips = ChipList()
+        self.wm_class_chips.changed.connect(self._emit_changed)
+        cl.addWidget(self.wm_class_chips)
+
+        add_row = QHBoxLayout()
+        add_btn = QPushButton("+ Add app…")
+        add_btn.clicked.connect(self._on_add_apps)
+        add_row.addWidget(add_btn)
+        add_row.addStretch()
+        cl.addLayout(add_row)
+
         fl = QFormLayout()
         fl.setSpacing(8)
-        self.wm_class_edit = QLineEdit()
-        self.wm_class_edit.setPlaceholderText(
-            "comma-separated WM class names, e.g. firefox, Firefox"
-        )
-        self.wm_class_edit.textChanged.connect(self._emit_changed)
-        fl.addRow("WM Classes:", self.wm_class_edit)
         bm_row = QHBoxLayout()
         self.browser_mode_toggle = ToggleSwitch()
         self.browser_mode_toggle.stateChanged.connect(self._emit_changed)
@@ -200,6 +214,13 @@ class DesktopPage(QWidget):
             return
         self.live_apply_requested.emit()
 
+    def _on_add_apps(self):
+        dlg = AddAppDialog(self.wm_class_chips.get_values(), parent=self)
+        if dlg.exec():
+            picked = dlg.selected()
+            if picked:
+                self.wm_class_chips.add_many(picked)
+
     def _refresh_profile_combo(self):
         profiles = self._config.get("profiles", {})
         names = list(profiles.keys())
@@ -285,7 +306,7 @@ class DesktopPage(QWidget):
 
         # Match Apps + Browser Mode
         wm = data.get("match_wm_class", [])
-        self.wm_class_edit.setText(", ".join(wm) if isinstance(wm, list) else "")
+        self.wm_class_chips.set_values(wm if isinstance(wm, list) else [])
         self.browser_mode_toggle.setChecked(bool(data.get("browser_keys", False)))
 
         self.sensitivity_s.setValue(int(data.get("sensitivity", 1.0) * 10))
@@ -324,7 +345,7 @@ class DesktopPage(QWidget):
         """Return current UI state as profile data dict."""
         data = {}
         # Match Apps + Browser Mode
-        wm = [s.strip() for s in self.wm_class_edit.text().split(",") if s.strip()]
+        wm = self.wm_class_chips.get_values()
         if wm:
             data["match_wm_class"] = wm
         if self.browser_mode_toggle.isChecked():
