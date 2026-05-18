@@ -31,6 +31,7 @@ int uinput_open(void)
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTCTRL);
+	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTSHIFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTALT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTMETA);
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
