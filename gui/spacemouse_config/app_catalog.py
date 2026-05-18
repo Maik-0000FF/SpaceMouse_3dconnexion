@@ -13,7 +13,7 @@ a common app's WM class becomes known.
 APP_CATALOG = {
     "3D & CAD": {
         "Blender": ["blender"],
-        "FreeCAD": ["FreeCAD", "org.freecad.FreeCAD"],
+        "FreeCAD": ["FreeCAD"],
         "OpenSCAD": ["openscad"],
         "KiCad": ["kicad"],
         "Solvespace": ["solvespace"],
