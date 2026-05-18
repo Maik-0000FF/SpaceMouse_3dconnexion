@@ -20,19 +20,21 @@ def _wm_class_matches(wm_lower, candidate):
 def find_matching_profile(wm_class, profiles):
     """Find the profile whose match_wm_class entry best fits the window.
 
-    Whitelist semantics: a profile only fires if its ``match_wm_class``
-    explicitly lists the window's class. Anything not listed resolves to
-    the built-in ``_passthrough`` profile so the daemon stays idle —
-    apps with their own libspnav support (Blender, FreeCAD, OpenSCAD,
-    KiCad, ...) are automatically left alone unless the user opts them
-    in via a user profile.
+    Walks user profiles in dict order. The first profile whose
+    ``match_wm_class`` contains a string that equals, prefixes, or is a
+    substring of ``wm_class`` (case-insensitive) wins. ``default`` is
+    skipped during the loop and used as the catch-all fallback when
+    nothing else matches.
 
-    Matches case-insensitively. A profile's entry matches if it equals,
-    is a prefix of, or is a substring of the window's ``wm_class``.
+    The matcher returns profile names only. Passthrough behavior is a
+    daemon-side concern, auto-triggered when a profile has all axes and
+    buttons set to ``none`` — see ``src/config.c``.
     """
     wm_lower = wm_class.lower()
     for name, profile in profiles.items():
+        if name == "default":
+            continue
         for wc in profile.get("match_wm_class", []):
             if _wm_class_matches(wm_lower, wc):
                 return name
-    return PASSTHROUGH_PROFILE
+    return "default"
