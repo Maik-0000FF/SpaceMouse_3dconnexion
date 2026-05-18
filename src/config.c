@@ -216,6 +216,25 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 		}
 	}
 
+	/* Migrate legacy global invert_scroll_x/y onto axis_invert for whichever
+	 * axes are mapped to scroll_h / scroll_v. Skips axes that already have
+	 * an explicit axis_invert entry, so the new key always wins. */
+	struct json_object *old_ix = NULL, *old_iy = NULL;
+	int has_old_ix = json_object_object_get_ex(obj, "invert_scroll_x", &old_ix);
+	int has_old_iy = json_object_object_get_ex(obj, "invert_scroll_y", &old_iy);
+	if (has_old_ix || has_old_iy) {
+		int legacy_ix = has_old_ix && json_object_get_boolean(old_ix);
+		int legacy_iy = has_old_iy && json_object_get_boolean(old_iy);
+		for (int i = 0; i < 6; i++) {
+			if (c->axis_invert[i])
+				continue;
+			if (legacy_ix && c->axis_map[i] == ACT_SCROLL_H)
+				c->axis_invert[i] = 1;
+			if (legacy_iy && c->axis_map[i] == ACT_SCROLL_V)
+				c->axis_invert[i] = 1;
+		}
+	}
+
 	struct json_object *bmap;
 	if (json_object_object_get_ex(obj, "button_mapping", &bmap)) {
 		struct json_object_iterator it = json_object_iter_begin(bmap);
