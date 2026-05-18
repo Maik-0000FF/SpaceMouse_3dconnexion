@@ -240,9 +240,6 @@ class DesktopPage(QWidget):
         combo.currentIndexChanged.connect(self._emit_changed)
 
         remove_btn = QPushButton("Remove")
-        remove_btn.setToolTip(
-            "Remove this orphaned button row — the connected device does not expose this button"
-        )
         remove_btn.clicked.connect(lambda _, b=bnum: self._remove_button_row(b))
 
         self.btn_rows[bnum] = {
@@ -271,7 +268,20 @@ class DesktopPage(QWidget):
             row = self.btn_rows.get(b)
             if row is None:
                 continue
-            row["remove_btn"].setVisible(self._is_orphan(b))
+            orphan = self._is_orphan(b)
+            row["remove_btn"].setVisible(orphan)
+            if not orphan:
+                continue
+            if self._device_button_count > 0:
+                row["remove_btn"].setToolTip(
+                    "Remove this orphaned button row — the connected device "
+                    "does not expose this button"
+                )
+            else:
+                row["remove_btn"].setToolTip(
+                    "Device unknown — verify the button exists on your "
+                    "hardware before removing this row"
+                )
 
     def _remove_button_row(self, bnum):
         row = self.btn_rows.get(bnum)
