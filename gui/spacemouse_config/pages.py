@@ -191,7 +191,10 @@ class DesktopPage(QWidget):
             new_list = dlg.result_list()
             if new_list != self.wm_class_chips.get_values():
                 self.wm_class_chips.set_values(new_list)
-                self._emit_changed()
+                # The dialog's Apply already counts as confirmation — push
+                # the change to disk + daemon RELOAD immediately so the user
+                # doesn't have to click Apply twice.
+                self.live_apply_requested.emit()
 
     def _load_state(self):
         """Populate widgets from the ``default`` profile + populate the 3D
