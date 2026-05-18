@@ -5,16 +5,6 @@ tested without pulling in PySide6.
 """
 
 
-# Apps that ship their own SpaceMouse configuration in the GUI (Blender /
-# FreeCAD pages). When focused, the daemon must idle so the app's native
-# libspnav path handles input. Add a WM-class here whenever a new
-# dedicated settings page is introduced.
-MANAGED_3D_APPS = (
-    "blender",
-    "org.freecad.FreeCAD",
-    "FreeCAD",
-)
-
 PASSTHROUGH_PROFILE = "_passthrough"
 
 
@@ -30,22 +20,19 @@ def _wm_class_matches(wm_lower, candidate):
 def find_matching_profile(wm_class, profiles):
     """Find the profile whose match_wm_class entry best fits the window.
 
-    Matches case-insensitively and accepts a profile if any of its
-    ``match_wm_class`` entries equals, is a prefix of, or is a substring
-    of the window's ``wm_class``. Apps listed in ``MANAGED_3D_APPS``
-    resolve to the built-in ``_passthrough`` profile so the daemon stays
-    idle while the app's native libspnav path handles input. The
-    built-in ``default`` profile is used as a fallback when nothing
-    matches.
+    Whitelist semantics: a profile only fires if its ``match_wm_class``
+    explicitly lists the window's class. Anything not listed resolves to
+    the built-in ``_passthrough`` profile so the daemon stays idle —
+    apps with their own libspnav support (Blender, FreeCAD, OpenSCAD,
+    KiCad, ...) are automatically left alone unless the user opts them
+    in via a user profile.
+
+    Matches case-insensitively. A profile's entry matches if it equals,
+    is a prefix of, or is a substring of the window's ``wm_class``.
     """
     wm_lower = wm_class.lower()
-    for app in MANAGED_3D_APPS:
-        if _wm_class_matches(wm_lower, app):
-            return PASSTHROUGH_PROFILE
     for name, profile in profiles.items():
-        if name == "default":
-            continue
         for wc in profile.get("match_wm_class", []):
             if _wm_class_matches(wm_lower, wc):
                 return name
-    return "default"
+    return PASSTHROUGH_PROFILE
