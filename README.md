@@ -4,7 +4,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 ![version](https://img.shields.io/badge/version-0.1.0-blue)
 
-> **Under active development.** Contributions and feedback are welcome.
+> **Project status: paused.** Active development has moved to a new project, **SpaceUX**, which reworks this functionality from the ground up. This repository stays available and keeps working, but new features and fixes land in SpaceUX instead. Existing reports are noted as design input for the rewrite, so please don't expect fixes here in the meantime.
 
 Userspace control daemon and GUI for 3Dconnexion SpaceMouse devices on Linux. Sits on top of the existing driver stack (Linux evdev + spacenavd + libspnav) and turns 6DOF input into desktop actions: tilt to scroll, push/pull to zoom, twist to switch virtual desktops. Blender and FreeCAD continue to use their native 3D navigation — this project does not interfere with that path.
 
