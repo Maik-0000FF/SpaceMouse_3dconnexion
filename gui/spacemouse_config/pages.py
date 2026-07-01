@@ -1,5 +1,7 @@
 """Three settings pages: Desktop daemon profiles, FreeCAD, Blender."""
 
+import subprocess
+
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -550,7 +552,12 @@ class FreeCADPage(QWidget):
 
         # ── Card 1: FREECAD (app-specific warnings) ──
         card, cl = make_card("FREECAD")
-        if not self._fc.is_available():
+        if self._fc.is_available():
+            freecad_config_path = self._fc.path.parent
+            open_fc_config_folder_btn = QPushButton(f"Open FreeCAD config directory ({freecad_config_path})")
+            open_fc_config_folder_btn.clicked.connect(self._on_open_fc_config_folder)
+            cl.addWidget(open_fc_config_folder_btn)
+        else:
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
                 f"color: {COLOR_WARN}; background-color: {COLOR_BG_WARN}; "
@@ -683,6 +690,9 @@ class FreeCADPage(QWidget):
         orbit_values = list(FREECAD_ORBIT_STYLES.values())
         idx = orbit_values.index(orbit) if orbit in orbit_values else 0
         self.fc_orbit_combo.setCurrentIndex(idx)
+
+    def _on_open_fc_config_folder(self):
+        subprocess.run(["xdg-open", self._fc.path.parent], capture_output=True)
 
     def get_settings(self):
         """Return dict of FreeCAD settings."""
