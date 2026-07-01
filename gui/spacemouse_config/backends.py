@@ -20,17 +20,20 @@ class FreeCADConfig:
     """Read/write FreeCAD user.cfg XML for SpaceMouse settings."""
 
     _CANDIDATES = [
-        Path.home() / ".config" / "FreeCAD" / "user.cfg",
-        Path.home() / ".FreeCAD" / "user.cfg",
-        Path.home() / ".local" / "share" / "FreeCAD" / "user.cfg",
+        Path.home() / ".config" / "FreeCAD",
+        Path.home() / ".FreeCAD",
+        Path.home() / ".local" / "share" / "FreeCAD",
     ]
+    _path_list = []
 
     def __init__(self):
         self.path = None
         for c in self._CANDIDATES:
-            if c.exists():
-                self.path = c
-                break
+            # glob for subdirectories
+            self._path_list += list(c.glob("**/user.cfg"))
+
+        if self._path_list:
+            self.path = self._path_list[0]
 
     def is_available(self):
         return self.path is not None
