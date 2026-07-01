@@ -560,7 +560,7 @@ class FreeCADPage(QWidget):
             cl.addWidget(warn)
 
         self.running_warn = QLabel(
-            "FreeCAD is running \u2014 it overwrites user.cfg on exit.\n"
+            "FreeCAD is running \u2014 it will overwrite user.cfg on exit.\n"
             "Close FreeCAD before applying changes."
         )
         self.running_warn.setStyleSheet(
