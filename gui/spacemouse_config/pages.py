@@ -554,7 +554,9 @@ class FreeCADPage(QWidget):
         card, cl = make_card("FREECAD")
         if self._fc.is_available():
             freecad_config_path = self._fc.path.parent
-            open_fc_config_folder_btn = QPushButton(f"Open FreeCAD config directory ({freecad_config_path})")
+            open_fc_config_folder_btn = QPushButton(
+                f"Open FreeCAD config directory ({freecad_config_path})"
+            )
             open_fc_config_folder_btn.clicked.connect(self._on_open_fc_config_folder)
             cl.addWidget(open_fc_config_folder_btn)
         else:
