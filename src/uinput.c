@@ -137,7 +137,7 @@ void emit_key_tap(int fd, int code)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void emit_keys_press(int fd, const int *codes, int n)
+static void emit_keys_press(int fd, const int *codes, int n)
 {
 	if (fd < 0 || n <= 0)
 		return;
@@ -146,7 +146,7 @@ void emit_keys_press(int fd, const int *codes, int n)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void emit_keys_release(int fd, const int *codes, int n)
+static void emit_keys_release(int fd, const int *codes, int n)
 {
 	if (fd < 0 || n <= 0)
 		return;
@@ -157,7 +157,7 @@ void emit_keys_release(int fd, const int *codes, int n)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void emit_key_tap_held(int fd, int code)
+static void emit_key_tap_held(int fd, int code)
 {
 	if (fd < 0)
 		return;
@@ -168,7 +168,7 @@ void emit_key_tap_held(int fd, int code)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void emit_settle_after_mods(void)
+static void emit_settle_after_mods(void)
 {
 	sleep_ms(KEY_COMBO_MOD_HOLD_MS);
 }

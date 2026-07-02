@@ -23,13 +23,12 @@ TEST_BINS = \
 	tests/test_scroll_acc \
 	tests/test_kinput_state \
 	tests/test_command_socket \
-	tests/test_config_migration \
-	tests/test_sticky_combo
+	tests/test_config_migration
 
 all: $(TARGETS)
 
 DAEMON_OBJS = spacemouse-core.o config.o command_socket.o kernel_input.o uinput.o \
-              dbus_actions.o desktop_actions.o device.o sticky_combo.o
+              dbus_actions.o desktop_actions.o device.o
 
 spacemouse-core.o: spacemouse-core.c spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
@@ -46,9 +45,6 @@ kernel_input.o: kernel_input.c kernel_input.h device.h config.h
 device.o: device.c device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
-sticky_combo.o: sticky_combo.c sticky_combo.h uinput.h config.h
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
-
 uinput.o: uinput.c uinput.h spacemouse-core.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
@@ -60,7 +56,7 @@ desktop_actions.o: desktop_actions.c desktop_actions.h dbus_actions.h uinput.h s
 
 spacemouse-desktop: spacemouse-desktop.c $(DAEMON_OBJS) spacemouse-core.h config.h \
                     command_socket.h kernel_input.h uinput.h dbus_actions.h desktop_actions.h \
-                    device.h sticky_combo.h
+                    device.h
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(JSON_CFLAGS) \
 		-o $@ spacemouse-desktop.c $(DAEMON_OBJS) \
 		-lm $(DBUS_LIBS) $(JSON_LIBS) $(EXTRA_LDFLAGS)
@@ -100,15 +96,6 @@ tests/test_config_migration: tests/test_config_migration.c config.o spacemouse-c
 		config.o spacemouse-core.o \
 		-lm $(JSON_LIBS) $(EXTRA_LDFLAGS)
 
-# Specific override: exercises sticky_combo.c which emits via the
-# uinput helpers; the test uses a pipe fd as the target so we can
-# read back the event stream and assert state transitions.
-tests/test_sticky_combo: tests/test_sticky_combo.c sticky_combo.o uinput.o spacemouse-core.o \
-                          sticky_combo.h uinput.h config.h
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -I. -o $@ $< \
-		sticky_combo.o uinput.o spacemouse-core.o \
-		-lm $(EXTRA_LDFLAGS)
-
 test: $(TEST_BINS)
 	@fail=0; \
 	for t in $(TEST_BINS); do \
@@ -127,7 +114,7 @@ test: $(TEST_BINS)
 # is a single file and clang-tidy is fine with command-line -I args.
 lint-c:
 	@CFLAGS_TIDY="$$(pkg-config --cflags dbus-1) $$(pkg-config --cflags json-c) -I. -std=gnu11"; \
-	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c config.c command_socket.c kernel_input.c uinput.c dbus_actions.c desktop_actions.c device.c sticky_combo.c -- $$CFLAGS_TIDY; \
+	clang-tidy --quiet spacemouse-desktop.c spacemouse-core.c config.c command_socket.c kernel_input.c uinput.c dbus_actions.c desktop_actions.c device.c -- $$CFLAGS_TIDY; \
 	clang-tidy --quiet tests/test_*.c -- -I. -std=gnu11
 
 # clang-format check: fail if any source needs reformatting. Counterpart
@@ -137,11 +124,9 @@ C_SOURCES = spacemouse-desktop.c spacemouse-core.c spacemouse-core.h config.c co
             uinput.c uinput.h dbus_actions.c dbus_actions.h \
             desktop_actions.c desktop_actions.h \
             device.c device.h \
-            sticky_combo.c sticky_combo.h \
             tests/test_curve.c tests/test_key_lookup.c tests/test_de_detect.c \
             tests/test_scroll_acc.c tests/test_kinput_state.c \
-            tests/test_command_socket.c tests/test_config_migration.c \
-            tests/test_sticky_combo.c
+            tests/test_command_socket.c tests/test_config_migration.c
 
 format-check:
 	clang-format --dry-run --Werror $(C_SOURCES)
