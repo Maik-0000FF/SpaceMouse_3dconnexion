@@ -24,10 +24,11 @@ class FreeCADConfig:
         Path.home() / ".FreeCAD",
         Path.home() / ".local" / "share" / "FreeCAD",
     ]
+    path = None
+    _prev_path_index = 0  # so we can revert if the user cancels
     _path_list = []
 
     def __init__(self):
-        self.path = None
         for c in self._CANDIDATES:
             # glob for subdirectories
             self._path_list += list(c.glob("**/user.cfg"))

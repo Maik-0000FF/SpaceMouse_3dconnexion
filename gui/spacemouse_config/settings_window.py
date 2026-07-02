@@ -148,6 +148,8 @@ class SettingsWindow(QMainWindow):
         self.freecad_page = FreeCADPage()
         self.freecad_page.changed.connect(self._mark_dirty)
         self.freecad_page.changed.connect(self._sync_deadzones)
+        self.freecad_page.unchanged.connect(self._mark_clean)
+        self.freecad_page.applied.connect(self._apply)
         self.stack.addWidget(self.freecad_page)
 
         self.blender_page = BlenderPage()
@@ -211,6 +213,10 @@ class SettingsWindow(QMainWindow):
         self._dirty = True
         self.setWindowTitle("SpaceMouse Control *")
 
+    def _mark_clean(self):
+        self._dirty = False
+        self.setWindowTitle("SpaceMouse Control")
+
     def _save_desktop(self):
         """Persist desktop-page widget state + autostart on every change."""
         config = self.desktop_page.get_all_config()
@@ -252,6 +258,7 @@ class SettingsWindow(QMainWindow):
                 )
                 return
             if self.freecad_page.apply_settings():
+                self._mark_clean()
                 QMessageBox.information(
                     self,
                     "Applied",
@@ -263,12 +270,10 @@ class SettingsWindow(QMainWindow):
 
         elif page_idx == 2:
             self.blender_page.apply_settings()
+            self._mark_clean()
             QMessageBox.information(
                 self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
             )
-
-        self._dirty = False
-        self.setWindowTitle("SpaceMouse Control")
 
     def _update_status(self):
         # Two synchronous daemon IPCs per tick (STATUS + DEVICE), both on

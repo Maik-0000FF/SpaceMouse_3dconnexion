@@ -529,6 +529,9 @@ class FreeCADPage(QWidget):
     """FreeCAD SpaceMouse settings editor."""
 
     changed = Signal()
+    unchanged = Signal()
+    applied = Signal()
+    _dirty = False
 
     _FC_AXIS_KEYS = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
 
@@ -550,13 +553,15 @@ class FreeCADPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
-        # ── Card 1: FREECAD (app-specific warnings) ──
+        # ── Card 1: FREECAD (config directories and app-specific warnings) ──
         card, cl = make_card("FREECAD")
         if self._fc.is_available():
-            freecad_config_path = self._fc.path.parent
-            open_fc_config_folder_btn = QPushButton(
-                f"Open FreeCAD config directory ({freecad_config_path})"
-            )
+            self.fc_config_combo = NoScrollComboBox()
+            self.fc_config_combo.addItems([str(p) for p in self._fc._path_list])
+            self.fc_config_combo.currentIndexChanged.connect(self._on_change_fc_config)
+            cl.addWidget(self.fc_config_combo)
+
+            open_fc_config_folder_btn = QPushButton("Open containing folder")
             open_fc_config_folder_btn.clicked.connect(self._on_open_fc_config_folder)
             cl.addWidget(open_fc_config_folder_btn)
         else:
@@ -662,6 +667,15 @@ class FreeCADPage(QWidget):
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
+            self._dirty = True
+
+    def _emit_unchanged(self):
+        self.unchanged.emit()
+        self._dirty = False
+
+    def _emit_applied(self):
+        self.applied.emit()
+        self._dirty = False
 
     def _check_running(self):
         self.running_warn.setVisible(self._fc.is_running())
@@ -693,6 +707,46 @@ class FreeCADPage(QWidget):
         idx = orbit_values.index(orbit) if orbit in orbit_values else 0
         self.fc_orbit_combo.setCurrentIndex(idx)
 
+    def _on_change_fc_config(self):
+        if self._dirty:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Unsaved Changes")
+            msg.setText("You have unsaved changes.")
+            msg.setInformativeText("Do you want to save before loading another config?")
+            msg.setStandardButtons(
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel
+            )
+            msg.setDefaultButton(QMessageBox.StandardButton.Save)
+            msg.button(QMessageBox.StandardButton.Save).setText("Save")
+            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
+            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
+            result = msg.exec()
+            if result == QMessageBox.StandardButton.Save:
+                applied = self.apply_settings()
+                if applied:
+                    self._emit_applied()
+                else:
+                    # stay on this config path (revert previously selected path)
+                    self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+                    return
+            elif result == QMessageBox.StandardButton.Discard:
+                self._emit_unchanged()
+            elif result == QMessageBox.StandardButton.Cancel:
+                # stay on this config path (revert previously selected path)
+                self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+                return
+
+        new_index = self.fc_config_combo.currentIndex()
+        self._fc.path = self._fc._path_list[new_index]
+        self._fc._prev_path_index = new_index
+
+        # prevent changed signal from being emitted when loading the new config
+        self._building = True
+        self._load_settings()
+        self._building = False
+
     def _on_open_fc_config_folder(self):
         subprocess.run(["xdg-open", self._fc.path.parent], capture_output=True)
 
@@ -721,7 +775,13 @@ class FreeCADPage(QWidget):
         """Write settings to FreeCAD user.cfg."""
         if not self._fc.is_available():
             return False
-        return self._fc.write(self.get_settings())
+
+        applied = self._fc.write(self.get_settings())
+        if applied:
+            self._dirty = False
+            self._emit_unchanged()
+
+        return applied
 
 
 # ── BlenderPage ───────────────────────────────────────────────────────
