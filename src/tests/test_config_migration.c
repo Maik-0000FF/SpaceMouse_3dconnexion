@@ -4,7 +4,8 @@
  *   - "key:F" plain-key parsing (back-compat with pre-combo configs)
  *   - {"type":"exec","cmd":[...]} object-form action
  *   - graceful failure on malformed combos / unknown modifiers
- *   - reload doesn't leak per-button heap state (exec argv) */
+ *   - reload doesn't leak per-button heap state (exec argv)
+ *   - derived profiles deep-copy inherited exec argv (no alias/double-free) */
 
 #include "config.h"
 
@@ -326,6 +327,78 @@ int main(void)
 		assert(p->cfg.btn_exec_argv[0] == NULL);
 		unlink(path1);
 		unlink(path2);
+		profiles_free_all();
+	}
+
+	/* Case 12 — a derived profile that inherits an exec-bound button from
+	 * default must own a *separate* argv copy, not alias default's. Before
+	 * the deep-copy fix, parse_profile_obj's memcpy left both profiles
+	 * pointing at the same heap block, so profiles_free_all double-freed
+	 * it. The distinct-pointer assertion pins the fix deterministically;
+	 * ASan in CI would also flag the double free on the free below. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [\"true\"] }\n"
+				  "      }\n"
+				  "    },\n"
+				  "    \"app\": { \"match_wm_class\": [\"FreeCAD\"] }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *def = find_profile("default");
+		const struct profile *app = find_profile("app");
+		assert(def && app);
+		/* Both bind button 0 to exec (app inherits it from default). */
+		assert(def->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(app->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(def->cfg.btn_exec_argv[0] != NULL);
+		assert(app->cfg.btn_exec_argv[0] != NULL);
+		/* Same content ... */
+		assert(strcmp(app->cfg.btn_exec_argv[0][0], "true") == 0);
+		/* ... but distinct allocations (deep copy, not an alias). */
+		assert(app->cfg.btn_exec_argv[0] != def->cfg.btn_exec_argv[0]);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 13 — a derived profile that *overrides* the inherited exec
+	 * button (here to "none") must free only its own copy and leave
+	 * default's argv intact. Before the fix, the override's btn_slot_reset
+	 * freed the aliased block out from under default (use-after-free on the
+	 * next press, double free on shutdown). */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [\"true\"] }\n"
+				  "      }\n"
+				  "    },\n"
+				  "    \"app\": {\n"
+				  "      \"button_mapping\": { \"0\": \"none\" },\n"
+				  "      \"match_wm_class\": [\"FreeCAD\"]\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *def = find_profile("default");
+		const struct profile *app = find_profile("app");
+		assert(def && app);
+		/* default keeps its exec binding + a valid argv ... */
+		assert(def->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(def->cfg.btn_exec_argv[0] != NULL);
+		assert(strcmp(def->cfg.btn_exec_argv[0][0], "true") == 0);
+		/* ... while app dropped it to NONE with no owned argv. */
+		assert(app->cfg.btn_map[0] == BTNACT_NONE);
+		assert(app->cfg.btn_exec_argv[0] == NULL);
+		unlink(path);
 		profiles_free_all();
 	}
 

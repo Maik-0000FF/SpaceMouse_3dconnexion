@@ -124,6 +124,30 @@ static char **parse_exec_argv(struct json_object *arr)
 	return argv;
 }
 
+/* Deep-copy a NULL-terminated argv array. Returns NULL on NULL input
+ * or allocation failure. Caller owns the result and frees it with
+ * btn_exec_free. */
+static char **btn_exec_dup(char *const *argv)
+{
+	if (!argv)
+		return NULL;
+	int n = 0;
+	while (argv[n])
+		n++;
+	char **copy = (char **)calloc((size_t)n + 1, sizeof(char *));
+	if (!copy)
+		return NULL;
+	for (int i = 0; i < n; i++) {
+		copy[i] = strdup(argv[i]);
+		if (!copy[i]) {
+			btn_exec_free(copy);
+			return NULL;
+		}
+	}
+	copy[n] = NULL;
+	return copy;
+}
+
 /* ── Profile table (definitions for the externs in config.h) ────────── */
 
 struct profile g_profiles[MAX_PROFILES];
@@ -335,10 +359,22 @@ void profiles_free_all(void)
 static void parse_profile_obj(struct json_object *obj, struct profile *p,
 			      const struct config *defaults)
 {
-	if (defaults)
+	if (defaults) {
 		memcpy(&p->cfg, defaults, sizeof(p->cfg));
-	else
+		/* The flat copy above aliased the owning btn_exec_argv pointers
+		 * from the default profile. Give this profile its own deep
+		 * copies so freeing (or re-binding) one profile never
+		 * double-frees or dangles another profile's exec argv. */
+		for (int i = 0; i < MAX_BUTTONS; i++) {
+			if (!p->cfg.btn_exec_argv[i])
+				continue;
+			p->cfg.btn_exec_argv[i] = btn_exec_dup(p->cfg.btn_exec_argv[i]);
+			if (!p->cfg.btn_exec_argv[i])
+				p->cfg.btn_map[i] = BTNACT_NONE;
+		}
+	} else {
 		config_defaults(&p->cfg);
+	}
 
 	struct json_object *val;
 	struct config *c = &p->cfg;
