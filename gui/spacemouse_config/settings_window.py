@@ -15,7 +15,12 @@ from PySide6.QtWidgets import (
 
 from .backends import FreeCADConfig
 from .constants import COLOR_ACCENT, COLOR_TEXT_MUTED
-from .helpers import create_tray_icon_pixmap, query_device_info, send_daemon_cmd
+from .helpers import (
+    create_tray_icon_pixmap,
+    make_save_discard_cancel_box,
+    query_device_info,
+    send_daemon_cmd,
+)
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 
@@ -352,19 +357,12 @@ class SettingsWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self._dirty:
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Unsaved Changes")
-            msg.setText("You have unsaved changes.")
-            msg.setInformativeText("Do you want to save before closing?")
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel
+            msg = make_save_discard_cancel_box(
+                self=self,
+                windowTitle="Unsaved Changes",
+                text="You have unsaved changes.",
+                informativeText="Do you want to save before closing?",
             )
-            msg.setDefaultButton(QMessageBox.StandardButton.Save)
-            msg.button(QMessageBox.StandardButton.Save).setText("Save")
-            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
-            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
                 self._apply()

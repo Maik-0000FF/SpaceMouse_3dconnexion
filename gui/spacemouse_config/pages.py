@@ -41,7 +41,7 @@ from .constants import (
     FREECAD_ORBIT_STYLES,
     MAX_BUTTONS,
 )
-from .helpers import NoScrollComboBox, make_card, make_slider
+from .helpers import NoScrollComboBox, make_card, make_save_discard_cancel_box, make_slider
 from .widgets import AxesCard
 
 # ── DesktopPage ───────────────────────────────────────────────────────
@@ -709,19 +709,12 @@ class FreeCADPage(QWidget):
 
     def _on_change_fc_config(self):
         if self._dirty:
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Unsaved Changes")
-            msg.setText("You have unsaved changes.")
-            msg.setInformativeText("Do you want to save before loading another config?")
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel
+            msg = make_save_discard_cancel_box(
+                self=self,
+                windowTitle="Unsaved Changes",
+                text="You have unsaved changes.",
+                informativeText="Do you want to save before loading another config?",
             )
-            msg.setDefaultButton(QMessageBox.StandardButton.Save)
-            msg.button(QMessageBox.StandardButton.Save).setText("Save")
-            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
-            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
                 applied = self.apply_settings()
