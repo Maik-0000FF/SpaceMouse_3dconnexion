@@ -38,7 +38,9 @@ class FreeCADConfig:
     @staticmethod
     def is_running():
         try:
-            result = subprocess.run(["pgrep", "-x", "FreeCAD"], capture_output=True, timeout=2)
+            result = subprocess.run(
+                ["pgrep", "-x", "FreeCAD|freecad"], capture_output=True, timeout=2
+            )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
