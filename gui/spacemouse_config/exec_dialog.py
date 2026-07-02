@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .cmdline import format_cmdline, parse_cmdline, parse_xdg_exec
+from .cmdline import format_cmdline, parse_cmdline, parse_xdg_exec, split_cmdline
 from .constants import COLOR_ERROR, COLOR_TEXT_DIM, COLOR_TEXT_MUTED
 from .helpers import NoScrollComboBox
 from .installed_apps import group_by_category, scan_installed_apps
@@ -100,8 +100,11 @@ class ExecConfigDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
+        # Keep a handle on OK so the preview can gate it: no valid argv,
+        # no confirming an empty or malformed command line.
+        self.ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
 
-        self._refresh_preview(self.cmdline_edit.text())
+        self._refresh_preview()
 
     def _populate_apps(self):
         """Fill the picker combo with installed XDG apps, grouped by category.
@@ -130,10 +133,27 @@ class ExecConfigDialog(QDialog):
             return
         self.cmdline_edit.setText(format_cmdline(argv))
 
-    def _refresh_preview(self, text):
-        argv = parse_cmdline(text)
+    def _validate(self):
+        """Return ``(argv, error)``. ``argv`` is ``None`` when the command
+        is empty or has malformed quoting; ``error`` is a short reason to
+        show in the preview."""
+        text = self.cmdline_edit.text().strip()
+        if not text:
+            return None, "(empty command)"
+        try:
+            argv = split_cmdline(text)
+        except ValueError:
+            return None, "Unbalanced quotes, check your \" and '"
         if not argv:
-            self.preview_label.setText("(empty command)")
+            return None, "(empty command)"
+        return argv, None
+
+    def _refresh_preview(self, *_):
+        argv, error = self._validate()
+        if self.ok_button is not None:
+            self.ok_button.setEnabled(argv is not None)
+        if argv is None:
+            self.preview_label.setText(error)
             self.preview_label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: 11px;")
             return
         lines = [f"argv[{i}] = {a}" for i, a in enumerate(argv)]

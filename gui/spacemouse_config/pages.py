@@ -300,6 +300,9 @@ class DesktopPage(QWidget):
             "remove_btn": remove_btn,
             "exec_argv": extras.get("exec_argv"),
             "key_combo": extras.get("key_combo"),
+            # Last committed action index, the target a cancelled per-action
+            # dialog reverts to (see _on_action_changed / _revert_to).
+            "action_idx": idx,
         }
         self._refresh_row_affordance(bnum)
         self._update_remove_visibility(bnum)
@@ -307,21 +310,27 @@ class DesktopPage(QWidget):
         return self.btn_rows[bnum]
 
     def _on_action_changed(self, bnum):
-        """Combo selection changed: open the per-action editor dialog
-        the first time a data-carrying action (exec, custom combo) is
-        picked, then forward the change emit. Switching away keeps any
-        prior payload around so a quick toggle back does not lose the
-        user's work — only an explicit Cancel on the dialog leaves the
-        row in a half-configured state, which the save path handles by
-        emitting ``"none"``."""
+        """Combo selection changed: open the per-action editor dialog the
+        first time a data-carrying action (exec, custom combo) is picked.
+        If the user cancels that dialog without configuring a payload, the
+        row snaps back to whatever action it held before, so a stray
+        selection never silently drops an existing binding. Any prior
+        payload is kept around so toggling away and back does not lose the
+        user's work."""
         row = self.btn_rows.get(bnum)
         if row is None:
             return
+        prev_idx = row.get("action_idx", row["combo"].currentIndex())
         action_str = BTN_ACTIONS[row["combo"].currentIndex()]
+        reverted = False
         if action_str == BTN_ACTION_EXEC and not row.get("exec_argv"):
-            self._edit_exec_for(bnum, allow_cancel_revert=True)
+            reverted = self._edit_exec_for(bnum, revert_to=prev_idx)
         elif action_str == BTN_ACTION_KEY_CUSTOM and not row.get("key_combo"):
-            self._edit_combo_for(bnum, allow_cancel_revert=True)
+            reverted = self._edit_combo_for(bnum, revert_to=prev_idx)
+        if reverted:
+            # State returned to the previous action, nothing changed.
+            return
+        row["action_idx"] = row["combo"].currentIndex()
         self._refresh_row_affordance(bnum)
         self._emit_changed()
 
@@ -363,14 +372,14 @@ class DesktopPage(QWidget):
         elif action_str == BTN_ACTION_KEY_CUSTOM:
             self._edit_combo_for(bnum)
 
-    def _edit_exec_for(self, bnum, allow_cancel_revert=False):
-        """Open the exec dialog for ``bnum``. If ``allow_cancel_revert``
-        is True and the user cancels with no argv configured, revert
-        the row's combo back to ``none`` so the saved profile doesn't
-        carry a half-bound exec."""
+    def _edit_exec_for(self, bnum, revert_to=None):
+        """Open the exec dialog for ``bnum``. Returns True if the row was
+        reverted (user backed out without configuring a command and
+        ``revert_to`` was given), False otherwise. ``revert_to`` is the
+        action index to restore on cancel."""
         row = self.btn_rows.get(bnum)
         if row is None:
-            return
+            return False
         dlg = ExecConfigDialog(current_argv=row.get("exec_argv"), parent=self)
         if dlg.exec():
             argv = dlg.argv()
@@ -378,17 +387,19 @@ class DesktopPage(QWidget):
                 row["exec_argv"] = argv
                 self._refresh_row_affordance(bnum)
                 self._emit_changed()
-                return
+                return False
             # OK pressed but cmdline is empty — treat as cancel.
-        if allow_cancel_revert and not row.get("exec_argv"):
-            self._revert_to_none(bnum)
+        if revert_to is not None and not row.get("exec_argv"):
+            self._revert_to(bnum, revert_to)
+            return True
+        return False
 
-    def _edit_combo_for(self, bnum, allow_cancel_revert=False):
-        """Open the key-combo dialog for ``bnum``. Same cancel-revert
-        semantics as the exec editor."""
+    def _edit_combo_for(self, bnum, revert_to=None):
+        """Open the key-combo dialog for ``bnum``. Same revert semantics
+        as :meth:`_edit_exec_for`."""
         row = self.btn_rows.get(bnum)
         if row is None:
-            return
+            return False
         dlg = KeyComboDialog(current_combo=row.get("key_combo"), parent=self)
         if dlg.exec():
             combo_str = dlg.combo_string()
@@ -396,23 +407,25 @@ class DesktopPage(QWidget):
                 row["key_combo"] = combo_str
                 self._refresh_row_affordance(bnum)
                 self._emit_changed()
-                return
-        if allow_cancel_revert and not row.get("key_combo"):
-            self._revert_to_none(bnum)
+                return False
+        if revert_to is not None and not row.get("key_combo"):
+            self._revert_to(bnum, revert_to)
+            return True
+        return False
 
-    def _revert_to_none(self, bnum):
-        """Snap a half-configured row's combo back to ``none`` without
-        re-emitting the changed signal. Used when the per-action dialog
-        was cancelled before any payload was stored — the dropdown
-        showed a sentinel but the save path would have written ``"none"``
-        anyway, so make the UI honest."""
+    def _revert_to(self, bnum, action_idx):
+        """Snap a row's action combo back to ``action_idx`` without
+        re-emitting the changed signal. Used when a per-action dialog was
+        cancelled before any payload was stored, so the dropdown returns
+        to the action the row held before instead of stranding a sentinel
+        selection the save path would write as ``"none"``."""
         row = self.btn_rows.get(bnum)
         if row is None:
             return
-        none_idx = BTN_ACTIONS.index("none")
         blocked = row["combo"].blockSignals(True)
-        row["combo"].setCurrentIndex(none_idx)
+        row["combo"].setCurrentIndex(action_idx)
         row["combo"].blockSignals(blocked)
+        row["action_idx"] = action_idx
         self._refresh_row_affordance(bnum)
 
     def _is_orphan(self, bnum):

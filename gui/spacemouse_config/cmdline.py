@@ -15,17 +15,27 @@ import shlex
 _XDG_FIELD_CODES = {"%f", "%F", "%u", "%U", "%d", "%D", "%n", "%N", "%i", "%c", "%k", "%v", "%m"}
 
 
+def split_cmdline(text):
+    """shlex-split a command line into argv, raising ``ValueError`` on
+    malformed quoting.
+
+    :func:`parse_cmdline` wraps this and swallows the error to return an
+    empty list; callers that need to *report* the failure (e.g. the exec
+    dialog, to keep its OK button disabled) call this directly.
+    """
+    return shlex.split((text or "").strip())
+
+
 def parse_cmdline(text):
     """shlex-split a user-typed command line into argv.
 
     Returns the argv list, or an empty list on parse failure. The
     return is what the daemon will receive in JSON as ``cmd``.
     """
-    text = (text or "").strip()
-    if not text:
+    if not (text or "").strip():
         return []
     try:
-        return shlex.split(text)
+        return split_cmdline(text)
     except ValueError:
         return []
 

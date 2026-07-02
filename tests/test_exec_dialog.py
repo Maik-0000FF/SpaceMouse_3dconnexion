@@ -5,6 +5,7 @@ functions are the part where the bugs hide and they live in the
 Qt-free cmdline module so the pytest job runs without PySide6.
 """
 
+import pytest
 from spacemouse_config import cmdline
 
 
@@ -35,6 +36,18 @@ def test_parse_cmdline_unbalanced_quotes_returns_empty():
     # shlex raises ValueError on unbalanced quoting — the dialog
     # surfaces that as "(empty command)" rather than crashing.
     assert cmdline.parse_cmdline('firefox "unterminated') == []
+
+
+def test_split_cmdline_raises_on_unbalanced_quotes():
+    # split_cmdline is the raising variant the exec dialog uses to tell
+    # "empty" apart from "malformed" so it can keep OK disabled and show
+    # a distinct error instead of silently swallowing the mistake.
+    with pytest.raises(ValueError):
+        cmdline.split_cmdline('firefox "unterminated')
+
+
+def test_split_cmdline_returns_argv_on_valid_input():
+    assert cmdline.split_cmdline("firefox --new-window") == ["firefox", "--new-window"]
 
 
 def test_parse_xdg_exec_strips_field_codes():

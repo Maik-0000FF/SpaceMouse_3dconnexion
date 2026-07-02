@@ -30,6 +30,11 @@ from .key_combo import format_combo, parse_combo_string
 # `from .key_combo_dialog import format_combo, parse_combo_string`.
 __all__ = ["KeyComboDialog", "format_combo", "parse_combo_string"]
 
+# Placeholder shown at index 0 of the end-key combobox. Selecting it
+# means "no end key" so a freshly opened dialog does not silently bind
+# the first real key (Space) when the user clicks OK without choosing.
+_NO_KEY_LABEL = "(no key)"
+
 
 class KeyComboDialog(QDialog):
     """Edit the key combo bound to one button row.
@@ -75,9 +80,12 @@ class KeyComboDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(8)
         self.key_combo = NoScrollComboBox()
+        self.key_combo.addItem(_NO_KEY_LABEL)
         self.key_combo.addItems(COMBO_KEY_NAMES)
         if key in COMBO_KEY_NAMES:
-            self.key_combo.setCurrentIndex(COMBO_KEY_NAMES.index(key))
+            self.key_combo.setCurrentIndex(self.key_combo.findText(key))
+        # else: leave the placeholder selected (index 0) so an untouched
+        # dialog yields an empty combo string rather than binding Space.
         self.key_combo.currentIndexChanged.connect(self._refresh_preview)
         form.addRow("Key:", self.key_combo)
         outer.addLayout(form)
@@ -98,8 +106,14 @@ class KeyComboDialog(QDialog):
     def _selected_mods(self):
         return [name for name in COMBO_MODIFIER_NAMES if self.mod_checks[name].isChecked()]
 
+    def _selected_key(self):
+        """Return the chosen end key, or "" when the no-key placeholder
+        is selected."""
+        text = self.key_combo.currentText()
+        return "" if text == _NO_KEY_LABEL else text
+
     def _refresh_preview(self, *_):
-        key = self.key_combo.currentText()
+        key = self._selected_key()
         text = format_combo(self._selected_mods(), key)
         if text:
             self.preview_label.setText(f"Preview: {text}")
@@ -111,4 +125,4 @@ class KeyComboDialog(QDialog):
     def combo_string(self):
         """Return the canonical combo body (no ``key:`` prefix), or
         empty string if the user didn't pick a valid end key."""
-        return format_combo(self._selected_mods(), self.key_combo.currentText())
+        return format_combo(self._selected_mods(), self._selected_key())
