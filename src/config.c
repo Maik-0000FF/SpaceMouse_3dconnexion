@@ -109,7 +109,16 @@ static char **parse_exec_argv(struct json_object *arr)
 	if (!argv)
 		return NULL;
 	for (int i = 0; i < n; i++) {
-		const char *s = json_object_get_string(json_object_array_get_idx(arr, i));
+		struct json_object *el = json_object_array_get_idx(arr, i);
+		/* Reject non-string elements outright instead of letting
+		 * json_object_get_string() coerce numbers/bools. A config
+		 * like "cmd": [123, true] should fall back to NONE, not
+		 * launch argv ["123", "true"]. */
+		if (!el || json_object_get_type(el) != json_type_string) {
+			btn_exec_free(argv);
+			return NULL;
+		}
+		const char *s = json_object_get_string(el);
 		if (!s) {
 			btn_exec_free(argv);
 			return NULL;

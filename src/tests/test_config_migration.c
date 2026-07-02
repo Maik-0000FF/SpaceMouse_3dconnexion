@@ -5,7 +5,8 @@
  *   - {"type":"exec","cmd":[...]} object-form action
  *   - graceful failure on malformed combos / unknown modifiers
  *   - reload doesn't leak per-button heap state (exec argv)
- *   - derived profiles deep-copy inherited exec argv (no alias/double-free) */
+ *   - derived profiles deep-copy inherited exec argv (no alias/double-free)
+ *   - exec cmd with a non-string element is rejected, not coerced */
 
 #include "config.h"
 
@@ -398,6 +399,30 @@ int main(void)
 		/* ... while app dropped it to NONE with no owned argv. */
 		assert(app->cfg.btn_map[0] == BTNACT_NONE);
 		assert(app->cfg.btn_exec_argv[0] == NULL);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 14 — exec cmd containing a non-string element is rejected
+	 * rather than coerced. {"cmd": [123, true]} must leave the slot at
+	 * NONE instead of launching argv ["123", "true"]. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [123, true] }\n"
+				  "      }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_NONE);
+		assert(p->cfg.btn_exec_argv[0] == NULL);
 		unlink(path);
 		profiles_free_all();
 	}
