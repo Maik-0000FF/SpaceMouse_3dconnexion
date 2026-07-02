@@ -33,7 +33,10 @@ void desktop_action_workspace(int direction)
 		break;
 	}
 	case DE_HYPRLAND: {
-		char *argv[] = {"hyprctl", "dispatch", "workspace", direction > 0 ? "+1" : "-1",
+		/* "e+1"/"e-1" cycles through existing workspaces; plain "+1"/"-1"
+		 * walks raw numeric ids and skips gaps, breaking switching on
+		 * setups with named or non-contiguous workspaces. */
+		char *argv[] = {"hyprctl", "dispatch", "workspace", direction > 0 ? "e+1" : "e-1",
 				NULL};
 		spawn_command(argv);
 		break;
