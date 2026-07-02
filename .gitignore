@@ -11,6 +11,7 @@ src/tests/test_scroll_acc
 src/tests/test_kinput_state
 src/tests/test_command_socket
 src/tests/test_config_migration
+src/tests/test_sticky_combo
 
 # pytest cache
 .pytest_cache/

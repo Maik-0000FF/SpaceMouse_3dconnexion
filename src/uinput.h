@@ -30,11 +30,13 @@ void emit_event(int fd, int type, int code, int val);
  * emit the high-resolution variant (REL_*_HI_RES at 120-tick scale). */
 void emit_scroll(int fd, int dx, int dy);
 
-/* Tap a single key (down → up + SYN). */
+/* Tap a single key (down → up + SYN), no hold. Used for media keys
+ * and other non-modal taps where timing doesn't matter. */
 void emit_key_tap(int fd, int code);
 
 /* Press n_mods modifiers, tap key, release modifiers. n_mods may be 0
- * — degenerates to emit_key_tap. */
+ * (degenerates to a single held key tap). One-shot: drops modifiers
+ * before returning, so nothing stays held between button presses. */
 void emit_key_combo(int fd, const int *mods, int n_mods, int key);
 
 /* Ctrl+wheel scroll, used by browsers/3D apps to mean "zoom". */
