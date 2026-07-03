@@ -31,8 +31,8 @@ class FreeCADConfig:
         self._path_list = []
 
         for c in self._CANDIDATES:
-            # glob for subdirectories
-            self._path_list += list(c.glob("**/user.cfg"))
+            # sort subdirectories for each candidate by depth, then alphabetically
+            self._path_list += sorted(c.glob("**/user.cfg"), key=lambda p: (len(p.parts), p))
 
         if self._path_list:
             self.path = self._path_list[0]
