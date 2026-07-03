@@ -707,6 +707,13 @@ class FreeCADPage(QWidget):
         idx = orbit_values.index(orbit) if orbit in orbit_values else 0
         self.fc_orbit_combo.setCurrentIndex(idx)
 
+    def _revert_previously_selected_path(self):
+        # stay on this config path (revert previously selected path)
+        self.blockSignals(True)
+        self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+        self.blockSignals(False)
+
+
     def _on_change_fc_config(self):
         if self._dirty:
             msg = make_save_discard_cancel_box(
@@ -721,14 +728,12 @@ class FreeCADPage(QWidget):
                 if applied:
                     self._emit_applied()
                 else:
-                    # stay on this config path (revert previously selected path)
-                    self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+                    self._revert_previously_selected_path()
                     return
             elif result == QMessageBox.StandardButton.Discard:
                 self._emit_unchanged()
             elif result == QMessageBox.StandardButton.Cancel:
-                # stay on this config path (revert previously selected path)
-                self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+                self._revert_previously_selected_path()
                 return
 
         new_index = self.fc_config_combo.currentIndex()
