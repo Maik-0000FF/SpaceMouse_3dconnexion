@@ -209,8 +209,8 @@ void emit_key_combo_instant(int fd, const int *mods, int n_mods, int key)
 	/* Same chord shape as emit_key_combo but without the settle/hold
 	 * delays. Compositor global shortcuts (workspace switch, show-desktop)
 	 * fire on the key event and don't need the modifier-settle timing that
-	 * Alt+Tab's switcher requires, so emit the whole chord in one batch and
-	 * keep the single-threaded input loop responsive. */
+	 * Alt+Tab's switcher requires, so drop the delays and keep the
+	 * single-threaded input loop responsive. */
 	if (n_mods > 0)
 		emit_keys_press(fd, mods, n_mods);
 	emit_key_tap(fd, key);
