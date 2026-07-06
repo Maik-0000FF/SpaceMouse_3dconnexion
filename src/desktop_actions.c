@@ -46,7 +46,8 @@ void desktop_action_workspace(int direction)
 		 * workspace layout is horizontal, but the keyboard shortcuts
 		 * keep the historical Page_Down/Up names. */
 		int mods[] = {KEY_LEFTMETA};
-		emit_key_combo(g_uinput_fd, mods, 1, direction > 0 ? KEY_PAGEDOWN : KEY_PAGEUP);
+		emit_key_combo_instant(g_uinput_fd, mods, 1,
+				       direction > 0 ? KEY_PAGEDOWN : KEY_PAGEUP);
 		break;
 	}
 	case DE_XFCE_X11:
@@ -55,7 +56,7 @@ void desktop_action_workspace(int direction)
 		/* XFCE / Cinnamon / MATE / LXQt and unknown desktops:
 		 * Ctrl+Alt+Right/Left is the long-standing X11 default. */
 		int mods[] = {KEY_LEFTCTRL, KEY_LEFTALT};
-		emit_key_combo(g_uinput_fd, mods, 2, direction > 0 ? KEY_RIGHT : KEY_LEFT);
+		emit_key_combo_instant(g_uinput_fd, mods, 2, direction > 0 ? KEY_RIGHT : KEY_LEFT);
 		break;
 	}
 	}
@@ -94,7 +95,7 @@ void desktop_action_show_desktop(int *state)
 		 * track *state here. */
 		(void)state;
 		int mods[] = {KEY_LEFTMETA};
-		emit_key_combo(g_uinput_fd, mods, 1, KEY_D);
+		emit_key_combo_instant(g_uinput_fd, mods, 1, KEY_D);
 		break;
 	}
 	}
