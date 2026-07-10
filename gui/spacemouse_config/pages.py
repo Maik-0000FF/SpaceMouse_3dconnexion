@@ -905,9 +905,9 @@ class FreeCADPage(QWidget):
 
     def _revert_previously_selected_path(self):
         # stay on this config path (revert previously selected path)
-        self.blockSignals(True)
+        self.fc_config_combo.blockSignals(True)
         self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
-        self.blockSignals(False)
+        self.fc_config_combo.blockSignals(False)
 
 
     def _on_change_fc_config(self):
