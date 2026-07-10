@@ -731,7 +731,6 @@ class FreeCADPage(QWidget):
 
     changed = Signal()
     unchanged = Signal()
-    applied = Signal()
     _dirty = False
 
     _FC_AXIS_KEYS = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
@@ -874,10 +873,6 @@ class FreeCADPage(QWidget):
         self.unchanged.emit()
         self._dirty = False
 
-    def _emit_applied(self):
-        self.applied.emit()
-        self._dirty = False
-
     def _check_running(self):
         self.running_warn.setVisible(self._fc.is_running())
 
@@ -925,10 +920,8 @@ class FreeCADPage(QWidget):
             )
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
-                applied = self.apply_settings()
-                if applied:
-                    self._emit_applied()
-                else:
+                # revert on failure
+                if not self.apply_settings():
                     self._revert_previously_selected_path()
                     return
             elif result == QMessageBox.StandardButton.Discard:
