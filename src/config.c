@@ -10,7 +10,152 @@
 
 #include <json-c/json.h>
 
+#include <linux/input-event-codes.h>
+
 #include "spacemouse-core.h"
+
+/* Modifier name → keycode. Kept local to the parser because KEY_NAMES
+ * (in spacemouse-core.c) intentionally omits modifiers — those are
+ * only meaningful as part of a combo, never standalone. */
+struct mod_name {
+	const char *name;
+	int code;
+};
+static const struct mod_name MOD_NAMES[] = {
+	{"CTRL", KEY_LEFTCTRL}, {"CONTROL", KEY_LEFTCTRL}, {"SHIFT", KEY_LEFTSHIFT},
+	{"ALT", KEY_LEFTALT},	{"META", KEY_LEFTMETA},	   {"SUPER", KEY_LEFTMETA},
+	{"WIN", KEY_LEFTMETA},	{"CMD", KEY_LEFTMETA},	   {NULL, 0},
+};
+
+static int lookup_modifier(const char *name)
+{
+	if (!name)
+		return 0;
+	for (const struct mod_name *m = MOD_NAMES; m->name; m++)
+		if (strcasecmp(name, m->name) == 0)
+			return m->code;
+	return 0;
+}
+
+/* Parse "Ctrl+Shift+S" into combo. Returns 1 on success, 0 on bad
+ * input. Caller has already stripped the "key:" prefix. The final
+ * token is the end key (looked up via lookup_key); everything before
+ * it is a modifier (looked up via lookup_modifier). Empty or
+ * malformed strings, unknown names, or > BTN_KEY_MAX_MODS modifiers
+ * all return 0 and leave *out untouched. */
+static int parse_key_combo(const char *s, struct btn_key_combo *out)
+{
+	if (!s || !*s)
+		return 0;
+	char buf[128];
+	size_t len = strnlen(s, sizeof(buf));
+	if (len >= sizeof(buf))
+		return 0;
+	memcpy(buf, s, len);
+	buf[len] = '\0';
+
+	struct btn_key_combo tmp;
+	memset(&tmp, 0, sizeof(tmp));
+
+	char *save = NULL;
+	char *tok = strtok_r(buf, "+", &save);
+	char *prev = NULL;
+	while (tok) {
+		if (prev) {
+			int mod = lookup_modifier(prev);
+			if (!mod || tmp.n_mods >= BTN_KEY_MAX_MODS)
+				return 0;
+			/* Reject duplicate modifiers — keeps emit
+			 * order stable and signals a typo. */
+			for (int i = 0; i < tmp.n_mods; i++)
+				if (tmp.mods[i] == mod)
+					return 0;
+			tmp.mods[tmp.n_mods++] = mod;
+		}
+		prev = tok;
+		tok = strtok_r(NULL, "+", &save);
+	}
+	if (!prev)
+		return 0;
+	int key = lookup_key(prev);
+	if (!key)
+		return 0;
+	tmp.key = key;
+	*out = tmp;
+	return 1;
+}
+
+/* Free a per-button argv allocated by parse_exec_argv. */
+static void btn_exec_free(char **argv)
+{
+	if (!argv)
+		return;
+	for (char **p = argv; *p; p++)
+		free(*p);
+	free((void *)argv);
+}
+
+/* Parse a JSON array of strings into a NULL-terminated argv array.
+ * Returns NULL on bad input. Caller owns the result and must free
+ * with btn_exec_free. */
+static char **parse_exec_argv(struct json_object *arr)
+{
+	if (!arr || json_object_get_type(arr) != json_type_array)
+		return NULL;
+	int n = json_object_array_length(arr);
+	if (n <= 0)
+		return NULL;
+	char **argv = (char **)calloc((size_t)n + 1, sizeof(char *));
+	if (!argv)
+		return NULL;
+	for (int i = 0; i < n; i++) {
+		struct json_object *el = json_object_array_get_idx(arr, i);
+		/* Reject non-string elements outright instead of letting
+		 * json_object_get_string() coerce numbers/bools. A config
+		 * like "cmd": [123, true] should fall back to NONE, not
+		 * launch argv ["123", "true"]. */
+		if (!el || json_object_get_type(el) != json_type_string) {
+			btn_exec_free(argv);
+			return NULL;
+		}
+		const char *s = json_object_get_string(el);
+		if (!s) {
+			btn_exec_free(argv);
+			return NULL;
+		}
+		argv[i] = strdup(s);
+		if (!argv[i]) {
+			btn_exec_free(argv);
+			return NULL;
+		}
+	}
+	argv[n] = NULL;
+	return argv;
+}
+
+/* Deep-copy a NULL-terminated argv array. Returns NULL on NULL input
+ * or allocation failure. Caller owns the result and frees it with
+ * btn_exec_free. */
+static char **btn_exec_dup(char *const *argv)
+{
+	if (!argv)
+		return NULL;
+	int n = 0;
+	while (argv[n])
+		n++;
+	char **copy = (char **)calloc((size_t)n + 1, sizeof(char *));
+	if (!copy)
+		return NULL;
+	for (int i = 0; i < n; i++) {
+		copy[i] = strdup(argv[i]);
+		if (!copy[i]) {
+			btn_exec_free(copy);
+			return NULL;
+		}
+	}
+	copy[n] = NULL;
+	return copy;
+}
 
 /* ── Profile table (definitions for the externs in config.h) ────────── */
 
@@ -94,26 +239,86 @@ static void apply_axis_action(struct config *c, int idx, const char *s)
 	c->axis_map[idx] = parse_axis_action(s);
 }
 
+/* Reset a button slot to NONE and free any exec-argv that was hung
+ * off it. Callers use this before re-binding so a profile reload
+ * doesn't leak. */
+static void btn_slot_reset(struct config *c, int idx)
+{
+	c->btn_map[idx] = BTNACT_NONE;
+	memset(&c->btn_key[idx], 0, sizeof(c->btn_key[idx]));
+	if (c->btn_exec_argv[idx]) {
+		btn_exec_free(c->btn_exec_argv[idx]);
+		c->btn_exec_argv[idx] = NULL;
+	}
+}
+
 /* Apply a full button action string to slot idx of config c. Handles both
- * simple action names and the parameterized "key:NAME" format. */
+ * simple action names and the parameterized "key:NAME[+MOD...]" format. */
 static void apply_btn_action(struct config *c, int idx, const char *s)
 {
-	c->btn_key[idx] = 0;
-	if (!s) {
-		c->btn_map[idx] = BTNACT_NONE;
+	btn_slot_reset(c, idx);
+	if (!s)
 		return;
-	}
 	if (strncmp(s, "key:", 4) == 0) {
-		int code = lookup_key(s + 4);
-		if (code) {
+		struct btn_key_combo combo;
+		if (parse_key_combo(s + 4, &combo)) {
 			c->btn_map[idx] = BTNACT_KEY;
-			c->btn_key[idx] = code;
-			return;
+			c->btn_key[idx] = combo;
 		}
-		c->btn_map[idx] = BTNACT_NONE;
 		return;
 	}
 	c->btn_map[idx] = parse_btn_action(s);
+}
+
+/* ── Object-form button action handlers ──────────────────────────────
+ *
+ * Each handler takes the slot config + the JSON object and applies
+ * its specific shape. Handlers always start by calling btn_slot_reset
+ * so a malformed body leaves the slot at NONE rather than half-bound.
+ * Register a new type by adding one entry to OBJ_HANDLERS. */
+
+static void apply_obj_exec(struct config *c, int idx, struct json_object *obj)
+{
+	btn_slot_reset(c, idx);
+	struct json_object *cmd_val;
+	if (!json_object_object_get_ex(obj, "cmd", &cmd_val))
+		return;
+	char **argv = parse_exec_argv(cmd_val);
+	if (!argv)
+		return;
+	c->btn_map[idx] = BTNACT_EXEC;
+	c->btn_exec_argv[idx] = argv;
+}
+
+typedef void (*btn_obj_handler_fn)(struct config *c, int idx, struct json_object *obj);
+struct btn_obj_handler {
+	const char *type;
+	btn_obj_handler_fn fn;
+};
+static const struct btn_obj_handler OBJ_HANDLERS[] = {
+	{"exec", apply_obj_exec},
+	{NULL, NULL},
+};
+
+/* Apply a JSON object-form button action {"type": "...", ...}. Returns
+ * 1 if a handler matched the type (even if the body was malformed —
+ * the slot is then reset to NONE), 0 if the type is unknown so the
+ * caller can fall back to string parsing or log. */
+static int apply_btn_action_obj(struct config *c, int idx, struct json_object *obj)
+{
+	struct json_object *type_val;
+	if (!json_object_object_get_ex(obj, "type", &type_val))
+		return 0;
+	const char *type = json_object_get_string(type_val);
+	if (!type)
+		return 0;
+	for (const struct btn_obj_handler *h = OBJ_HANDLERS; h->type; h++) {
+		if (strcmp(h->type, type) == 0) {
+			h->fn(c, idx, obj);
+			return 1;
+		}
+	}
+	return 0;
 }
 
 /* ── Defaults + profile lifecycle ───────────────────────────────────── */
@@ -143,6 +348,10 @@ static void profile_free(struct profile *p)
 	for (int i = 0; i < p->wm_class_count; i++)
 		free(p->wm_classes[i]);
 	p->wm_class_count = 0;
+	/* Reset every button slot so per-action heap resources (exec argv
+	 * today, plugin instances tomorrow) hit a single cleanup path. */
+	for (int i = 0; i < MAX_BUTTONS; i++)
+		btn_slot_reset(&p->cfg, i);
 }
 
 void profiles_free_all(void)
@@ -159,10 +368,22 @@ void profiles_free_all(void)
 static void parse_profile_obj(struct json_object *obj, struct profile *p,
 			      const struct config *defaults)
 {
-	if (defaults)
+	if (defaults) {
 		memcpy(&p->cfg, defaults, sizeof(p->cfg));
-	else
+		/* The flat copy above aliased the owning btn_exec_argv pointers
+		 * from the default profile. Give this profile its own deep
+		 * copies so freeing (or re-binding) one profile never
+		 * double-frees or dangles another profile's exec argv. */
+		for (int i = 0; i < MAX_BUTTONS; i++) {
+			if (!p->cfg.btn_exec_argv[i])
+				continue;
+			p->cfg.btn_exec_argv[i] = btn_exec_dup(p->cfg.btn_exec_argv[i]);
+			if (!p->cfg.btn_exec_argv[i])
+				p->cfg.btn_map[i] = BTNACT_NONE;
+		}
+	} else {
 		config_defaults(&p->cfg);
+	}
 
 	struct json_object *val;
 	struct config *c = &p->cfg;
@@ -240,8 +461,21 @@ static void parse_profile_obj(struct json_object *obj, struct profile *p,
 			char *endp = NULL;
 			long bnum = strtol(key, &endp, 10);
 			struct json_object *bval = json_object_iter_peek_value(&it);
-			if (endp != key && *endp == '\0' && bnum >= 0 && bnum < MAX_BUTTONS)
-				apply_btn_action(c, (int)bnum, json_object_get_string(bval));
+			if (endp != key && *endp == '\0' && bnum >= 0 && bnum < MAX_BUTTONS) {
+				/* Two value shapes:
+				 *   "overview" / "key:Ctrl+Shift+S"  → string parser
+				 *   {"type": "exec", "cmd": [...]}    → object dispatcher
+				 * Object with unknown type silently falls through
+				 * to string parsing so a future GUI that emits
+				 * objects we don't yet recognise degrades gracefully. */
+				if (json_object_get_type(bval) == json_type_object &&
+				    apply_btn_action_obj(c, (int)bnum, bval)) {
+					/* handled */
+				} else {
+					apply_btn_action(c, (int)bnum,
+							 json_object_get_string(bval));
+				}
+			}
 			json_object_iter_next(&it);
 		}
 	}

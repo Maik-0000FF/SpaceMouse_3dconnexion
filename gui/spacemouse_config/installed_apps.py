@@ -142,6 +142,7 @@ def _read_desktop(path, current_desktops):
         "wm_class": wm_class,
         "categories": categories,
         "primary": primary,
+        "exec": section.get("Exec", "").strip(),
     }
 
 

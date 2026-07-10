@@ -96,6 +96,13 @@ BTN_ACTIONS = [
     "key:M",
     "key:ENTER",
     "key:ESC",
+    "key:Ctrl+C",
+    "key:Ctrl+V",
+    "key:Ctrl+Z",
+    "key:Ctrl+Shift+S",
+    "key:Alt+Tab",
+    "key_custom",
+    "exec",
 ]
 BTN_ACTION_LABELS = [
     "None",
@@ -112,7 +119,95 @@ BTN_ACTION_LABELS = [
     "M (Mute YouTube)",
     "Enter",
     "Escape",
+    "Copy (Ctrl+C)",
+    "Paste (Ctrl+V)",
+    "Undo (Ctrl+Z)",
+    "Save As (Ctrl+Shift+S)",
+    "Switch Window (Alt+Tab)",
+    "Custom key combo…",
+    "Run command…",
 ]
+
+# Sentinel string written to a row's combo when it is bound to an exec
+# action. The dropdown index points here; the actual argv lives off the
+# row in DesktopPage.btn_rows[bnum]["exec_cmd"] until save time, when
+# _collect_default_profile emits {"type": "exec", "cmd": [...]}.
+BTN_ACTION_EXEC = "exec"
+
+# Sentinel for a user-defined key combination edited via the combo
+# dialog. The "key:Mod+Mod+Key" string is stored alongside the row
+# in DesktopPage.btn_rows[bnum]["key_combo"]; on save the daemon
+# receives a regular "key:…" mapping just like the preset entries.
+BTN_ACTION_KEY_CUSTOM = "key_custom"
+
+# Keys the daemon's combo parser can resolve. Mirrors the KEY_NAMES
+# table in src/spacemouse-core.c — if you add an entry there, add it
+# here too so the GUI's combo dialog can offer it. Names use the
+# readable form ("Tab", "PageUp") not the C-side uppercase ("TAB",
+# "PAGEUP") because the daemon parser is case-insensitive and these
+# values land directly in user-visible config strings ("key:Ctrl+Tab").
+# Order is the order the dropdown shows; navigation / letters /
+# function keys are grouped because a ~50-entry sorted list is harder
+# to scan.
+COMBO_KEY_NAMES = [
+    "Space",
+    "Enter",
+    "Esc",
+    "Tab",
+    "Backspace",
+    "Left",
+    "Right",
+    "Up",
+    "Down",
+    "PageUp",
+    "PageDown",
+    "Home",
+    "End",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+]
+
+# Canonical modifier order used when formatting combo strings. Matches
+# the convention everyone reads in app menus (Ctrl first). The daemon
+# parser is order-insensitive but emitting consistent strings keeps the
+# config file readable and diff-friendly.
+COMBO_MODIFIER_NAMES = ["Ctrl", "Shift", "Alt", "Meta"]
 
 AXIS_NAMES = [
     "TX (Left/Right)",

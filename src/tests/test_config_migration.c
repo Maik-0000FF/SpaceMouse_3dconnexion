@@ -1,10 +1,12 @@
 /* Tests for the legacy invert_scroll_x/y → axis_invert[6] migration in
- * config.c.
- *
- * Pre-PR-#8 configs used the global "invert_scroll_x" / "invert_scroll_y"
- * keys. The new format stores invert state per axis. The loader migrates
- * legacy keys onto whichever axes are mapped to scroll_h / scroll_v at
- * the time of the load. Explicit per-axis entries take precedence. */
+ * config.c, plus the button-mapping parser surface:
+ *   - "key:Ctrl+Shift+S" combo parsing (modifiers + end key)
+ *   - "key:F" plain-key parsing (back-compat with pre-combo configs)
+ *   - {"type":"exec","cmd":[...]} object-form action
+ *   - graceful failure on malformed combos / unknown modifiers
+ *   - reload doesn't leak per-button heap state (exec argv)
+ *   - derived profiles deep-copy inherited exec argv (no alias/double-free)
+ *   - exec cmd with a non-string element is rejected, not coerced */
 
 #include "config.h"
 
@@ -13,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <linux/input-event-codes.h>
 
 /* Caller-owned path buffer so each invocation gets a fresh mkstemp
  * template (the trailing XXXXXX is rewritten in place). Sized for the
@@ -167,6 +171,258 @@ int main(void)
 		assert(p->cfg.axis_invert[5] == 1); /* rz */
 		for (int i = 1; i < 5; i++)
 			assert(p->cfg.axis_invert[i] == 0);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 6 — "key:Ctrl+Shift+S" combo: 2 modifiers + KEY_S. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": { \"0\": \"key:Ctrl+Shift+S\" }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_KEY);
+		assert(p->cfg.btn_key[0].n_mods == 2);
+		assert(p->cfg.btn_key[0].mods[0] == KEY_LEFTCTRL);
+		assert(p->cfg.btn_key[0].mods[1] == KEY_LEFTSHIFT);
+		assert(p->cfg.btn_key[0].key == KEY_S);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 7 — "key:F" plain key: zero modifiers, end key only. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": { \"0\": \"key:F\" }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_KEY);
+		assert(p->cfg.btn_key[0].n_mods == 0);
+		assert(p->cfg.btn_key[0].key == KEY_F);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 8 — unknown modifier name leaves the slot at NONE rather
+	 * than half-binding. Same for unknown end key. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": \"key:WTF+S\",\n"
+				  "        \"1\": \"key:Ctrl+NOTAKEY\"\n"
+				  "      }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_NONE);
+		assert(p->cfg.btn_map[1] == BTNACT_NONE);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 9 — object-form exec: argv round-trips, btn_map flips. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", "
+				  "\"cmd\": [\"firefox\", \"--new-window\", \"https://x.com\"] }\n"
+				  "      }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(p->cfg.btn_exec_argv[0] != NULL);
+		assert(strcmp(p->cfg.btn_exec_argv[0][0], "firefox") == 0);
+		assert(strcmp(p->cfg.btn_exec_argv[0][1], "--new-window") == 0);
+		assert(strcmp(p->cfg.btn_exec_argv[0][2], "https://x.com") == 0);
+		assert(p->cfg.btn_exec_argv[0][3] == NULL);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 10 — exec with empty cmd array leaves slot at NONE rather
+	 * than registering an exec that would fork into nothing. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [] }\n"
+				  "      }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_NONE);
+		assert(p->cfg.btn_exec_argv[0] == NULL);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 11 — reload (config_load_all called twice) must not leak
+	 * btn_exec_argv from the previous load. Hard to detect without
+	 * valgrind, but the load-load-check-slot pattern still pins the
+	 * second-load state correctly, which is what user-visible behaviour
+	 * cares about. ASan in CI catches the leak. */
+	{
+		const char *cfg_with_exec =
+			"{\n"
+			"  \"profiles\": {\n"
+			"    \"default\": {\n"
+			"      \"button_mapping\": {\n"
+			"        \"0\": { \"type\": \"exec\", \"cmd\": [\"true\"] }\n"
+			"      }\n"
+			"    }\n"
+			"  }\n"
+			"}\n";
+		const char *cfg_no_exec = "{\n"
+					  "  \"profiles\": {\n"
+					  "    \"default\": {\n"
+					  "      \"button_mapping\": { \"0\": \"none\" }\n"
+					  "    }\n"
+					  "  }\n"
+					  "}\n";
+		char path1[64];
+		char path2[64];
+		write_tmp_config(path1, cfg_with_exec);
+		write_tmp_config(path2, cfg_no_exec);
+		assert(config_load_all(path1) == 0);
+		assert(find_profile("default")->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(config_load_all(path2) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p->cfg.btn_map[0] == BTNACT_NONE);
+		assert(p->cfg.btn_exec_argv[0] == NULL);
+		unlink(path1);
+		unlink(path2);
+		profiles_free_all();
+	}
+
+	/* Case 12 — a derived profile that inherits an exec-bound button from
+	 * default must own a *separate* argv copy, not alias default's. Before
+	 * the deep-copy fix, parse_profile_obj's memcpy left both profiles
+	 * pointing at the same heap block, so profiles_free_all double-freed
+	 * it. The distinct-pointer assertion pins the fix deterministically;
+	 * ASan in CI would also flag the double free on the free below. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [\"true\"] }\n"
+				  "      }\n"
+				  "    },\n"
+				  "    \"app\": { \"match_wm_class\": [\"FreeCAD\"] }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *def = find_profile("default");
+		const struct profile *app = find_profile("app");
+		assert(def && app);
+		/* Both bind button 0 to exec (app inherits it from default). */
+		assert(def->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(app->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(def->cfg.btn_exec_argv[0] != NULL);
+		assert(app->cfg.btn_exec_argv[0] != NULL);
+		/* Same content ... */
+		assert(strcmp(app->cfg.btn_exec_argv[0][0], "true") == 0);
+		/* ... but distinct allocations (deep copy, not an alias). */
+		assert(app->cfg.btn_exec_argv[0] != def->cfg.btn_exec_argv[0]);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 13 — a derived profile that *overrides* the inherited exec
+	 * button (here to "none") must free only its own copy and leave
+	 * default's argv intact. Before the fix, the override's btn_slot_reset
+	 * freed the aliased block out from under default (use-after-free on the
+	 * next press, double free on shutdown). */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [\"true\"] }\n"
+				  "      }\n"
+				  "    },\n"
+				  "    \"app\": {\n"
+				  "      \"button_mapping\": { \"0\": \"none\" },\n"
+				  "      \"match_wm_class\": [\"FreeCAD\"]\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *def = find_profile("default");
+		const struct profile *app = find_profile("app");
+		assert(def && app);
+		/* default keeps its exec binding + a valid argv ... */
+		assert(def->cfg.btn_map[0] == BTNACT_EXEC);
+		assert(def->cfg.btn_exec_argv[0] != NULL);
+		assert(strcmp(def->cfg.btn_exec_argv[0][0], "true") == 0);
+		/* ... while app dropped it to NONE with no owned argv. */
+		assert(app->cfg.btn_map[0] == BTNACT_NONE);
+		assert(app->cfg.btn_exec_argv[0] == NULL);
+		unlink(path);
+		profiles_free_all();
+	}
+
+	/* Case 14 — exec cmd containing a non-string element is rejected
+	 * rather than coerced. {"cmd": [123, true]} must leave the slot at
+	 * NONE instead of launching argv ["123", "true"]. */
+	{
+		const char *cfg = "{\n"
+				  "  \"profiles\": {\n"
+				  "    \"default\": {\n"
+				  "      \"button_mapping\": {\n"
+				  "        \"0\": { \"type\": \"exec\", \"cmd\": [123, true] }\n"
+				  "      }\n"
+				  "    }\n"
+				  "  }\n"
+				  "}\n";
+		char path[64];
+		write_tmp_config(path, cfg);
+		assert(config_load_all(path) == 0);
+		const struct profile *p = find_profile("default");
+		assert(p);
+		assert(p->cfg.btn_map[0] == BTNACT_NONE);
+		assert(p->cfg.btn_exec_argv[0] == NULL);
 		unlink(path);
 		profiles_free_all();
 	}

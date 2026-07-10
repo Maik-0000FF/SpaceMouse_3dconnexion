@@ -4,9 +4,11 @@
 #define _GNU_SOURCE
 #include "uinput.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 
@@ -14,6 +16,38 @@
 #include <linux/uinput.h>
 
 #include "spacemouse-core.h"
+
+/* Time-unit conversions. Kept local so callers can express the timing
+ * constants in milliseconds (the only unit the values are tuned in)
+ * while the kernel sleep API gets nanoseconds via sleep_ms below. */
+#define MS_PER_SEC 1000L
+#define NS_PER_MS 1000000L
+
+/* Hold between key-combo transitions so compositors see Alt+Tab as a
+ * deliberate sequence rather than a single input batch. Without these,
+ * KWin's window-switcher overlay does not surface and the Walk-Through-
+ * Windows shortcut fires sporadically. Both values are in milliseconds;
+ * the total combo time of ~70 ms matches what a human-typed shortcut
+ * looks like to the input layer. */
+#define KEY_COMBO_MOD_HOLD_MS 20
+#define KEY_COMBO_KEY_HOLD_MS 30
+
+static void sleep_ms(long ms)
+{
+	if (ms <= 0)
+		return;
+	struct timespec ts = {
+		.tv_sec = ms / MS_PER_SEC,
+		.tv_nsec = (ms % MS_PER_SEC) * NS_PER_MS,
+	};
+	/* Finish the full interval even if a signal (e.g. SIGHUP on config
+	 * reload) interrupts the sleep: nanosleep reports the time left in
+	 * rem, so restart from there instead of returning short and letting
+	 * the compositor miss the deliberate combo timing. */
+	struct timespec rem;
+	while (nanosleep(&ts, &rem) == -1 && errno == EINTR)
+		ts = rem;
+}
 
 int uinput_open(void)
 {
@@ -31,6 +65,7 @@ int uinput_open(void)
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTCTRL);
+	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTSHIFT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTALT);
 	ioctl(fd, UI_SET_KEYBIT, KEY_LEFTMETA);
 	ioctl(fd, UI_SET_KEYBIT, KEY_VOLUMEUP);
@@ -109,19 +144,78 @@ void emit_key_tap(int fd, int code)
 	emit_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
+static void emit_keys_press(int fd, const int *codes, int n)
+{
+	if (fd < 0 || n <= 0)
+		return;
+	for (int i = 0; i < n; i++)
+		emit_event(fd, EV_KEY, codes[i], 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+static void emit_keys_release(int fd, const int *codes, int n)
+{
+	if (fd < 0 || n <= 0)
+		return;
+	/* Reverse order matches how a human releases a chord — pop the
+	 * stack from the top so the compositor sees a clean unwind. */
+	for (int i = n - 1; i >= 0; i--)
+		emit_event(fd, EV_KEY, codes[i], 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+static void emit_key_tap_held(int fd, int code)
+{
+	if (fd < 0)
+		return;
+	emit_event(fd, EV_KEY, code, 1);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	sleep_ms(KEY_COMBO_KEY_HOLD_MS);
+	emit_event(fd, EV_KEY, code, 0);
+	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+static void emit_settle_after_mods(void)
+{
+	sleep_ms(KEY_COMBO_MOD_HOLD_MS);
+}
+
 void emit_key_combo(int fd, const int *mods, int n_mods, int key)
 {
 	if (fd < 0)
 		return;
-	for (int i = 0; i < n_mods; i++)
-		emit_event(fd, EV_KEY, mods[i], 1);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
-	emit_event(fd, EV_KEY, key, 1);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
-	emit_event(fd, EV_KEY, key, 0);
-	for (int i = n_mods - 1; i >= 0; i--)
-		emit_event(fd, EV_KEY, mods[i], 0);
-	emit_event(fd, EV_SYN, SYN_REPORT, 0);
+	/* A plain key with no modifiers needs no settle/hold: emit it as an
+	 * instant tap so a bare key binding never blocks the input loop. */
+	if (n_mods == 0) {
+		emit_key_tap(fd, key);
+		return;
+	}
+	/* Modified chord (Alt+Tab and friends): press mods, settle so the
+	 * compositor sees the modifier state before the key arrives (the
+	 * window-switcher overlay won't surface otherwise), tap the key with
+	 * a brief hold, settle again so the switcher commits cleanly on
+	 * mod-release. */
+	emit_keys_press(fd, mods, n_mods);
+	emit_settle_after_mods();
+	emit_key_tap_held(fd, key);
+	emit_settle_after_mods();
+	emit_keys_release(fd, mods, n_mods);
+}
+
+void emit_key_combo_instant(int fd, const int *mods, int n_mods, int key)
+{
+	if (fd < 0)
+		return;
+	/* Same chord shape as emit_key_combo but without the settle/hold
+	 * delays. Compositor global shortcuts (workspace switch, show-desktop)
+	 * fire on the key event and don't need the modifier-settle timing that
+	 * Alt+Tab's switcher requires, so drop the delays and keep the
+	 * single-threaded input loop responsive. */
+	if (n_mods > 0)
+		emit_keys_press(fd, mods, n_mods);
+	emit_key_tap(fd, key);
+	if (n_mods > 0)
+		emit_keys_release(fd, mods, n_mods);
 }
 
 void emit_zoom(int fd, int dz)

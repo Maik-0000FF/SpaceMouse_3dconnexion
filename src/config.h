@@ -51,7 +51,19 @@ enum btn_action {
 	BTNACT_PLAY_PAUSE,
 	BTNACT_NEXT_TRACK,
 	BTNACT_PREV_TRACK,
-	BTNACT_KEY
+	BTNACT_KEY,
+	BTNACT_EXEC
+};
+
+/* Key combo for BTNACT_KEY: zero-or-more modifier keycodes pressed
+ * around a single end key. n_mods == 0 degenerates to a plain tap.
+ * Modifier slots are capped at 4 — covers Ctrl+Shift+Alt+Meta which is
+ * the maximum that any sane keyboard shortcut uses. */
+#define BTN_KEY_MAX_MODS 4
+struct btn_key_combo {
+	int mods[BTN_KEY_MAX_MODS];
+	int n_mods;
+	int key;
 };
 
 /* ── Per-profile config ─────────────────────────────────────────────── */
@@ -69,7 +81,11 @@ struct config {
 	int axis_key_neg[6]; /* keycode for negative direction (ACT_KEY_PAIR only) */
 	int axis_key_pos[6]; /* keycode for positive direction (ACT_KEY_PAIR only) */
 	enum btn_action btn_map[MAX_BUTTONS];
-	int btn_key[MAX_BUTTONS]; /* keycode (BTNACT_KEY only) */
+	struct btn_key_combo btn_key[MAX_BUTTONS]; /* keycode + modifiers (BTNACT_KEY only) */
+	/* NULL-terminated argv arrays (BTNACT_EXEC only). Slot is NULL when
+	 * the button is not bound to exec. config.c owns the allocations
+	 * and frees them in profile_free / on reload. */
+	char **btn_exec_argv[MAX_BUTTONS];
 	double sensitivity;
 };
 

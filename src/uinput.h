@@ -30,12 +30,23 @@ void emit_event(int fd, int type, int code, int val);
  * emit the high-resolution variant (REL_*_HI_RES at 120-tick scale). */
 void emit_scroll(int fd, int dx, int dy);
 
-/* Tap a single key (down → up + SYN). */
+/* Tap a single key (down → up + SYN), no hold. Used for media keys
+ * and other non-modal taps where timing doesn't matter. */
 void emit_key_tap(int fd, int code);
 
-/* Press n_mods modifiers, tap key, release modifiers. n_mods may be 0
- * — degenerates to emit_key_tap. */
+/* Press n_mods modifiers, tap key, release modifiers, with short settle
+ * delays so a modified chord (Alt+Tab and friends) reads as a deliberate
+ * sequence. n_mods may be 0, which degenerates to an instant emit_key_tap
+ * with no delays. One-shot: drops modifiers before returning, so nothing
+ * stays held between button presses. Blocks the caller for the settle
+ * duration, so reserve it for discrete presses, not continuous input. */
 void emit_key_combo(int fd, const int *mods, int n_mods, int key);
+
+/* Like emit_key_combo but with no settle/hold delays, for compositor
+ * global shortcuts (workspace switch, show-desktop) that fire on the key
+ * event and don't need Alt+Tab's timing. Non-blocking, safe to drive from
+ * the main input loop on every trigger. */
+void emit_key_combo_instant(int fd, const int *mods, int n_mods, int key);
 
 /* Ctrl+wheel scroll, used by browsers/3D apps to mean "zoom". */
 void emit_zoom(int fd, int dz);

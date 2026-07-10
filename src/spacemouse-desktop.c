@@ -111,7 +111,6 @@ int main(int argc, char **argv)
 
 	int foreground = 0;
 	const char *home = getenv("HOME");
-
 	if (home)
 		snprintf(g_config_path, sizeof(g_config_path), "%s/.config/spacemouse/config.json",
 			 home);
@@ -457,8 +456,20 @@ int main(int argc, char **argv)
 						emit_key_tap(g_uinput_fd, KEY_PREVIOUSSONG);
 						break;
 					case BTNACT_KEY:
-						if (c->btn_key[bnum])
-							emit_key_tap(g_uinput_fd, c->btn_key[bnum]);
+						/* One-shot chord: press mods, tap the
+						 * key, release mods immediately. No
+						 * lingering modifier state that could
+						 * bleed into the next SpaceMouse input. */
+						if (c->btn_key[bnum].key)
+							emit_key_combo(g_uinput_fd,
+								       c->btn_key[bnum].mods,
+								       c->btn_key[bnum].n_mods,
+								       c->btn_key[bnum].key);
+						break;
+					case BTNACT_EXEC:
+						if (c->btn_exec_argv[bnum] &&
+						    c->btn_exec_argv[bnum][0])
+							spawn_command(c->btn_exec_argv[bnum]);
 						break;
 					case BTNACT_NONE:
 					default:
