@@ -909,7 +909,6 @@ class FreeCADPage(QWidget):
         self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
         self.fc_config_combo.blockSignals(False)
 
-
     def _on_change_fc_config(self):
         if self._dirty:
             msg = make_save_discard_cancel_box(
@@ -941,12 +940,10 @@ class FreeCADPage(QWidget):
 
     def _on_open_fc_config_folder(self):
         try:
-            result = subprocess.run(
-                ["xdg-open", str(self._fc.path.parent)], capture_output=True
-            )
+            subprocess.run(["xdg-open", str(self._fc.path.parent)], capture_output=True)
         except FileNotFoundError as e:
             # the FileNotFoundError we catch here means the system couldn't find the xdg-open executable.
-            # if xdg-open is found but unable to open a path, it opens its own error popup and the error message will be in stderr.
+            # if xdg-open is found but unable to open a path, it opens its own error popup.
             QMessageBox.warning(
                 self,
                 "Could not open folder",
