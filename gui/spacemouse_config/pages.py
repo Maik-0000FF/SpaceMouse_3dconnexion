@@ -975,6 +975,14 @@ class FreeCADPage(QWidget):
         """Write settings to FreeCAD user.cfg."""
         if not self._fc.is_available():
             return False
+        if self._fc.is_running():
+            QMessageBox.warning(
+                self,
+                "FreeCAD Running",
+                "FreeCAD is running and will overwrite user.cfg on exit.\n"
+                "Please close FreeCAD first.",
+            )
+            return False
 
         applied = self._fc.write(self.get_settings())
         if applied:
