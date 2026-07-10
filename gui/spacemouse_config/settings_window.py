@@ -154,7 +154,6 @@ class SettingsWindow(QMainWindow):
         self.freecad_page.changed.connect(self._mark_dirty)
         self.freecad_page.changed.connect(self._sync_deadzones)
         self.freecad_page.unchanged.connect(self._mark_clean)
-        self.freecad_page.applied.connect(self._apply)
         self.stack.addWidget(self.freecad_page)
 
         self.blender_page = BlenderPage()
