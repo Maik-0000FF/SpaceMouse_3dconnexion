@@ -947,7 +947,18 @@ class FreeCADPage(QWidget):
         self._building = False
 
     def _on_open_fc_config_folder(self):
-        subprocess.run(["xdg-open", self._fc.path.parent], capture_output=True)
+        try:
+            result = subprocess.run(
+                ["xdg-open", str(self._fc.path.parent)], capture_output=True
+            )
+        except FileNotFoundError as e:
+            # the FileNotFoundError we catch here means the system couldn't find the xdg-open executable.
+            # if xdg-open is found but unable to open a path, it opens its own error popup and the error message will be in stderr.
+            QMessageBox.warning(
+                self,
+                "Could not open folder",
+                f"Failed to run `xdg-open {self._fc.path.parent}`\n\n{e}",
+            )
 
     def get_settings(self):
         """Return dict of FreeCAD settings."""
