@@ -35,7 +35,11 @@ class FreeCADConfig:
             self._path_list += sorted(c.glob("**/user.cfg"), key=lambda p: (len(p.parts), p))
 
         if self._path_list:
-            self.path = self._path_list[0]
+            # Default to the most recently modified config: FreeCAD writes
+            # user.cfg on exit, so the newest mtime is the one actually in use.
+            # The list order above stays path-sorted for a stable dropdown.
+            self.path = max(self._path_list, key=lambda p: p.stat().st_mtime)
+            self._prev_path_index = self._path_list.index(self.path)
 
     def is_available(self):
         return self.path is not None
