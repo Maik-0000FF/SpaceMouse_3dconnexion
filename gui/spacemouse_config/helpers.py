@@ -132,11 +132,11 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     return container, slider, val_label
 
 
-def make_save_discard_cancel_box(self, windowTitle, text, informativeText):
-    msg = QMessageBox(self)
-    msg.setWindowTitle(windowTitle)
+def make_save_discard_cancel_box(parent, window_title, text, informative_text):
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(window_title)
     msg.setText(text)
-    msg.setInformativeText(informativeText)
+    msg.setInformativeText(informative_text)
     msg.setStandardButtons(
         QMessageBox.StandardButton.Save
         | QMessageBox.StandardButton.Discard
