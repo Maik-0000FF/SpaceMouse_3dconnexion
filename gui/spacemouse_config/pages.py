@@ -758,6 +758,9 @@ class FreeCADPage(QWidget):
         if self._fc.is_available():
             self.fc_config_combo = NoScrollComboBox()
             self.fc_config_combo.addItems([str(p) for p in self._fc._path_list])
+            # reflect the mtime-based default; set before connecting so this
+            # does not fire the change handler
+            self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
             self.fc_config_combo.currentIndexChanged.connect(self._on_change_fc_config)
             cl.addWidget(self.fc_config_combo)
 
