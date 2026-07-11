@@ -31,8 +31,11 @@ class FreeCADConfig:
         self._path_list = []
 
         for c in self._CANDIDATES:
-            # sort subdirectories for each candidate by depth, then alphabetically
-            self._path_list += sorted(c.glob("**/user.cfg"), key=lambda p: (len(p.parts), p))
+            # FreeCAD keeps user.cfg at the config root (<dir>/user.cfg) and typically one level
+            # down per version dir (<dir>/<version>/user.cfg). A bounded glob finds those and
+            # stops before addon subtrees, caches and thumbnails under ~/.local/share/FreeCAD
+            found = [*c.glob("user.cfg"), *c.glob("*/user.cfg")]
+            self._path_list += sorted(found, key=lambda p: (len(p.parts), p))
 
         if self._path_list:
             # Default to the most recently modified config: FreeCAD writes
