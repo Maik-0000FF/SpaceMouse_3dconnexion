@@ -912,10 +912,10 @@ class FreeCADPage(QWidget):
     def _on_change_fc_config(self):
         if self._dirty:
             msg = make_save_discard_cancel_box(
-                self=self,
-                windowTitle="Unsaved Changes",
+                parent=self,
+                window_title="Unsaved Changes",
                 text="You have unsaved changes.",
-                informativeText="Do you want to save before loading another config?",
+                informative_text="Do you want to save before loading another config?",
             )
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
