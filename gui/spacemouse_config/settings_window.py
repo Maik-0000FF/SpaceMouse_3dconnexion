@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .backends import FreeCADConfig
 from .constants import COLOR_ACCENT, COLOR_TEXT_MUTED
 from .helpers import (
     create_tray_icon_pixmap,
@@ -253,15 +252,10 @@ class SettingsWindow(QMainWindow):
         page_idx = self.stack.currentIndex()
 
         if page_idx == 1:
-            if FreeCADConfig.is_running():
-                QMessageBox.warning(
-                    self,
-                    "FreeCAD Running",
-                    "FreeCAD is running and will overwrite user.cfg on exit.\n"
-                    "Please close FreeCAD first.",
-                )
+            if self.freecad_page.warn_if_running():
+                # if FreeCAD is running, warn_if_running showed a warning. do nothing.
                 return
-            if self.freecad_page.apply_settings():
+            elif self.freecad_page.apply_settings():
                 self._mark_clean()
                 QMessageBox.information(
                     self,

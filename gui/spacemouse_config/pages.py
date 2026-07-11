@@ -41,6 +41,7 @@ from .constants import (
     FREECAD_NAV_LABELS,
     FREECAD_NAV_STYLES,
     FREECAD_ORBIT_STYLES,
+    FREECAD_RUNNING_WARNING,
     MAX_BUTTONS,
 )
 from .exec_dialog import ExecConfigDialog, format_cmdline
@@ -974,17 +975,17 @@ class FreeCADPage(QWidget):
         s["orbit_style"] = orbit_values[self.fc_orbit_combo.currentIndex()]
         return s
 
+    def warn_if_running(self):
+        """Warn and return True if FreeCAD is running (it would overwrite user.cfg)."""
+        if self._fc.is_running():
+            QMessageBox.warning(self, "FreeCAD Running", FREECAD_RUNNING_WARNING)
+            return True
+        return False
+
     def apply_settings(self):
         """Write settings to FreeCAD user.cfg."""
-        if not self._fc.is_available():
-            return False
-        if self._fc.is_running():
-            QMessageBox.warning(
-                self,
-                "FreeCAD Running",
-                "FreeCAD is running and will overwrite user.cfg on exit.\n"
-                "Please close FreeCAD first.",
-            )
+        if (not self._fc.is_available()) or self.warn_if_running():
+            # if FreeCAD is running, warn_if_running showed a warning. do nothing.
             return False
 
         applied = self._fc.write(self.get_settings())
