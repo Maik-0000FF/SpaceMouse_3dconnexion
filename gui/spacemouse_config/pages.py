@@ -1,5 +1,7 @@
 """Three settings pages: Desktop daemon profiles, FreeCAD, Blender."""
 
+import subprocess
+
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -39,10 +41,11 @@ from .constants import (
     FREECAD_NAV_LABELS,
     FREECAD_NAV_STYLES,
     FREECAD_ORBIT_STYLES,
+    FREECAD_RUNNING_WARNING,
     MAX_BUTTONS,
 )
 from .exec_dialog import ExecConfigDialog, format_cmdline
-from .helpers import NoScrollComboBox, make_card, make_slider
+from .helpers import NoScrollComboBox, make_card, make_save_discard_cancel_box, make_slider
 from .key_combo_dialog import KeyComboDialog, format_combo, parse_combo_string
 from .widgets import AxesCard
 
@@ -728,6 +731,8 @@ class FreeCADPage(QWidget):
     """FreeCAD SpaceMouse settings editor."""
 
     changed = Signal()
+    unchanged = Signal()
+    _dirty = False
 
     _FC_AXIS_KEYS = ["panlr", "panud", "zoom", "tilt", "roll", "spin"]
 
@@ -749,9 +754,21 @@ class FreeCADPage(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 8, 0)
 
-        # ── Card 1: FREECAD (app-specific warnings) ──
+        # ── Card 1: FREECAD (config directories and app-specific warnings) ──
         card, cl = make_card("FREECAD")
-        if not self._fc.is_available():
+        if self._fc.is_available():
+            self.fc_config_combo = NoScrollComboBox()
+            self.fc_config_combo.addItems([str(p) for p in self._fc._path_list])
+            # reflect the mtime-based default; set before connecting so this
+            # does not fire the change handler
+            self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+            self.fc_config_combo.currentIndexChanged.connect(self._on_change_fc_config)
+            cl.addWidget(self.fc_config_combo)
+
+            open_fc_config_folder_btn = QPushButton("Open containing folder")
+            open_fc_config_folder_btn.clicked.connect(self._on_open_fc_config_folder)
+            cl.addWidget(open_fc_config_folder_btn)
+        else:
             warn = QLabel("FreeCAD user.cfg not found. Start FreeCAD once to generate it.")
             warn.setStyleSheet(
                 f"color: {COLOR_WARN}; background-color: {COLOR_BG_WARN}; "
@@ -761,7 +778,7 @@ class FreeCADPage(QWidget):
             cl.addWidget(warn)
 
         self.running_warn = QLabel(
-            "FreeCAD is running \u2014 it overwrites user.cfg on exit.\n"
+            "FreeCAD is running \u2014 it will overwrite user.cfg on exit.\n"
             "Close FreeCAD before applying changes."
         )
         self.running_warn.setStyleSheet(
@@ -854,6 +871,11 @@ class FreeCADPage(QWidget):
     def _emit_changed(self):
         if not self._building:
             self.changed.emit()
+            self._dirty = True
+
+    def _emit_unchanged(self):
+        self.unchanged.emit()
+        self._dirty = False
 
     def _check_running(self):
         self.running_warn.setVisible(self._fc.is_running())
@@ -885,6 +907,53 @@ class FreeCADPage(QWidget):
         idx = orbit_values.index(orbit) if orbit in orbit_values else 0
         self.fc_orbit_combo.setCurrentIndex(idx)
 
+    def _revert_previously_selected_path(self):
+        # stay on this config path (revert previously selected path)
+        self.fc_config_combo.blockSignals(True)
+        self.fc_config_combo.setCurrentIndex(self._fc._prev_path_index)
+        self.fc_config_combo.blockSignals(False)
+
+    def _on_change_fc_config(self):
+        if self._dirty:
+            msg = make_save_discard_cancel_box(
+                parent=self,
+                window_title="Unsaved Changes",
+                text="You have unsaved changes.",
+                informative_text="Do you want to save before loading another config?",
+            )
+            result = msg.exec()
+            if result == QMessageBox.StandardButton.Save:
+                # revert on failure
+                if not self.apply_settings():
+                    self._revert_previously_selected_path()
+                    return
+            elif result == QMessageBox.StandardButton.Discard:
+                self._emit_unchanged()
+            elif result == QMessageBox.StandardButton.Cancel:
+                self._revert_previously_selected_path()
+                return
+
+        new_index = self.fc_config_combo.currentIndex()
+        self._fc.path = self._fc._path_list[new_index]
+        self._fc._prev_path_index = new_index
+
+        # prevent changed signal from being emitted when loading the new config
+        self._building = True
+        self._load_settings()
+        self._building = False
+
+    def _on_open_fc_config_folder(self):
+        try:
+            subprocess.run(["xdg-open", str(self._fc.path.parent)], capture_output=True)
+        except FileNotFoundError as e:
+            # the FileNotFoundError we catch here means the system couldn't find the xdg-open executable.
+            # if xdg-open is found but unable to open a path, it opens its own error popup.
+            QMessageBox.warning(
+                self,
+                "Could not open folder",
+                f"Failed to run `xdg-open {self._fc.path.parent}`\n\n{e}",
+            )
+
     def get_settings(self):
         """Return dict of FreeCAD settings."""
         s = {
@@ -906,11 +975,25 @@ class FreeCADPage(QWidget):
         s["orbit_style"] = orbit_values[self.fc_orbit_combo.currentIndex()]
         return s
 
+    def warn_if_running(self):
+        """Warn and return True if FreeCAD is running (it would overwrite user.cfg)."""
+        if self._fc.is_running():
+            QMessageBox.warning(self, "FreeCAD Running", FREECAD_RUNNING_WARNING)
+            return True
+        return False
+
     def apply_settings(self):
         """Write settings to FreeCAD user.cfg."""
-        if not self._fc.is_available():
+        if (not self._fc.is_available()) or self.warn_if_running():
+            # if FreeCAD is running, warn_if_running showed a warning. do nothing.
             return False
-        return self._fc.write(self.get_settings())
+
+        applied = self._fc.write(self.get_settings())
+        if applied:
+            self._dirty = False
+            self._emit_unchanged()
+
+        return applied
 
 
 # ── BlenderPage ───────────────────────────────────────────────────────

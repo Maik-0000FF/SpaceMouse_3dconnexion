@@ -20,17 +20,29 @@ class FreeCADConfig:
     """Read/write FreeCAD user.cfg XML for SpaceMouse settings."""
 
     _CANDIDATES = [
-        Path.home() / ".config" / "FreeCAD" / "user.cfg",
-        Path.home() / ".FreeCAD" / "user.cfg",
-        Path.home() / ".local" / "share" / "FreeCAD" / "user.cfg",
+        Path.home() / ".config" / "FreeCAD",
+        Path.home() / ".FreeCAD",
+        Path.home() / ".local" / "share" / "FreeCAD",
     ]
 
     def __init__(self):
         self.path = None
+        self._prev_path_index = 0  # so we can revert if the user cancels
+        self._path_list = []
+
         for c in self._CANDIDATES:
-            if c.exists():
-                self.path = c
-                break
+            # FreeCAD keeps user.cfg at the config root (<dir>/user.cfg) and typically one level
+            # down per version dir (<dir>/<version>/user.cfg). A bounded glob finds those and
+            # stops before addon subtrees, caches and thumbnails under ~/.local/share/FreeCAD
+            found = [*c.glob("user.cfg"), *c.glob("*/user.cfg")]
+            self._path_list += sorted(found, key=lambda p: (len(p.parts), p))
+
+        if self._path_list:
+            # Default to the most recently modified config: FreeCAD writes
+            # user.cfg on exit, so the newest mtime is the one actually in use.
+            # The list order above stays path-sorted for a stable dropdown.
+            self.path = max(self._path_list, key=lambda p: p.stat().st_mtime)
+            self._prev_path_index = self._path_list.index(self.path)
 
     def is_available(self):
         return self.path is not None

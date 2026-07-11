@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QSlider,
     QVBoxLayout,
 )
@@ -129,6 +130,23 @@ def make_slider(minimum, maximum, value, decimals=0, suffix=""):
     hl.addWidget(slider, 1)
     hl.addWidget(val_label)
     return container, slider, val_label
+
+
+def make_save_discard_cancel_box(parent, window_title, text, informative_text):
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(window_title)
+    msg.setText(text)
+    msg.setInformativeText(informative_text)
+    msg.setStandardButtons(
+        QMessageBox.StandardButton.Save
+        | QMessageBox.StandardButton.Discard
+        | QMessageBox.StandardButton.Cancel
+    )
+    msg.setDefaultButton(QMessageBox.StandardButton.Save)
+    msg.button(QMessageBox.StandardButton.Save).setText("Save")
+    msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
+    msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
+    return msg
 
 
 # ── Tray icon pixmap ──────────────────────────────────────────────────

@@ -6,9 +6,13 @@ from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "spacemouse"
 CONFIG_PATH = CONFIG_DIR / "config.json"
-BLENDER_NDOF_PATH = CONFIG_DIR / "blender-ndof.json"
 SOCK_PATH = f"/run/user/{os.getuid()}/spacemouse-cmd.sock"
 
+FREECAD_RUNNING_WARNING = """\
+FreeCAD is running and will overwrite user.cfg on exit.
+Please close FreeCAD first."""
+
+BLENDER_NDOF_PATH = CONFIG_DIR / "blender-ndof.json"
 BLENDER_CONFIG_ROOT = Path.home() / ".config" / "blender"
 # Fallback target when no Blender version dir exists yet — the user
 # hasn't run Blender once, but we still want the install button to

@@ -13,9 +13,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .backends import FreeCADConfig
 from .constants import COLOR_ACCENT, COLOR_TEXT_MUTED
-from .helpers import create_tray_icon_pixmap, query_device_info, send_daemon_cmd
+from .helpers import (
+    create_tray_icon_pixmap,
+    make_save_discard_cancel_box,
+    query_device_info,
+    send_daemon_cmd,
+)
 from .pages import BlenderPage, DesktopPage, FreeCADPage
 from .widgets import LivePreviewBar, make_toggle
 
@@ -148,6 +152,7 @@ class SettingsWindow(QMainWindow):
         self.freecad_page = FreeCADPage()
         self.freecad_page.changed.connect(self._mark_dirty)
         self.freecad_page.changed.connect(self._sync_deadzones)
+        self.freecad_page.unchanged.connect(self._mark_clean)
         self.stack.addWidget(self.freecad_page)
 
         self.blender_page = BlenderPage()
@@ -211,6 +216,10 @@ class SettingsWindow(QMainWindow):
         self._dirty = True
         self.setWindowTitle("SpaceMouse Control *")
 
+    def _mark_clean(self):
+        self._dirty = False
+        self.setWindowTitle("SpaceMouse Control")
+
     def _save_desktop(self):
         """Persist desktop-page widget state + autostart on every change."""
         config = self.desktop_page.get_all_config()
@@ -243,15 +252,11 @@ class SettingsWindow(QMainWindow):
         page_idx = self.stack.currentIndex()
 
         if page_idx == 1:
-            if FreeCADConfig.is_running():
-                QMessageBox.warning(
-                    self,
-                    "FreeCAD Running",
-                    "FreeCAD is running and will overwrite user.cfg on exit.\n"
-                    "Please close FreeCAD first.",
-                )
+            if self.freecad_page.warn_if_running():
+                # if FreeCAD is running, warn_if_running showed a warning. do nothing.
                 return
-            if self.freecad_page.apply_settings():
+            elif self.freecad_page.apply_settings():
+                self._mark_clean()
                 QMessageBox.information(
                     self,
                     "Applied",
@@ -263,12 +268,10 @@ class SettingsWindow(QMainWindow):
 
         elif page_idx == 2:
             self.blender_page.apply_settings()
+            self._mark_clean()
             QMessageBox.information(
                 self, "Applied", "Blender NDOF settings saved.\nRestart Blender to apply."
             )
-
-        self._dirty = False
-        self.setWindowTitle("SpaceMouse Control")
 
     def _update_status(self):
         # Two synchronous daemon IPCs per tick (STATUS + DEVICE), both on
@@ -347,19 +350,12 @@ class SettingsWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self._dirty:
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Unsaved Changes")
-            msg.setText("You have unsaved changes.")
-            msg.setInformativeText("Do you want to save before closing?")
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel
+            msg = make_save_discard_cancel_box(
+                parent=self,
+                window_title="Unsaved Changes",
+                text="You have unsaved changes.",
+                informative_text="Do you want to save before closing?",
             )
-            msg.setDefaultButton(QMessageBox.StandardButton.Save)
-            msg.button(QMessageBox.StandardButton.Save).setText("Save")
-            msg.button(QMessageBox.StandardButton.Discard).setText("Discard")
-            msg.button(QMessageBox.StandardButton.Cancel).setText("Cancel")
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
                 self._apply()
