@@ -351,10 +351,10 @@ class SettingsWindow(QMainWindow):
     def closeEvent(self, event):
         if self._dirty:
             msg = make_save_discard_cancel_box(
-                self=self,
-                windowTitle="Unsaved Changes",
+                parent=self,
+                window_title="Unsaved Changes",
                 text="You have unsaved changes.",
-                informativeText="Do you want to save before closing?",
+                informative_text="Do you want to save before closing?",
             )
             result = msg.exec()
             if result == QMessageBox.StandardButton.Save:
