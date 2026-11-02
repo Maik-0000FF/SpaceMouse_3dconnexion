@@ -297,7 +297,6 @@ struct btn_obj_handler {
 };
 static const struct btn_obj_handler OBJ_HANDLERS[] = {
 	{"exec", apply_obj_exec},
-	{NULL, NULL},
 };
 
 /* Apply a JSON object-form button action {"type": "...", ...}. Returns
@@ -312,7 +311,9 @@ static int apply_btn_action_obj(struct config *c, int idx, struct json_object *o
 	const char *type = json_object_get_string(type_val);
 	if (!type)
 		return 0;
-	for (const struct btn_obj_handler *h = OBJ_HANDLERS; h->type; h++) {
+	size_t n = sizeof(OBJ_HANDLERS) / sizeof(OBJ_HANDLERS[0]);
+	for (size_t i = 0; i < n; i++) {
+		const struct btn_obj_handler *h = &OBJ_HANDLERS[i];
 		if (strcmp(h->type, type) == 0) {
 			h->fn(c, idx, obj);
 			return 1;

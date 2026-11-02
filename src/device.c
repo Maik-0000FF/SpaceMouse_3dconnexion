@@ -15,34 +15,34 @@
  * Button counts come from public 3Dconnexion product pages and the
  * spacenavd HID device table; zero means unknown (use discovery). */
 static const struct {
+	const char *name;
 	uint16_t vid;
 	uint16_t pid;
-	const char *name;
 	int button_count;
 } g_device_table[] = {
 	/* ── Logitech-era VID 046d ── */
-	{0x046d, 0xc603, "3Dconnexion CADman", 0},
-	{0x046d, 0xc605, "3Dconnexion 3D Mouse", 0},
-	{0x046d, 0xc606, "3Dconnexion SpaceMouse Classic", 9},
-	{0x046d, 0xc621, "3Dconnexion SpaceBall 5000", 12},
-	{0x046d, 0xc623, "3Dconnexion SpaceTraveler", 8},
-	{0x046d, 0xc625, "3Dconnexion SpacePilot", 21},
-	{0x046d, 0xc626, "3Dconnexion SpaceNavigator", 2},
-	{0x046d, 0xc627, "3Dconnexion SpaceExplorer", 15},
-	{0x046d, 0xc628, "3Dconnexion SpaceNavigator for Notebooks", 2},
-	{0x046d, 0xc629, "3Dconnexion SpacePilot Pro", 31},
-	{0x046d, 0xc62b, "3Dconnexion SpaceMouse Pro", 15},
+	{"3Dconnexion CADman", 0x046d, 0xc603, 0},
+	{"3Dconnexion 3D Mouse", 0x046d, 0xc605, 0},
+	{"3Dconnexion SpaceMouse Classic", 0x046d, 0xc606, 9},
+	{"3Dconnexion SpaceBall 5000", 0x046d, 0xc621, 12},
+	{"3Dconnexion SpaceTraveler", 0x046d, 0xc623, 8},
+	{"3Dconnexion SpacePilot", 0x046d, 0xc625, 21},
+	{"3Dconnexion SpaceNavigator", 0x046d, 0xc626, 2},
+	{"3Dconnexion SpaceExplorer", 0x046d, 0xc627, 15},
+	{"3Dconnexion SpaceNavigator for Notebooks", 0x046d, 0xc628, 2},
+	{"3Dconnexion SpacePilot Pro", 0x046d, 0xc629, 31},
+	{"3Dconnexion SpaceMouse Pro", 0x046d, 0xc62b, 15},
 
 	/* ── 3Dconnexion VID 256f ── */
-	{0x256f, 0xc62e, "3Dconnexion SpaceMouse Wireless (cabled)", 2},
-	{0x256f, 0xc62f, "3Dconnexion SpaceMouse Wireless Receiver", 2},
-	{0x256f, 0xc631, "3Dconnexion SpaceMouse Pro Wireless (cabled)", 15},
-	{0x256f, 0xc632, "3Dconnexion SpaceMouse Pro Wireless Receiver", 15},
-	{0x256f, 0xc633, "3Dconnexion SpaceMouse Enterprise", 31},
-	{0x256f, 0xc635, "3Dconnexion SpaceMouse Compact", 2},
-	{0x256f, 0xc636, "3Dconnexion SpaceMouse Module", 0},
-	{0x256f, 0xc63a, "3Dconnexion SpaceMouse Wireless (Bluetooth)", 2},
-	{0x256f, 0xc652, "3Dconnexion Universal Receiver", 0},
+	{"3Dconnexion SpaceMouse Wireless (cabled)", 0x256f, 0xc62e, 2},
+	{"3Dconnexion SpaceMouse Wireless Receiver", 0x256f, 0xc62f, 2},
+	{"3Dconnexion SpaceMouse Pro Wireless (cabled)", 0x256f, 0xc631, 15},
+	{"3Dconnexion SpaceMouse Pro Wireless Receiver", 0x256f, 0xc632, 15},
+	{"3Dconnexion SpaceMouse Enterprise", 0x256f, 0xc633, 31},
+	{"3Dconnexion SpaceMouse Compact", 0x256f, 0xc635, 2},
+	{"3Dconnexion SpaceMouse Module", 0x256f, 0xc636, 0},
+	{"3Dconnexion SpaceMouse Wireless (Bluetooth)", 0x256f, 0xc63a, 2},
+	{"3Dconnexion Universal Receiver", 0x256f, 0xc652, 0},
 };
 
 static struct device_info g_cached = {0};

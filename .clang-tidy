@@ -15,13 +15,16 @@
 #
 # Explicit -checks disable the noisy ones that fire on patterns we
 # intentionally use (sscanf parsing, fixed-size buffers, magic numbers
-# baked into the spnav protocol).
+# baked into the spnav protocol). bugprone-signed-bitwise is off because
+# POSIX defines poll() revents and fcntl() flags as signed int, so every
+# flag test would need a cast.
 Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
   -bugprone-reserved-identifier,
+  -bugprone-signed-bitwise,
   clang-analyzer-*,
   -clang-analyzer-security.insecureAPI.strcpy,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
