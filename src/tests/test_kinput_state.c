@@ -33,6 +33,20 @@ static void push(int wfd, int type, int code, int value)
 	assert(n == (ssize_t)sizeof(ie));
 }
 
+/* Same as push() but with a kernel timestamp in milliseconds. */
+static void push_at(int wfd, long ms, int type, int code, int value)
+{
+	struct input_event ie;
+	memset(&ie, 0, sizeof(ie));
+	ie.time.tv_sec = ms / 1000;
+	ie.time.tv_usec = (ms % 1000) * 1000;
+	ie.type = (unsigned short)type;
+	ie.code = (unsigned short)code;
+	ie.value = value;
+	ssize_t n = write(wfd, &ie, sizeof(ie));
+	assert(n == (ssize_t)sizeof(ie));
+}
+
 int main(void)
 {
 	int fds[2];
@@ -140,6 +154,50 @@ int main(void)
 	assert(kinput_poll_event(rfd, &ev) == 1);
 	assert(ev.type == KIE_MOTION);
 	assert(ev.motion.rx == 11);
+
+	/* EV_REL devices. Values are the current deflection; zero-valued
+	 * events are dropped by the input core, translation (0..2) and
+	 * rotation (3..5) arrive in separate frames, and nothing is sent when
+	 * the puck returns to centre. */
+	kinput_reset_state();
+
+	/* Translation frame at t=1000ms. */
+	push_at(wfd, 1000, EV_REL, 0, 120);
+	push_at(wfd, 1000, EV_REL, 2, -30);
+	push_at(wfd, 1000, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.type == KIE_MOTION);
+	assert(ev.motion.x == 120 && ev.motion.y == 0 && ev.motion.z == -30);
+
+	/* Rotation frame 8ms later must not clear translation. */
+	push_at(wfd, 1008, EV_REL, 3, -54);
+	push_at(wfd, 1008, EV_REL, 5, -280);
+	push_at(wfd, 1008, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.motion.x == 120 && ev.motion.z == -30);
+	assert(ev.motion.rx == -54 && ev.motion.ry == 0 && ev.motion.rz == -280);
+
+	/* Next translation frame replaces its own group only; the axes it
+	 * omits (x, z) are at rest, rotation is untouched. */
+	push_at(wfd, 1016, EV_REL, 1, -8);
+	push_at(wfd, 1016, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.motion.x == 0 && ev.motion.y == -8 && ev.motion.z == 0);
+	assert(ev.motion.rx == -54 && ev.motion.rz == -280);
+
+	/* Rotation released: no zero frame ever arrives. Translation keeps
+	 * reporting; rotation is still fresh at +40ms, so it is kept ... */
+	push_at(wfd, 1056, EV_REL, 1, -9);
+	push_at(wfd, 1056, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.motion.y == -9 && ev.motion.rz == -280);
+
+	/* ... and read as zero once stale (last rotation frame was t=1008). */
+	push_at(wfd, 1070, EV_REL, 1, -10);
+	push_at(wfd, 1070, EV_SYN, SYN_REPORT, 0);
+	assert(kinput_poll_event(rfd, &ev) == 1);
+	assert(ev.motion.y == -10);
+	assert(ev.motion.rx == 0 && ev.motion.ry == 0 && ev.motion.rz == 0);
 
 	close(rfd);
 	close(wfd);
