@@ -202,6 +202,29 @@ int main(void)
 	close(rfd);
 	close(wfd);
 
+	/* Topology group of a node: the table next to kinput_phys_group. */
+	char key[32];
+	assert(kinput_phys_group("usb-0000:00:14.0-1.2/input0", key, sizeof(key)) == 1);
+	assert(strcmp(key, "usb-0000:00:14.0-1.2") == 0);
+	char sibling[32];
+	assert(kinput_phys_group("usb-0000:00:14.0-1.2/input1", sibling, sizeof(sibling)) == 1);
+	assert(strcmp(sibling, key) == 0);
+	assert(kinput_phys_group("usb-0000:00:14.0-1.3/input0", sibling, sizeof(sibling)) == 1);
+	assert(strcmp(sibling, key) != 0);
+	assert(kinput_phys_group("isa0060/serio0/input0", key, sizeof(key)) == 1);
+	assert(strcmp(key, "isa0060/serio0") == 0);
+	assert(kinput_phys_group("aa:bb:cc:dd:ee:ff", key, sizeof(key)) == 1);
+	assert(strcmp(key, "aa:bb:cc:dd:ee:ff") == 0);
+	assert(kinput_phys_group("/input0", key, sizeof(key)) == 0);
+	assert(kinput_phys_group("", key, sizeof(key)) == 0);
+	assert(kinput_phys_group(NULL, key, sizeof(key)) == 0);
+	assert(kinput_phys_group("usb-x/input0", NULL, sizeof(key)) == 0);
+	assert(kinput_phys_group("usb-x/input0", key, 0) == 0);
+	/* "usb-x" needs 6 bytes with its NUL: 5 is too short, 6 fits. */
+	assert(kinput_phys_group("usb-x/input0", key, 5) == 0);
+	assert(kinput_phys_group("usb-x/input0", key, 6) == 1);
+	assert(strcmp(key, "usb-x") == 0);
+
 	printf("test_kinput_state: all assertions passed\n");
 	return 0;
 }

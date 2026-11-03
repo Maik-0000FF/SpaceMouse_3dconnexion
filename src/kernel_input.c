@@ -7,14 +7,35 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <linux/input.h>
 
 #include "config.h"
 #include "device.h"
+
+/* Device discovery. The axis node is found by its udev by-id name; its
+ * button siblings are found among all event nodes and matched by
+ * identity (see open_button_siblings), because udev does not give every
+ * interface of a composite device its own by-id link. */
+#define BY_ID_DIR "/dev/input/by-id"
+#define BY_ID_VENDOR_TAG "3Dconnexion"
+#define BY_ID_EVENT_TAG "-event-"
+#define EVENT_DIR "/dev/input"
+#define EVENT_NODE_PREFIX "event"
+#define PHYS_INTERFACE_SEP "/input"
+/* Buffer for EVIOCGPHYS / EVIOCGUNIQ strings and the derived group key. */
+#define NODE_ID_LEN 128
+
+#define BITS_PER_ULONG (8 * sizeof(unsigned long))
+#define BITMAP_LONGS(max) ((max) / BITS_PER_ULONG + 1)
+
+static int kinput_code_to_bnum(int code);
 
 /* Per-axis state cached between axis events; flushed at SYN_REPORT. */
 static int g_kinput_state[6] = {0};
@@ -82,38 +103,214 @@ static void kinput_apply_rel_frame(long long now_ms)
 	}
 }
 
-int kinput_open(int verbose)
+static int bitmap_test(const unsigned long *bits, int code)
 {
-	DIR *d = opendir("/dev/input/by-id");
+	return (bits[code / BITS_PER_ULONG] >> (code % BITS_PER_ULONG)) & 1UL;
+}
+
+/* True when the node reports the puck's 6DOF: ABS_X, or the relative
+ * rotational trio REL_RX/RY/RZ. An ordinary mouse has neither (it reports
+ * REL_X/REL_Y and wheels), so a Logitech mouse never passes. */
+static int node_has_axes(int fd)
+{
+	unsigned long absbits[BITMAP_LONGS(ABS_MAX)] = {0};
+	if (ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) >= 0 &&
+	    bitmap_test(absbits, ABS_X))
+		return 1;
+
+	unsigned long relbits[BITMAP_LONGS(REL_MAX)] = {0};
+	if (ioctl(fd, EVIOCGBIT(EV_REL, sizeof(relbits)), relbits) < 0)
+		return 0;
+	return bitmap_test(relbits, REL_RX) && bitmap_test(relbits, REL_RY) &&
+	       bitmap_test(relbits, REL_RZ);
+}
+
+/* True when the node exposes at least one code kinput_code_to_bnum maps
+ * to a SpaceMouse button. Mouse buttons (BTN_LEFT, ...) do not count. */
+static int node_has_buttons(int fd)
+{
+	unsigned long keybits[BITMAP_LONGS(KEY_MAX)] = {0};
+	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0)
+		return 0;
+	for (int code = 0; code <= KEY_MAX; code++)
+		if (bitmap_test(keybits, code) && kinput_code_to_bnum(code) >= 0)
+			return 1;
+	return 0;
+}
+
+/* Inputs and results of kinput_phys_group:
+ *
+ *   "usb-0000:00:14.0-1.2/input0"  -> 1, "usb-0000:00:14.0-1.2"
+ *   "usb-0000:00:14.0-1.2/input1"  -> 1, same key: sibling interface
+ *   "usb-0000:00:14.0-1.3/input0"  -> 1, "usb-0000:00:14.0-1.3": other port
+ *   "isa0060/serio0/input0"        -> 1, "isa0060/serio0": first "/input"
+ *   "aa:bb:cc:dd:ee:ff"            -> 1, whole string (no separator;
+ *                                     Bluetooth reports the adapter address
+ *                                     here, which is why siblings must also
+ *                                     match on uniq)
+ *   "/input0"                      -> 0, nothing before the separator
+ *   ""                             -> 0
+ *   NULL, out NULL, len 0          -> 0
+ *   key of len or more characters  -> 0, a truncated key could merge two
+ *                                     devices */
+int kinput_phys_group(const char *phys, char *out, size_t len)
+{
+	if (!phys || !out || len == 0)
+		return 0;
+	const char *sep = strstr(phys, PHYS_INTERFACE_SEP);
+	size_t n = sep ? (size_t)(sep - phys) : strlen(phys);
+	if (n == 0 || n >= len)
+		return 0;
+	memcpy(out, phys, n);
+	out[n] = '\0';
+	return 1;
+}
+
+/* What ties the nodes of one physical device together. */
+struct node_identity {
+	unsigned short vendor;
+	char group[NODE_ID_LEN]; /* kinput_phys_group of EVIOCGPHYS */
+	char uniq[NODE_ID_LEN];	 /* EVIOCGUNIQ, empty when the device has none */
+};
+
+/* Fill *id for the node behind `fd`. Returns 0 when the node has no
+ * usable topology path; such a node is never matched as a sibling. */
+static int node_identity_get(int fd, struct node_identity *id)
+{
+	memset(id, 0, sizeof(*id));
+
+	struct input_id iid;
+	if (ioctl(fd, EVIOCGID, &iid) < 0)
+		return 0;
+	id->vendor = iid.vendor;
+
+	char phys[NODE_ID_LEN] = {0};
+	if (ioctl(fd, EVIOCGPHYS(sizeof(phys) - 1), phys) < 0)
+		return 0;
+	if (!kinput_phys_group(phys, id->group, sizeof(id->group)))
+		return 0;
+
+	/* Most USB pucks report no uniq (ENOENT); both sides then compare
+	 * equal as empty strings. */
+	if (ioctl(fd, EVIOCGUNIQ(sizeof(id->uniq) - 1), id->uniq) < 0)
+		id->uniq[0] = '\0';
+	return 1;
+}
+
+static int node_identity_equal(const struct node_identity *a, const struct node_identity *b)
+{
+	return a->vendor == b->vendor && strcmp(a->group, b->group) == 0 &&
+	       strcmp(a->uniq, b->uniq) == 0;
+}
+
+/* Open the axis node: the first 3Dconnexion by-id event link that reports
+ * axes. When no link does, fall back to the first link at all, which is
+ * how the node was chosen before axes were checked. Fills `path` and
+ * returns the fd, or -1. */
+static int open_axis_node(int verbose, char *path, size_t len)
+{
+	DIR *d = opendir(BY_ID_DIR);
 	if (!d) {
 		if (verbose)
-			perror("spacemouse-desktop: opendir /dev/input/by-id");
+			perror("spacemouse-desktop: opendir " BY_ID_DIR);
 		return -1;
 	}
 
-	char path[512] = {0};
+	char first[PATH_MAX] = {0};
+	int fd = -1;
 	struct dirent *ent;
 	while ((ent = readdir(d))) {
-		if (strstr(ent->d_name, "3Dconnexion") && strstr(ent->d_name, "-event-")) {
-			snprintf(path, sizeof(path), "/dev/input/by-id/%s", ent->d_name);
+		if (!strstr(ent->d_name, BY_ID_VENDOR_TAG) || !strstr(ent->d_name, BY_ID_EVENT_TAG))
+			continue;
+		char link[PATH_MAX];
+		snprintf(link, sizeof(link), "%s/%s", BY_ID_DIR, ent->d_name);
+		if (!first[0])
+			snprintf(first, sizeof(first), "%s", link);
+
+		int cand = open(link, O_RDONLY | O_NONBLOCK);
+		if (cand < 0)
+			continue;
+		if (node_has_axes(cand)) {
+			fd = cand;
+			snprintf(path, len, "%s", link);
 			break;
 		}
+		close(cand);
 	}
 	closedir(d);
+	if (fd >= 0)
+		return fd;
 
-	if (!path[0]) {
+	if (!first[0]) {
 		if (verbose)
-			fprintf(stderr, "spacemouse-desktop: no 3Dconnexion event device under "
-					"/dev/input/by-id\n");
+			fprintf(stderr,
+				"spacemouse-desktop: no 3Dconnexion event device under " BY_ID_DIR
+				"\n");
 		return -1;
 	}
-
-	int fd = open(path, O_RDONLY | O_NONBLOCK);
+	fd = open(first, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
 		if (verbose)
-			fprintf(stderr, "spacemouse-desktop: open %s: %s\n", path, strerror(errno));
+			fprintf(stderr, "spacemouse-desktop: open %s: %s\n", first,
+				strerror(errno));
 		return -1;
 	}
+	snprintf(path, len, "%s", first);
+	return fd;
+}
+
+/* A wireless receiver can split one puck over several event nodes, e.g.
+ * axes on one and buttons on another. When the axis node has no buttons,
+ * open every other event node that has SpaceMouse buttons and the same
+ * identity (vendor, topology group, uniq) as the axis node. The identity
+ * match keeps unrelated mice and keyboards out; a node without a topology
+ * path is never matched. Appends to fds[n..max-1], returns the new n. */
+static int open_button_siblings(int axis_fd, int *fds, int n, int max)
+{
+	struct node_identity axis_id;
+	struct stat axis_st;
+	if (node_has_buttons(axis_fd) || !node_identity_get(axis_fd, &axis_id) ||
+	    fstat(axis_fd, &axis_st) < 0)
+		return n;
+
+	DIR *d = opendir(EVENT_DIR);
+	if (!d)
+		return n;
+
+	struct dirent *ent;
+	while (n < max && (ent = readdir(d))) {
+		if (strncmp(ent->d_name, EVENT_NODE_PREFIX, strlen(EVENT_NODE_PREFIX)) != 0)
+			continue;
+		char path[PATH_MAX];
+		snprintf(path, sizeof(path), "%s/%s", EVENT_DIR, ent->d_name);
+		int fd = open(path, O_RDONLY | O_NONBLOCK);
+		if (fd < 0)
+			continue;
+
+		struct stat st;
+		struct node_identity id;
+		int is_axis_node = fstat(fd, &st) == 0 && st.st_rdev == axis_st.st_rdev;
+		if (!is_axis_node && node_has_buttons(fd) && node_identity_get(fd, &id) &&
+		    node_identity_equal(&id, &axis_id)) {
+			fds[n++] = fd;
+			fprintf(stderr, "spacemouse-desktop: button node opened: %s\n", path);
+			continue;
+		}
+		close(fd);
+	}
+	closedir(d);
+	return n;
+}
+
+int kinput_open(int verbose, int *fds, int max)
+{
+	if (!fds || max < 1)
+		return -1;
+
+	char path[PATH_MAX];
+	int fd = open_axis_node(verbose, path, sizeof(path));
+	if (fd < 0)
+		return -1;
 
 	/* Reset cached state — after a reconnect the device starts fresh. */
 	kinput_reset_state();
@@ -125,7 +322,15 @@ int kinput_open(int verbose)
 	}
 
 	fprintf(stderr, "spacemouse-desktop: kernel input opened: %s\n", path);
-	return fd;
+	fds[0] = fd;
+	return open_button_siblings(fd, fds, 1, max);
+}
+
+void kinput_close(int *fds, int *n)
+{
+	for (int i = 0; i < *n; i++)
+		close(fds[i]);
+	*n = 0;
 }
 
 /* Map a Linux EV_KEY code to a 0-based bnum for SpaceMouse devices.
