@@ -69,7 +69,6 @@ def test_read_returns_expected_settings(cfg):
     assert s["zoom_deadzone"] == 20
     assert s["btn0_command"] == "Std_ViewFitAll"
     assert s["btn1_command"] == "Std_ViewHome"
-    assert s["nav_style"] == "Gui::BlenderNavigationStyle"
     assert s["orbit_style"] == 1
 
 
@@ -79,7 +78,6 @@ def test_read_with_no_path_returns_defaults():
     s = c.read()
     assert s["global_sensitivity"] == -15
     assert s["flip_yz"] is True
-    assert s["nav_style"] == "Gui::BlenderNavigationStyle"
 
 
 def test_write_then_read_roundtrip(cfg):
@@ -95,7 +93,6 @@ def test_write_then_read_roundtrip(cfg):
         "zoom_deadzone": 7,
         "btn0_command": "Std_OrthographicCamera",
         "btn1_command": "Std_PerspectiveCamera",
-        "nav_style": "Gui::CADNavigationStyle",
         "orbit_style": 0,
     }
     assert cfg.write(new_settings) is True
@@ -112,8 +109,20 @@ def test_write_then_read_roundtrip(cfg):
     assert s["zoom_deadzone"] == 7
     assert s["btn0_command"] == "Std_OrthographicCamera"
     assert s["btn1_command"] == "Std_PerspectiveCamera"
-    assert s["nav_style"] == "Gui::CADNavigationStyle"
     assert s["orbit_style"] == 0
+
+
+def test_write_keeps_navigation_style(cfg, cfg_path):
+    """The navigation style is FreeCAD's own setting; saving must not touch it."""
+    style = "Gui::TouchpadNavigationStyle"
+    text = cfg_path.read_text().replace("Gui::BlenderNavigationStyle", style)
+    cfg_path.write_text(text)
+
+    assert cfg.write(cfg.read()) is True
+
+    tree = ET.parse(cfg_path)
+    nav = tree.find(".//FCText[@Name='NavigationStyle']")
+    assert nav is not None and nav.text == style
 
 
 def test_write_creates_missing_groups(tmp_path):
