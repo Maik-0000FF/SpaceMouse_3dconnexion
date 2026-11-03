@@ -245,15 +245,6 @@ FREECAD_BTN_LABELS = [
     "Right",
 ]
 
-FREECAD_NAV_STYLES = [
-    "Gui::InventorNavigationStyle",
-    "Gui::BlenderNavigationStyle",
-    "Gui::CADNavigationStyle",
-    "Gui::OpenCascadeNavigationStyle",
-    "Gui::RevitNavigationStyle",
-]
-FREECAD_NAV_LABELS = ["Inventor", "Blender", "CAD", "OpenCascade", "Revit"]
-
 FREECAD_ORBIT_STYLES = {"Trackball": 1, "Turntable": 0}
 
 # ── Palette (Catppuccin Mocha) ────────────────────────────────────────
