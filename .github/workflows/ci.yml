@@ -222,7 +222,7 @@ jobs:
               pacman -Sy --noconfirm git sudo
               ;;
             fedora)
-              dnf install -y git sudo procps-ng which
+              dnf install -y git sudo procps-ng which util-linux
               ;;
             debian-*|ubuntu-*)
               apt-get update
