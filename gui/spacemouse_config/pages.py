@@ -38,8 +38,6 @@ from .constants import (
     DEFAULT_BUTTON_ROWS,
     FREECAD_BTN_COMMANDS,
     FREECAD_BTN_LABELS,
-    FREECAD_NAV_LABELS,
-    FREECAD_NAV_STYLES,
     FREECAD_ORBIT_STYLES,
     FREECAD_RUNNING_WARNING,
     MAX_BUTTONS,
@@ -844,11 +842,6 @@ class FreeCADPage(QWidget):
         fl = QFormLayout()
         fl.setSpacing(8)
 
-        self.fc_nav_combo = NoScrollComboBox()
-        self.fc_nav_combo.addItems(FREECAD_NAV_LABELS)
-        self.fc_nav_combo.currentIndexChanged.connect(self._emit_changed)
-        fl.addRow("Navigation Style:", self.fc_nav_combo)
-
         self.fc_orbit_combo = NoScrollComboBox()
         self.fc_orbit_combo.addItems(list(FREECAD_ORBIT_STYLES.keys()))
         self.fc_orbit_combo.currentIndexChanged.connect(self._emit_changed)
@@ -897,10 +890,6 @@ class FreeCADPage(QWidget):
             cmd = settings.get(f"btn{i}_command", "")
             idx = FREECAD_BTN_COMMANDS.index(cmd) if cmd in FREECAD_BTN_COMMANDS else 0
             combo.setCurrentIndex(idx)
-
-        nav = settings.get("nav_style", "")
-        idx = FREECAD_NAV_STYLES.index(nav) if nav in FREECAD_NAV_STYLES else 1
-        self.fc_nav_combo.setCurrentIndex(idx)
 
         orbit = settings.get("orbit_style", 1)
         orbit_values = list(FREECAD_ORBIT_STYLES.values())
@@ -970,7 +959,6 @@ class FreeCADPage(QWidget):
             idx = self.fc_btn_combos[i].currentIndex()
             s[f"btn{i}_command"] = FREECAD_BTN_COMMANDS[idx]
 
-        s["nav_style"] = FREECAD_NAV_STYLES[self.fc_nav_combo.currentIndex()]
         orbit_values = list(FREECAD_ORBIT_STYLES.values())
         s["orbit_style"] = orbit_values[self.fc_orbit_combo.currentIndex()]
         return s

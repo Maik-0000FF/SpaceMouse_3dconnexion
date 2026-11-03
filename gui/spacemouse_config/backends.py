@@ -153,7 +153,6 @@ class FreeCADConfig:
             "spin_deadzone": 0,
             "btn0_command": "Std_ViewFitAll",
             "btn1_command": "Std_ViewHome",
-            "nav_style": "Gui::BlenderNavigationStyle",
             "orbit_style": 1,
         }
         if not self.path:
@@ -211,9 +210,6 @@ class FreeCADConfig:
         if prefs is not None:
             view = self._find_group(prefs, "View")
             if view is not None:
-                result["nav_style"] = self._get_text(
-                    view, "NavigationStyle", "Gui::BlenderNavigationStyle"
-                )
                 result["orbit_style"] = self._get_int(view, "OrbitStyle", 1)
 
         return result
@@ -261,9 +257,6 @@ class FreeCADConfig:
         # View preferences
         prefs = self._ensure_group(base_app, "Preferences")
         view = self._ensure_group(prefs, "View")
-        self._set_text(
-            view, "NavigationStyle", settings.get("nav_style", "Gui::BlenderNavigationStyle")
-        )
         self._set_int(view, "OrbitStyle", settings.get("orbit_style", 1))
 
         tree.write(str(self.path), xml_declaration=True, encoding="utf-8")
