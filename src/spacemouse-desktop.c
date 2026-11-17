@@ -57,12 +57,36 @@ static volatile sig_atomic_t g_running = 1;
 volatile sig_atomic_t g_reload = 0;
 
 static int g_uinput_fd = -1;
-static int g_kinput_fd = -1;
+/* Event nodes of the open SpaceMouse, axis node first (see kinput_open). */
+static int g_kinput_fds[KINPUT_MAX_FDS];
+static int g_kinput_nfds = 0;
 static char g_config_path[512];
 static char g_sock_path[256];
 
 /* g_profiles, g_profile_count, g_active_profile — owned by config.c.
  * g_de — owned by desktop_actions.c (set in main from detect_desktop_env). */
+
+/* ── Kernel input nodes ─────────────────────────────────────────────── */
+
+/* The g_kinput_nfds pollfds starting at pfds[first] mirror g_kinput_fds. */
+
+static int kinput_any_dead(const struct pollfd *pfds, int first)
+{
+	for (int k = 0; k < g_kinput_nfds; k++)
+		if (pfds[first + k].revents & (POLLERR | POLLHUP | POLLNVAL))
+			return 1;
+	return 0;
+}
+
+/* Next event from the readable nodes, starting at node *k. Moves *k past
+ * each drained node; returns 0 once all of them are drained. */
+static int kinput_next_event(const struct pollfd *pfds, int first, int *k, struct kinput_event *ev)
+{
+	for (; *k < g_kinput_nfds; (*k)++)
+		if ((pfds[first + *k].revents & POLLIN) && kinput_poll_event(g_kinput_fds[*k], ev))
+			return 1;
+	return 0;
+}
 
 /* ── Signal handlers ────────────────────────────────────────────────── */
 
@@ -161,8 +185,10 @@ int main(int argc, char **argv)
 	/* Open kernel input device directly (bypasses spacenavd).
 	 * Missing at startup is non-fatal — the main loop will retry, so
 	 * the daemon survives "device unplugged before service start". */
-	g_kinput_fd = kinput_open(1);
-	if (g_kinput_fd < 0)
+	g_kinput_nfds = kinput_open(1, g_kinput_fds, KINPUT_MAX_FDS);
+	if (g_kinput_nfds < 0)
+		g_kinput_nfds = 0;
+	if (g_kinput_nfds == 0)
 		fprintf(stderr, "spacemouse-desktop: kernel input not available yet, will retry\n");
 
 	/* uinput */
@@ -231,16 +257,17 @@ int main(int argc, char **argv)
 
 		/* Direct kernel read. Other clients (Blender/FreeCAD via spacenavd)
 		 * read independently from the same kernel device, so we never
-		 * starve them. When the device is unplugged the fd starts
-		 * returning POLLERR/POLLHUP — we close it and retry kinput_open()
-		 * at most once per second until the device is back. */
+		 * starve them. When the device is unplugged its fds start
+		 * returning POLLERR/POLLHUP — we close them all and retry
+		 * kinput_open() at most once per second until the device is back. */
 
-		if (g_kinput_fd < 0) {
+		if (g_kinput_nfds == 0) {
 			long long now = time_ms();
 			if (now - last_kinput_retry >= 1000) {
 				last_kinput_retry = now;
-				g_kinput_fd = kinput_open(0);
-				if (g_kinput_fd >= 0) {
+				int n = kinput_open(0, g_kinput_fds, KINPUT_MAX_FDS);
+				if (n > 0) {
+					g_kinput_nfds = n;
 					fprintf(stderr,
 						"spacemouse-desktop: kernel input reconnected\n");
 					scroll_acc_reset(&sacc);
@@ -248,15 +275,17 @@ int main(int argc, char **argv)
 			}
 		}
 
-		struct pollfd fds[2];
+		struct pollfd fds[KINPUT_MAX_FDS + 1];
 		int nfds = 0;
 		int kinput_idx = -1;
 
-		if (g_kinput_fd >= 0) {
+		if (g_kinput_nfds > 0) {
 			kinput_idx = nfds;
-			fds[nfds].fd = g_kinput_fd;
-			fds[nfds].events = POLLIN;
-			nfds++;
+			for (int k = 0; k < g_kinput_nfds; k++) {
+				fds[nfds].fd = g_kinput_fds[k];
+				fds[nfds].events = POLLIN;
+				nfds++;
+			}
 		}
 
 		int cmd_idx = -1;
@@ -288,12 +317,12 @@ int main(int argc, char **argv)
 
 		/* Detect device unplug: poll() flags the fd with POLLERR/POLLHUP
 		 * once /dev/input/eventN is gone. Without this we'd spin at 100%
-		 * CPU on the dead fd. */
-		if (kinput_idx >= 0 && (fds[kinput_idx].revents & (POLLERR | POLLHUP | POLLNVAL))) {
+		 * CPU on the dead fd. One dead node means the device is gone, so
+		 * all of its nodes are closed together. */
+		if (kinput_idx >= 0 && kinput_any_dead(fds, kinput_idx)) {
 			fprintf(stderr,
 				"spacemouse-desktop: kernel input disconnected, will reconnect\n");
-			close(g_kinput_fd);
-			g_kinput_fd = -1;
+			kinput_close(g_kinput_fds, &g_kinput_nfds);
 			device_clear_cache();
 			last_kinput_retry = time_ms();
 			scroll_acc_reset(&sacc);
@@ -303,10 +332,11 @@ int main(int argc, char **argv)
 		/* Handle kernel input events. In passthrough profiles we still
 		 * drain the device (to keep its read buffer empty) but skip
 		 * action dispatch — all axis_map entries are ACT_NONE anyway. */
-		if (kinput_idx >= 0 && (fds[kinput_idx].revents & POLLIN)) {
+		if (kinput_idx >= 0) {
 			struct kinput_event ev;
+			int node = 0;
 
-			while (kinput_poll_event(g_kinput_fd, &ev)) {
+			while (kinput_next_event(fds, kinput_idx, &node, &ev)) {
 				struct config *c = &g_profiles[g_active_profile].cfg;
 
 				if (ev.type == KIE_MOTION) {
@@ -486,8 +516,7 @@ int main(int argc, char **argv)
 
 cleanup:
 	fprintf(stderr, "spacemouse-desktop: shutting down\n");
-	if (g_kinput_fd >= 0)
-		close(g_kinput_fd);
+	kinput_close(g_kinput_fds, &g_kinput_nfds);
 	uinput_close(g_uinput_fd);
 	cmd_sock_close(cmd_fd, g_sock_path);
 	dbus_actions_close();

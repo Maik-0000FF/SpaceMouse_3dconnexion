@@ -78,7 +78,7 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-      - run: pacman -Sy --noconfirm git make clang ruff shfmt
+      - run: pacman -Syu --noconfirm git make clang ruff shfmt
       - uses: actions/checkout@v6
       - run: make format-check
 
@@ -105,7 +105,7 @@ jobs:
       - name: Bootstrap (git for checkout)
         run: |
           case "${{ matrix.name }}" in
-            arch*)       pacman -Sy --noconfirm git ;;
+            arch*)       pacman -Syu --noconfirm git ;;
             fedora)      dnf install -y git ;;
             debian-*|ubuntu-*) apt-get update && apt-get install -y git ;;
             opensuse-*)  zypper --non-interactive install git ;;
@@ -219,7 +219,7 @@ jobs:
         run: |
           case "${{ matrix.name }}" in
             arch)
-              pacman -Sy --noconfirm git sudo
+              pacman -Syu --noconfirm git sudo
               ;;
             fedora)
               dnf install -y git sudo procps-ng which util-linux
@@ -337,7 +337,7 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-      - run: pacman -Sy --noconfirm git libspnav json-c dbus gcc make pkgconf
+      - run: pacman -Syu --noconfirm git libspnav json-c dbus gcc make pkgconf
       - uses: actions/checkout@v6
       - name: Build + run tests under ASan/UBSan
         env:
@@ -360,6 +360,6 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-      - run: pacman -Sy --noconfirm git libspnav json-c dbus gcc make pkgconf clang
+      - run: pacman -Syu --noconfirm git libspnav json-c dbus gcc make pkgconf clang
       - uses: actions/checkout@v6
       - run: make -C src/ lint-c
